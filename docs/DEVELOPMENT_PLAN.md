@@ -265,16 +265,17 @@ Gradle 编译、登记 APK、ADB 查询和安装；Logcat 长期运行；Workben
 - [x] 根目录标准 Tauri 2 + React + TypeScript + Vite 工程、pnpm workspace、严格 TypeScript、ESLint、Prettier、Vitest 和三平台基础质量 CI 矩阵。
 - [x] `src-tauri/` 只保留窗口、托盘、生命周期、Tauri 白名单 IPC 和 Node sidecar 监督；配置使用系统 WebView，不包含 Electron、CEF、自带 Chromium 或 `v1/` 子工程。
 - [x] `packages/core` 提供 loopback `healthz`、受保护 `/app/*`、受保护 `/events` SSE 骨架；Rust 生成随机 loopback 端口和 session token，Core 通过 `sidecar.ready` JSON handshake 回报就绪。
-- [x] Rust sidecar 监督具备启动、stdout/stderr 诊断、崩溃后的最多 3 次指数退避重启、显式重启和关闭；Renderer 只通过白名单 IPC 获得 Core 状态和能力摘要，不获得 session token。
+- [x] Rust sidecar 监督具备启动、stdout/stderr 诊断、崩溃后的最多 3 次指数退避重启、显式重启和关闭；普通状态 IPC 返回 Core 状态和能力摘要，MCP 配置通过主窗口专用白名单 IPC 获取当前会话令牌。
 - [x] `packages/shared` 提供 JSON 可序列化的 request/response/event、health、handshake 和 Capability Schema，以及 Terminal/HTTP/MCP draft 类型。
 - [x] `packages/core` 使用 Node 内置 SQLite，完成 migration runner、WAL、外键、事务、canonical definition Repository、version snapshot 和 Registry；`enable/disable` 只接受 UI actor，draft 不进入 AI tools。
 - [x] 统一 `deriveAiToolView()` 通过允许列表生成公开输入/输出 Schema；不可见字段的 value、binding、runner settings 不从 canonical 定义读取到 AI 视图。
 - [x] React 最小 Capability 管理页已支持列表、Terminal/HTTP/MCP 三类创建入口和 draft 状态；没有伪造 Runner 执行或完成状态。
 - [x] SQLite/Registry/AI projection、canary、Host-Origin-session 防护和 events 通道测试已加入；根命令已提供 `dev`、`build`、`typecheck`、`lint`、`test`、`check`。
 
+- [x] Unified MCP Gateway 提供真实 Streamable HTTP 握手、`tools/list`、`tools/call`、基于 Registry 的实时目录刷新和 stdio 协议代理（M3 基础版）。内置上下文读取、公开能力目录及 AI 草稿创建工具已可调用。
+
 ### 未完成（按范围刻意保留）
 
-- [x] Unified MCP Gateway 提供真实 Streamable HTTP 握手、`tools/list`、`tools/call`、基于 Registry 的实时目录刷新和 stdio 协议代理（M3 基础版）。内置上下文读取、公开能力目录及 AI 草稿创建工具已可调用。
 - [ ] Terminal/HTTP/MCP Runner 的真实执行、Task Manager、日志 cursor、请求组装/裁剪、MCP Bridge 和 Browser（M4-M6）。Registry 可执行内置管理工具，能力 Runner 调用仍明确返回未实现错误。
 - [ ] Artifact、Workbench、Memory、Skills、AI Connections、场景 E2E 和三平台发布（M7-M10）。
 - [ ] 当前 sidecar staging 为本机开发用 Node launcher；自包含、签名且覆盖各 target triple 的 sidecar 由 M10 完成。
@@ -283,9 +284,9 @@ Gradle 编译、登记 APK、ADB 查询和安装；Logcat 长期运行；Workben
 
 - 当前没有阻塞 M0-M2 代码落地的事项。首次 pnpm 安装在沙箱内因 registry DNS 被阻断，随后在获准的联网环境中完成依赖安装；只批准了 `esbuild` 安装脚本。
 - Windows 自包含 sidecar launcher 和三平台安装包不是本次 M0-M2 的验收项，现有 staging 脚本会在 Windows 明确提示延后到 M10；三平台 CI 当前执行依赖安装、前端/Core 类型检查、lint、单测和 production build。
-- 已完成 Tauri dev 命令启动 smoke、sidecar launcher/Core handshake 与 loopback API smoke；未进行真实 Runner、MCP client 或完整三平台桌面 E2E，这些属于后续里程碑。
+- 已完成 Tauri dev 启动、sidecar/Core handshake、loopback API，以及官方 v1／v2 MCP 客户端和 stdio 代理协议验证；真实 Runner 和完整三平台桌面 E2E 属于后续里程碑。
 
-### 下一步（M3/M4）
+### 下一步（M4）
 
 1. M3 基础协议和连接配置已接通；继续以官方客户端与隐藏字段 canary 回归保护同一 Registry 公开视图。
 2. M4：在不改变 canonical model 和 Registry 门面的前提下，加入 Terminal Runner 与 Task Manager 的 `run/start/status/logs/stop/restart`，实现 cwd 校验、进程组终止、cursor 日志和 orphan task 识别。

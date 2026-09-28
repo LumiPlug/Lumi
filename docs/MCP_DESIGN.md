@@ -81,4 +81,6 @@ Core 只监听 loopback，所有 MCP 请求校验 Host、Origin 和会话令牌�
 
 `pnpm test` 先构建 Core 和 stdio 代理，再运行协议集成测试。覆盖官方 v1／v2 客户端、HTTP／stdio 同目录、实际草稿保存、启用／禁用后的刷新、隐藏字段 canary、输入校验、令牌／Host／Origin 校验、无效 JSON、超限请求和 stdio 消息 ID／通知行为。
 
+本轮 26 项测试及 `pnpm check` 全部通过。另已重启桌面应用，对其实际启动的 Core 和 Tauri stdio sidecar 进行只读验证：握手成功，两种入口返回一致的工具目录，设置使用的 MCP 自检接口通过；没有向用户数据库写入测试草稿。
+
 协议依据：[MCP Streamable HTTP 规范](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)、[MCP Tools 规范](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)、[官方 TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk)。

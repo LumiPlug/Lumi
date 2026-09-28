@@ -80,7 +80,8 @@ export async function startProxy(config: ProxyConfig): Promise<() => Promise<voi
       const protocolVersion = message.result.protocolVersion
       if (typeof protocolVersion === 'string') http.setProtocolVersion(protocolVersion)
     }
-    if (isJSONRPCErrorResponse(message) && message.id !== null) initializationIds.delete(message.id)
+    if (isJSONRPCErrorResponse(message) && message.id !== null && message.id !== undefined)
+      initializationIds.delete(message.id)
     if (!closed) void stdio.send(message).catch(() => close())
   }
   stdio.onmessage = (message: JSONRPCMessage) => {

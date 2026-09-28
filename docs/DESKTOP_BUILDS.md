@@ -27,6 +27,8 @@ macOS 最低版本为 13.5，与所包含的 Node 26 运行时一致。Windows �
 
 `pnpm build:sidecars` 将 Core 和 stdio 代理及其 JavaScript 依赖打包，再用 Node 26 的 `--build-sea` 生成独立可执行文件。两个入口仍共用相同的业务实现和协议，不依赖用户的 Node 安装、全局包或开发目录。
 
+CI 固定使用 Node 26.10.0，其中包含 Intel macOS 可执行文件生成所需的 Mach-O 修复（[Node #65389](https://github.com/nodejs/node/pull/65389)，相关问题为 [#65479](https://github.com/nodejs/node/issues/65479)）。本地构建也要求 Node 26.10 或更新版本。
+
 Sidecar 按 Tauri 要求命名为 `<name>-<target-triple>`，Windows 增加 `.exe`。原生构建时校验 Rust target 与 Node 的系统、架构一致，不使用跨架构的 Node 二进制冒充目标产物。
 
 开发时 Unix 使用本机 launcher，Windows 使用原生 SEA；发布包统一使用独立 SEA。
@@ -35,7 +37,7 @@ Sidecar 按 Tauri 要求命名为 `<name>-<target-triple>`，Windows 增加 `.ex
 
 ## 本地打包
 
-准备 Node 26、pnpm、Rust 以及对应平台的 Tauri 系统依赖，然后运行：
+准备 Node 26.10 或更新版本、pnpm、Rust 以及对应平台的 Tauri 系统依赖，然后运行：
 
 ```sh
 pnpm install --frozen-lockfile

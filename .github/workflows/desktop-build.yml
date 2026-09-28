@@ -56,7 +56,7 @@ jobs:
       - name: Install standalone Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 26.0.0
+          node-version: 26.10.0
           architecture: ${{ matrix.node-arch }}
           cache: pnpm
       - name: Install Rust
@@ -69,6 +69,7 @@ jobs:
         with:
           workspaces: src-tauri -> target
           key: desktop-${{ matrix.target }}
+          cache-on-failure: true
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Verify source

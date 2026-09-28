@@ -63,10 +63,10 @@ core.stderr.on('data', (chunk) => {
 const lines = createInterface({ input: core.stdout })
 const ready = new Promise((resolve, reject) => {
   core.once('error', reject)
-  core.once('exit', (code) =>
+  core.once('exit', (code, signal) =>
     reject(
       new Error(
-        `Core exited before readiness (${code}): ${diagnostic.replaceAll(token, '[redacted]')}`,
+        `Core exited before readiness (code=${code}, signal=${signal}): ${diagnostic.replaceAll(token, '[redacted]')}`,
       ),
     ),
   )

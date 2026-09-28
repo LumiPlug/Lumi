@@ -29,10 +29,12 @@ const runtimeInfo = JSON.parse(
 )
 if (
   Number(runtimeInfo.version.slice(1).split('.')[0]) < 26 ||
+  (Number(runtimeInfo.version.slice(1).split('.')[0]) === 26 &&
+    Number(runtimeInfo.version.slice(1).split('.')[1]) < 10) ||
   runtimeInfo.platform !== process.platform ||
   runtimeInfo.arch !== process.arch
 ) {
-  throw new Error('Sidecars require Node 26 or newer with the native platform and architecture')
+  throw new Error('Sidecars require Node 26.10 or newer with the native platform and architecture')
 }
 if (process.platform === 'darwin') {
   const libraries = execFileSync('otool', ['-L', runtime], { encoding: 'utf8' })
@@ -127,7 +129,18 @@ for (const [name, entry] of [
   execFileSync(runtime, ['--build-sea', config], { cwd: root, stdio: 'inherit' })
   if (process.platform !== 'win32') await chmod(executable, 0o755)
   if (process.platform === 'darwin') {
-    execFileSync('codesign', ['--force', '--sign', '-', executable], { stdio: 'inherit' })
+    execFileSync(
+      'codesign',
+      [
+        '--force',
+        '--sign',
+        '-',
+        '--entitlements',
+        path.join(root, 'src-tauri/Entitlements.plist'),
+        executable,
+      ],
+      { stdio: 'inherit' },
+    )
   }
 }
 await writeFile(

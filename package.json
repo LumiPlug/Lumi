@@ -1,0 +1,49 @@
+{
+  "name": "lumiplug",
+  "version": "0.1.0",
+  "license": "MPL-2.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.19.0",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "pnpm build:frontend && pnpm build:core",
+    "build:frontend": "vite build",
+    "build:core": "pnpm --filter @lumiplug/shared build && pnpm --filter @lumiplug/core build && pnpm --filter @lumiplug/mcp-stdio-proxy build",
+    "build:sidecars": "pnpm build:core && node scripts/stage-sidecars.mjs",
+    "generate:icon": "node scripts/generate-icon.mjs",
+    "typecheck": "pnpm --filter @lumiplug/shared build && pnpm --filter @lumiplug/core typecheck && pnpm --filter @lumiplug/mcp-stdio-proxy typecheck && tsc -p tsconfig.app.json --noEmit",
+    "lint": "eslint . --max-warnings=0",
+    "test": "pnpm build:core && vitest run",
+    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm rust:fmt:check && pnpm rust:check && pnpm rust:clippy",
+    "rust:fmt": "cargo fmt --manifest-path src-tauri/Cargo.toml",
+    "rust:fmt:check": "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
+    "rust:check": "cargo check --manifest-path src-tauri/Cargo.toml",
+    "rust:clippy": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "pnpm build:sidecars && tauri build"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.12.0",
+    "@tauri-apps/plugin-clipboard-manager": "^2.4.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.35.0",
+    "@modelcontextprotocol/client": "2.1.0",
+    "@modelcontextprotocol/sdk": "1.30.1",
+    "@tauri-apps/cli": "^2.8.0",
+    "@types/node": "^24.3.0",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.0.2",
+    "eslint": "^9.35.0",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.42.0",
+    "vite": "^7.1.4",
+    "vitest": "^3.2.4"
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Main LumiPlug window permissions",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "clipboard-manager:allow-write-text",
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "name": "binaries/lumi-core",
+          "sidecar": true,
+          "args": [
+            "--host",
+            "127.0.0.1",
+            "--port",
+            { "validator": "^[0-9]{1,5}$" },
+            "--parent-pid",
+            { "validator": "^[0-9]+$" },
+            "--session-token",
+            { "validator": "^[A-Za-z0-9-]{16,64}$" },
+            "--user-data-dir",
+            { "validator": "^[^\\r\\n]+$" }
+          ]
+        },
+        {
+          "name": "binaries/mcp-stdio-proxy",
+          "sidecar": true,
+          "args": [
+            "--core-url",
+            { "validator": "^https?://127\\.0\\.0\\.1:[0-9]{1,5}$" },
+            "--session-token",
+            { "validator": "^[A-Za-z0-9-]{16,64}$" }
+          ]
+        }
+      ]
+    }
+  ]
+}

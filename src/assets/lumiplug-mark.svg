@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <!-- SPDX-License-Identifier: MPL-2.0 -->
+  <title id="title">Lumi</title>
+  <desc id="desc">A geometric L shaped connector with three connected nodes.</desc>
+  <rect x="48" y="48" width="416" height="416" rx="112" fill="#fff"/>
+  <path d="M166 138v164a50 50 0 0 0 50 50h158" fill="none" stroke="#111111" stroke-width="50" stroke-linecap="round"/>
+  <circle cx="380" cy="142" r="44" fill="#111111"/>
+</svg>

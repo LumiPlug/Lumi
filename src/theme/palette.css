@@ -1,0 +1,48 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+:root {
+  color-scheme: dark;
+  --bg: var(--lumi-surface-1);
+  --rail: var(--lumi-surface-1);
+  --content-card: var(--lumi-canvas);
+  --panel: var(--lumi-surface-3);
+  --hover: var(--lumi-surface-4);
+  --input: var(--lumi-surface-2);
+  --line: var(--lumi-outline);
+  --text: var(--lumi-on-canvas);
+  --secondary: var(--lumi-on-surface-muted);
+  --quiet: var(--lumi-on-surface-muted);
+  --accent: var(--lumi-primary);
+  --accent-bg: var(--lumi-primary-active-fill);
+  --button: var(--lumi-primary);
+  --button-text: var(--lumi-on-primary);
+  --danger: var(--lumi-error);
+  --shadow: var(--lumi-shadow-modal);
+  --content-card-shadow: 0 12px 36px rgb(0 0 0 / 35%), inset 0 1px 0 rgb(255 255 255 / 3%);
+  font-family: var(--lumi-font-ui);
+  color: var(--text);
+  background: var(--bg);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f0f0ee;
+  --rail: #f0f0ee;
+  --content-card: #fff;
+  --panel: #f7f7f5;
+  --hover: #eaeae6;
+  --input: #f1f1ee;
+  --line: #ddddd7;
+  --text: #262629;
+  --secondary: #64646d;
+  --quiet: #6c6c75;
+  --accent: #875600;
+  --accent-bg: #f7ecd8;
+  --button: #edb344;
+  --button-text: #291b05;
+  --danger: #b32121;
+  --shadow: 0 24px 100px rgb(38 38 41 / 15%);
+  --content-card-shadow: 0 8px 28px rgb(38 38 41 / 8%), 0 1px 4px rgb(38 38 41 / 4%);
+  --lumi-operational: #047857;
+  --lumi-protocol: #075985;
+}

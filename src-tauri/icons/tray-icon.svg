@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="170 104 204 272" width="44" height="44" role="img" aria-labelledby="title">
+  <!-- SPDX-License-Identifier: MPL-2.0 -->
+  <title id="title">Lumi 太阳琥珀标志</title>
+
+  <path d="M180 136 C180 122.745 190.745 112 204 112 C217.255 112 228 122.745 228 136 L228 282 C228 300.778 243.222 316 262 316 L332 316 C345.255 316 356 326.745 356 340 C356 353.255 345.255 364 332 364 L240 364 C206.863 364 180 337.137 180 304 Z" fill="#ffffff"/>
+  <path d="M312 166 L327.5 204 L365 220 L327.5 236 L312 274 L296.5 236 L259 220 L296.5 204 Z" fill="#ffffff"/>
+  <circle cx="312" cy="220" r="9.5" fill="#ffffff"/>
+</svg>

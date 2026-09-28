@@ -1,0 +1,133 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/* Shared by the real desktop UI and its interactive design preview. */
+.app-frame,
+.lumi-preview {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.sidebar,
+.rail {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: 56px;
+  flex-basis: 56px;
+  padding-left: 6px;
+  padding-right: 6px;
+  min-height: 0;
+  height: 100dvh;
+  border: 0;
+  background: transparent;
+}
+
+.workspace,
+.app-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 100dvh;
+  margin-left: 56px;
+  padding: 0;
+}
+
+.sidebar .nav-item,
+.brand-button {
+  width: 44px;
+}
+
+.sidebar .nav-item {
+  height: 44px;
+  flex-basis: 44px;
+}
+
+.brand-button {
+  height: 44px;
+}
+
+.brand-button img {
+  width: 32px;
+  height: 38px;
+}
+
+.rail-button.is-active::before {
+  left: -6px;
+}
+
+.rail-tooltip {
+  left: calc(100% + 6px);
+}
+
+/* macOS keeps native window controls while the webview fills the title-bar area. */
+.window-drag-region {
+  position: fixed;
+  top: 0;
+  left: 80px;
+  right: 0;
+  height: 28px;
+  z-index: 1;
+}
+
+.app-frame .sidebar {
+  padding-top: 40px;
+}
+
+.app-frame .desktop-content-inner {
+  padding-top: 40px;
+}
+
+.workspace-content,
+.main-content {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+  border: 0;
+  border-radius: 0;
+  background: var(--content-card);
+  box-shadow: none;
+}
+
+.desktop-content-inner {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 100%;
+  max-width: 1152px;
+  margin: 0 auto;
+  padding: 32px 40px 24px;
+}
+
+.lumi-preview .desktop-content-inner > :nth-last-child(2) {
+  margin-bottom: 24px;
+}
+
+.desktop-content-inner > .content-footer {
+  margin-top: auto;
+}
+
+@media (max-width: 1000px) {
+  .desktop-content-inner {
+    padding: 28px 28px 24px;
+  }
+}
+
+@media (max-width: 780px) {
+  .desktop-content-inner {
+    padding: 28px 24px 20px;
+  }
+}
+
+@media (max-width: 560px) {
+  .desktop-content-inner {
+    padding: 24px 16px 20px;
+  }
+}

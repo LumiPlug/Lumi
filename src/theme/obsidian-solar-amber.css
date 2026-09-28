@@ -1,0 +1,39 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/* Lumi brand tokens. Source: docs/DESIGN.md, Colors and Components sections.
+   The original tonal frontmatter is retained in that document. Component
+   values below follow the explicit implementation palette in its prose. */
+:root {
+  --lumi-canvas: #0e0e11;
+  --lumi-surface-1: #16161b;
+  --lumi-surface-2: #1c1c23;
+  --lumi-surface-3: #1e1e26;
+  --lumi-surface-4: #24242d;
+  --lumi-outline: #2c2c37;
+  --lumi-outline-strong: #373746;
+  --lumi-primary: #f59e0b;
+  --lumi-on-primary: #0e0e11;
+  --lumi-primary-hover: #fb923c;
+  --lumi-primary-active-fill: rgb(245 158 11 / 12%);
+  --lumi-primary-active-fill-strong: rgb(245 158 11 / 18%);
+  --lumi-operational: #10b981;
+  --lumi-protocol: #38bdf8;
+  --lumi-on-canvas: #f8fafc;
+  --lumi-on-surface-muted: #94a3b8;
+  --lumi-on-surface-disabled: #64748b;
+  --lumi-error: #ffb4ab;
+  --lumi-on-error: #690005;
+  --lumi-error-container: #93000a;
+  --lumi-on-error-container: #ffdad6;
+  --lumi-font-ui:
+    'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei',
+    sans-serif;
+  --lumi-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
+  --lumi-radius-micro: 2px;
+  --lumi-radius-control: 4px;
+  --lumi-radius-container: 8px;
+  --lumi-radius-window: 12px;
+  --lumi-transition: 120ms;
+  --lumi-shadow-card: 0 4px 16px -2px rgb(0 0 0 / 60%);
+  --lumi-shadow-modal: 0 24px 48px -8px rgb(0 0 0 / 85%), inset 0 0 1px 1px rgb(255 255 255 / 5%);
+}

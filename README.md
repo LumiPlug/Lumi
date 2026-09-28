@@ -30,6 +30,7 @@ pnpm tauri:build # 桌面应用打包
 - [项目文档索引](docs/README.md)
 - [技术架构](docs/TECHNICAL_ARCHITECTURE.md)
 - [贡献指南](CONTRIBUTING.md)
+- [GitHub 桌面打包与下载](docs/DESKTOP_BUILDS.md)
 
 ## 许可证
 

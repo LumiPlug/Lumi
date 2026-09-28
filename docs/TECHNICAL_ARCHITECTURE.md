@@ -197,6 +197,8 @@ AI 只能创建 draft/patch；Renderer 先预览，用户确认后应用。执�
 
 Node Core 必须按 target triple 生成 Sidecar，并由 Tauri bundle 配置一起打包。Playwright MCP 和浏览器进程按需启动，不作为长期常驻进程。
 
+当前 macOS ARM64/Intel 和 Windows x64 使用原生 GitHub runner，Core 与 stdio 代理通过 esbuild 和 Node 26 SEA 生成包含运行时的独立二进制。macOS 最低版本为 13.5，测试包使用 ad-hoc 签名；发布者签名、公证和 Linux 安装包仍待配置。详见 [桌面打包](DESKTOP_BUILDS.md)。
+
 ## 13. 性能原则
 
 - 关闭主窗口后销毁 WebView，保留托盘和 Core。

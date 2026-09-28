@@ -278,12 +278,13 @@ Gradle 编译、登记 APK、ADB 查询和安装；Logcat 长期运行；Workben
 
 - [ ] Terminal/HTTP/MCP Runner 的真实执行、Task Manager、日志 cursor、请求组装/裁剪、MCP Bridge 和 Browser（M4-M6）。Registry 可执行内置管理工具，能力 Runner 调用仍明确返回未实现错误。
 - [ ] Artifact、Workbench、Memory、Skills、AI Connections、场景 E2E 和三平台发布（M7-M10）。
-- [ ] 当前 sidecar staging 为本机开发用 Node launcher；自包含、签名且覆盖各 target triple 的 sidecar 由 M10 完成。
+- [x] macOS ARM64/Intel、Windows x64 的 GitHub 打包矩阵与独立 Core/stdio sidecar，验证阶段使用临时数据库和空 PATH。
+- [ ] 发布者证书、macOS 公证、Linux 安装包及完整发布流程仍属于 M10。
 
 ### 阻塞与验证边界
 
 - 当前没有阻塞 M0-M2 代码落地的事项。首次 pnpm 安装在沙箱内因 registry DNS 被阻断，随后在获准的联网环境中完成依赖安装；只批准了 `esbuild` 安装脚本。
-- Windows 自包含 sidecar launcher 和三平台安装包不是本次 M0-M2 的验收项，现有 staging 脚本会在 Windows 明确提示延后到 M10；三平台 CI 当前执行依赖安装、前端/Core 类型检查、lint、单测和 production build。
+- 三平台质量 CI 执行依赖安装、前端/Core 类型检查、lint、单测和 production build；另有 macOS ARM64/Intel 和 Windows x64 原生打包工作流，详见 [桌面打包](DESKTOP_BUILDS.md)。
 - 已完成 Tauri dev 启动、sidecar/Core handshake、loopback API，以及官方 v1／v2 MCP 客户端和 stdio 代理协议验证；真实 Runner 和完整三平台桌面 E2E 属于后续里程碑。
 
 ### 下一步（M4）

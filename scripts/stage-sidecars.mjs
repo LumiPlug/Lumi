@@ -15,9 +15,8 @@ if (!targetTriple) {
 }
 
 if (process.platform === 'win32') {
-  throw new Error(
-    'Windows self-contained sidecar staging is deferred to M10; frontend/Core builds remain available.',
-  )
+  await import('./build-sidecars.mjs')
+  process.exit(0)
 }
 
 const outputDirectory = path.join(projectRoot, 'src-tauri', 'binaries')

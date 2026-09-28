@@ -10,7 +10,10 @@
     "build": "pnpm build:frontend && pnpm build:core",
     "build:frontend": "vite build",
     "build:core": "pnpm --filter @lumiplug/shared build && pnpm --filter @lumiplug/core build && pnpm --filter @lumiplug/mcp-stdio-proxy build",
-    "build:sidecars": "pnpm build:core && node scripts/stage-sidecars.mjs",
+    "build:sidecars": "pnpm build:core && node scripts/build-sidecars.mjs",
+    "build:sidecars:dev": "pnpm build:core && node scripts/stage-sidecars.mjs",
+    "verify:sidecars": "node scripts/verify-sidecars.mjs",
+    "collect:desktop": "node scripts/collect-desktop-artifacts.mjs",
     "generate:icon": "node scripts/generate-icon.mjs",
     "typecheck": "pnpm --filter @lumiplug/shared build && pnpm --filter @lumiplug/core typecheck && pnpm --filter @lumiplug/mcp-stdio-proxy typecheck && tsc -p tsconfig.app.json --noEmit",
     "lint": "eslint . --max-warnings=0",
@@ -22,7 +25,7 @@
     "rust:clippy": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "pnpm build:sidecars && tauri build"
+    "tauri:build": "tauri build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.0",
@@ -39,6 +42,7 @@
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
     "@vitejs/plugin-react": "^5.0.2",
+    "esbuild": "0.28.2",
     "eslint": "^9.35.0",
     "prettier": "^3.6.2",
     "typescript": "^5.9.2",

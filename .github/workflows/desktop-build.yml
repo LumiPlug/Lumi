@@ -1,0 +1,113 @@
+# SPDX-License-Identifier: MPL-2.0
+
+name: Desktop Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Package (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS ARM64
+            runner: macos-15
+            target: aarch64-apple-darwin
+            node-arch: arm64
+            bundles: app,dmg
+          - name: macOS Intel
+            runner: macos-15-intel
+            target: x86_64-apple-darwin
+            node-arch: x64
+            bundles: app,dmg
+          - name: Windows x64
+            runner: windows-2022
+            target: x86_64-pc-windows-msvc
+            node-arch: x64
+            bundles: nsis,msi
+    defaults:
+      run:
+        shell: bash
+    env:
+      LUMI_TARGET_TRIPLE: ${{ matrix.target }}
+      CARGO_TERM_COLOR: always
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 11.19.0
+      - name: Install standalone Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 26.0.0
+          architecture: ${{ matrix.node-arch }}
+          cache: pnpm
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: src-tauri -> target
+          key: desktop-${{ matrix.target }}
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Verify source
+        run: |
+          pnpm typecheck
+          pnpm lint
+          pnpm test
+      - name: Build desktop installers and standalone sidecars
+        run: pnpm tauri:build --target "${{ matrix.target }}" --bundles "${{ matrix.bundles }}" --ci
+      - name: Verify standalone sidecars without Node on PATH
+        run: pnpm verify:sidecars
+      - name: Verify sidecars in the macOS application bundle
+        if: runner.os == 'macOS'
+        run: node scripts/verify-sidecars.mjs --directory "src-tauri/target/${{ matrix.target }}/release/bundle/macos/Lumi.app/Contents/MacOS"
+      - name: Extract Windows MSI and verify installed sidecars
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $msi = @(Get-ChildItem "src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi")
+          if ($msi.Count -ne 1) { throw "Expected one MSI installer" }
+          $destination = Join-Path $env:RUNNER_TEMP "lumi-msi-smoke"
+          $log = Join-Path $env:RUNNER_TEMP "lumi-msi-smoke.log"
+          $arguments = @("/a", "`"$($msi[0].FullName)`"", "/qn", "TARGETDIR=`"$destination`"", "/l*v", "`"$log`"")
+          $install = Start-Process msiexec.exe -ArgumentList $arguments -Wait -PassThru
+          if ($install.ExitCode -ne 0) {
+            Get-Content $log -Tail 80
+            throw "MSI extraction failed: $($install.ExitCode)"
+          }
+          $core = @(Get-ChildItem $destination -Recurse -Filter "lumi-core.exe")
+          if ($core.Count -ne 1) { throw "Expected one installed Core sidecar" }
+          node scripts/verify-sidecars.mjs --directory $core[0].DirectoryName
+          if ($LASTEXITCODE -ne 0) { throw "Installed sidecar verification failed" }
+      - name: Collect installers, licenses and checksums
+        run: pnpm collect:desktop
+      - name: Upload desktop distribution
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Lumi-${{ matrix.target }}
+          path: dist/artifacts/${{ matrix.target }}/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

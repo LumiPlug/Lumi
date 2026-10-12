@@ -42,6 +42,8 @@ Sidecar 按 Tauri 要求命名为 `<name>-<target-triple>`，Windows 增加 `.ex
 
 `pnpm verify:sidecars` 在空工作目录和空 PATH 下启动实际二进制，验证 SQLite 初始化、Core 就绪、HTTP MCP、stdio MCP 和工具调用，并比较两种入口的工具目录。构建步骤和打包后提取出的 sidecar 都需要通过该检查。
 
+安装包验证使用与 Core 相同的 MCP 2.x 客户端，并检查实际公开工具 `Lumi.get_context`，避免依赖已移除的旧 SDK 或旧工具名称。
+
 ## 本地打包
 
 准备 Node 26、pnpm、Rust 以及对应平台的 Tauri 系统依赖，然后运行：

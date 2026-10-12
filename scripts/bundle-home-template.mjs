@@ -6,7 +6,10 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const directory = path.join(root, 'templates/html-home')
 const files = {}
 function walk(current) {
-  for (const item of fs.readdirSync(current, { withFileTypes: true })) {
+  const items = fs.readdirSync(current, { withFileTypes: true }).sort((left, right) =>
+    left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
+  )
+  for (const item of items) {
     if (item.name.startsWith('.') || ['node_modules', 'dist', 'output'].includes(item.name))
       continue
     const filename = path.join(current, item.name)

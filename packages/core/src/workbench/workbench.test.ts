@@ -231,7 +231,10 @@ describe('official homepage project', () => {
     service.registry.enable(executable.id, 'ui')
     expect(
       await call('tools.call', { name: 'local.run', arguments: { command: 'echo test' } }),
-    ).toMatchObject({ ok: true, data: { stdout: 'test\n', exitCode: 0 } })
+    ).toMatchObject({
+      ok: true,
+      data: { stdout: process.platform === 'win32' ? 'test\r\n' : 'test\n', exitCode: 0 },
+    })
     service.workbench.publish(1, homeFixture('新页面'))
     expect(await call('context.get')).toMatchObject({
       ok: false,

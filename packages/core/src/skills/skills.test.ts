@@ -111,16 +111,19 @@ describe('Skills discovery', () => {
   })
 
   it('honors custom client homes and keeps project scans in standard subdirectories', () => {
-    const roots = skillRoots(['/project'], '/user', {
-      CODEX_HOME: '/custom-codex',
-      CLAUDE_CONFIG_DIR: '/custom-claude',
+    const project = path.resolve('/project')
+    const codex = path.resolve('/custom-codex')
+    const claude = path.resolve('/custom-claude')
+    const roots = skillRoots([project], path.resolve('/user'), {
+      CODEX_HOME: codex,
+      CLAUDE_CONFIG_DIR: claude,
     })
-    expect(roots.some((root) => root.path === '/custom-codex/skills')).toBe(true)
-    expect(roots.some((root) => root.path === '/custom-claude/skills')).toBe(true)
+    expect(roots.some((root) => root.path === path.join(codex, 'skills'))).toBe(true)
+    expect(roots.some((root) => root.path === path.join(claude, 'skills'))).toBe(true)
     expect(
       roots
         .filter((root) => root.scope === 'project')
-        .every((root) => root.path.startsWith('/project/.')),
+        .every((root) => path.relative(project, root.path).split(path.sep)[0]?.startsWith('.')),
     ).toBe(true)
   })
 })

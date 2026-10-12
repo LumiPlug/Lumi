@@ -10,9 +10,8 @@ import path from 'node:path'
 import { createInterface } from 'node:readline'
 import { setTimeout, clearTimeout } from 'node:timers'
 import { fileURLToPath, URL } from 'node:url'
-import { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio'
 import { SESSION_TOKEN_HEADER } from '../packages/shared/dist/index.js'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -106,9 +105,9 @@ try {
       )
       const httpTools = (await httpClient.listTools()).tools.map((tool) => tool.name).sort()
       const stdioTools = (await stdioClient.listTools()).tools.map((tool) => tool.name).sort()
-      assert.ok(httpTools.includes('lumi.get_context'))
+      assert.ok(httpTools.includes('Lumi.get_context'))
       assert.deepEqual(stdioTools, httpTools)
-      const result = await stdioClient.callTool({ name: 'lumi.get_context', arguments: {} })
+      const result = await stdioClient.callTool({ name: 'Lumi.get_context', arguments: {} })
       assert.notEqual(result.isError, true)
       assert.ok(result.content.length > 0)
       console.log(

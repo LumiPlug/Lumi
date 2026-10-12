@@ -32,6 +32,8 @@ macOS 最低版本为 13.5，与所包含的 Node 26 运行时一致。Windows �
 
 ## Sidecar
 
+官方首页模板生成会按文件名使用固定顺序，并统一换行符，避免 Windows 与 macOS 的目录排序或换行差异导致 CI 误判模板过期。
+
 `pnpm build:sidecars` 将 Core 和 stdio 代理及其 JavaScript 依赖打包，再用 Node 26 的 `--build-sea` 生成独立可执行文件。两个入口仍共用相同的业务实现和协议，不依赖用户的 Node 安装、全局包或开发目录。
 
 Sidecar 按 Tauri 要求命名为 `<name>-<target-triple>`，Windows 增加 `.exe`。原生构建时校验 Rust target 与 Node 的系统、架构一致，不使用跨架构的 Node 二进制冒充目标产物。

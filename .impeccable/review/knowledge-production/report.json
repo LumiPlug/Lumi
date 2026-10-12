@@ -1,0 +1,26 @@
+{
+  "backend": "real Core SQLite + official MCP client",
+  "nativeIPC": "browser transport bridge only",
+  "screenshots": true,
+  "canvasPixels": [
+    0,
+    0,
+    25198
+  ],
+  "errors": [],
+  "externalRequests": [],
+  "checks": [
+    "grid",
+    "graph pixels",
+    "keyboard relationship list",
+    "document",
+    "source evidence",
+    "Escape/focus return",
+    "search",
+    "archive readability",
+    "form validation/create",
+    "MCP source authorization",
+    "light/dark",
+    "1440/900/720/390 overflow"
+  ]
+}

@@ -2,8 +2,26 @@
 
 :root {
   color-scheme: dark;
+  --lumi-shadow-color: rgb(0 0 0 / 24%);
+  --lumi-shadow-heavy-color: rgb(0 0 0 / 60%);
+  /* ANSI terminal palette, shared by all terminal output surfaces. */
+  --lumi-terminal-0: #1c1c23;
+  --lumi-terminal-1: #ff7b72;
+  --lumi-terminal-2: #7ee787;
+  --lumi-terminal-3: #f2cc60;
+  --lumi-terminal-4: #79c0ff;
+  --lumi-terminal-5: #d2a8ff;
+  --lumi-terminal-6: #76e3ea;
+  --lumi-terminal-7: #c9d1d9;
+  --lumi-terminal-8: #8b949e;
+  --lumi-terminal-9: #ffa198;
+  --lumi-terminal-10: #a5f0b3;
+  --lumi-terminal-11: #ffdf8d;
+  --lumi-terminal-12: #a5d6ff;
+  --lumi-terminal-13: #e2c5ff;
+  --lumi-terminal-14: #a5f3f6;
+  --lumi-terminal-15: #ffffff;
   --bg: var(--lumi-surface-1);
-  --rail: var(--lumi-surface-1);
   --content-card: var(--lumi-canvas);
   --panel: var(--lumi-surface-3);
   --hover: var(--lumi-surface-4);
@@ -16,18 +34,68 @@
   --accent-bg: var(--lumi-primary-active-fill);
   --button: var(--lumi-primary);
   --button-text: var(--lumi-on-primary);
-  --danger: var(--lumi-error);
-  --shadow: var(--lumi-shadow-modal);
-  --content-card-shadow: 0 12px 36px rgb(0 0 0 / 35%), inset 0 1px 0 rgb(255 255 255 / 3%);
+  /* Runner identity; action colors retain their separate semantic roles. */
+  --lumi-tool-terminal-bg: #312a4c;
+  --lumi-tool-terminal-text: #c4b5fd;
+  --lumi-tool-http-bg: #213849;
+  --lumi-tool-http-text: #91c9f3;
+  --lumi-tool-mcp-bg: #203c3a;
+  --lumi-tool-mcp-text: #a0d8ce;
+  /* Platform identity tags; separate from service/status colors. */
+  --lumi-source-codex-bg: #312a4c;
+  --lumi-source-codex-text: #c4b5fd;
+  --lumi-source-claude-bg: #492f2a;
+  --lumi-source-claude-text: #f2b5a1;
+  --lumi-source-qoder-bg: #213849;
+  --lumi-source-qoder-text: #91c9f3;
+  --lumi-source-qoderwork-bg: #432c3c;
+  --lumi-source-qoderwork-text: #efb2d0;
+  --lumi-source-cursor-bg: #2a3d33;
+  --lumi-source-cursor-text: #b3d6c0;
+  --lumi-source-gemini-bg: #453923;
+  --lumi-source-gemini-text: #ead39a;
+  --lumi-source-openai-bg: #203c3a;
+  --lumi-source-openai-text: #a0d8ce;
+
   font-family: var(--lumi-font-ui);
   color: var(--text);
   background: var(--bg);
 }
 
-:root[data-theme='light'] {
+/* Theme thumbnails use the same palette regardless of the selected app theme. */
+[data-preview-theme='dark'] {
+  --bg: var(--lumi-surface-1);
+  --content-card: var(--lumi-canvas);
+  --input: var(--lumi-surface-2);
+  --line: var(--lumi-outline);
+  --text: var(--lumi-on-canvas);
+  --accent: var(--lumi-primary);
+  --accent-bg: var(--lumi-primary-active-fill);
+}
+
+:root[data-theme='light'],
+[data-preview-theme='light'] {
   color-scheme: light;
+  --lumi-shadow-color: rgb(38 38 41 / 12%);
+  --lumi-shadow-heavy-color: rgb(38 38 41 / 24%);
+  /* ANSI terminal palette, shared by all terminal output surfaces. */
+  --lumi-terminal-0: #24292f;
+  --lumi-terminal-1: #b42318;
+  --lumi-terminal-2: #116329;
+  --lumi-terminal-3: #7d4e00;
+  --lumi-terminal-4: #0550ae;
+  --lumi-terminal-5: #8250df;
+  --lumi-terminal-6: #0a6974;
+  --lumi-terminal-7: #57606a;
+  --lumi-terminal-8: #6e7781;
+  --lumi-terminal-9: #cf222e;
+  --lumi-terminal-10: #1a7f37;
+  --lumi-terminal-11: #9a6700;
+  --lumi-terminal-12: #0969da;
+  --lumi-terminal-13: #a475f9;
+  --lumi-terminal-14: #1b7c83;
+  --lumi-terminal-15: #ffffff;
   --bg: #f0f0ee;
-  --rail: #f0f0ee;
   --content-card: #fff;
   --panel: #f7f7f5;
   --hover: #eaeae6;
@@ -40,9 +108,30 @@
   --accent-bg: #f7ecd8;
   --button: #edb344;
   --button-text: #291b05;
-  --danger: #b32121;
-  --shadow: 0 24px 100px rgb(38 38 41 / 15%);
-  --content-card-shadow: 0 8px 28px rgb(38 38 41 / 8%), 0 1px 4px rgb(38 38 41 / 4%);
+  --lumi-tool-terminal-bg: #eee8ff;
+  --lumi-tool-terminal-text: #58418d;
+  --lumi-tool-http-bg: #e1effa;
+  --lumi-tool-http-text: #245e88;
+  --lumi-tool-mcp-bg: #e1f0ed;
+  --lumi-tool-mcp-text: #28665c;
+  /* Platform identity tags; separate from service/status colors. */
+  --lumi-source-codex-bg: #eee8ff;
+  --lumi-source-codex-text: #58418d;
+  --lumi-source-claude-bg: #fbe8e1;
+  --lumi-source-claude-text: #883f29;
+  --lumi-source-qoder-bg: #e1effa;
+  --lumi-source-qoder-text: #245e88;
+  --lumi-source-qoderwork-bg: #f7e5ee;
+  --lumi-source-qoderwork-text: #84375e;
+  --lumi-source-cursor-bg: #e5efe7;
+  --lumi-source-cursor-text: #3b6848;
+  --lumi-source-gemini-bg: #f7edda;
+  --lumi-source-gemini-text: #775815;
+  --lumi-source-openai-bg: #e1f0ed;
+  --lumi-source-openai-text: #28665c;
+
   --lumi-operational: #047857;
   --lumi-protocol: #075985;
+  --lumi-error: #b42318;
+  --lumi-primary-hover: #e2a631;
 }

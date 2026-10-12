@@ -11,9 +11,13 @@ import type { JSONRPCMessage } from '@modelcontextprotocol/client'
 import { StdioServerTransport } from '@modelcontextprotocol/server/stdio'
 import { LOOPBACK_HOST, SESSION_TOKEN_HEADER } from '@lumiplug/shared'
 
+import type { Readable, Writable } from 'node:stream'
+
+export const DEFAULT_REQUEST_TIMEOUT_MS = 310_000
 export interface ProxyConfig {
   coreUrl: string
   sessionToken: string
+  requestTimeoutMs: number
 }
 
 function argumentValue(args: string[], name: string): string | undefined {
@@ -44,13 +48,21 @@ export function parseConfig(
   ) {
     throw new Error('proxy_requires_loopback_url')
   }
-  return { coreUrl: url.origin, sessionToken }
+  const timeout =
+    argumentValue(args, '--request-timeout-ms') ?? environment.LUMIPLUG_REQUEST_TIMEOUT_MS
+  const requestTimeoutMs = timeout === undefined ? DEFAULT_REQUEST_TIMEOUT_MS : Number(timeout)
+  if (!Number.isInteger(requestTimeoutMs) || requestTimeoutMs < 100 || requestTimeoutMs > 3600000)
+    throw new Error('proxy_invalid_request_timeout')
+  return { coreUrl: url.origin, sessionToken, requestTimeoutMs }
 }
 
 /** Transparent transport bridge: Core alone owns initialization, tools and execution. */
-export async function startProxy(config: ProxyConfig): Promise<() => Promise<void>> {
-  const stdio = new StdioServerTransport(process.stdin, process.stdout, {
-    maxBufferSize: 64 * 1024,
+export async function startProxy(
+  config: ProxyConfig,
+  streams: { stdin: Readable; stdout: Writable; stderr: Writable } = process,
+): Promise<() => Promise<void>> {
+  const stdio = new StdioServerTransport(streams.stdin, streams.stdout, {
+    maxBufferSize: 24 * 1024 * 1024,
   })
   const http = new StreamableHTTPClientTransport(new URL(`${config.coreUrl}/mcp`), {
     requestInit: {
@@ -60,21 +72,22 @@ export async function startProxy(config: ProxyConfig): Promise<() => Promise<voi
   })
   let closed = false
   const controllers = new Set<AbortController>()
+  const requestControllers = new Map<string | number, AbortController>()
   const initializationIds = new Set<string | number>()
   const close = async (): Promise<void> => {
     if (closed) return
     closed = true
-    for (const controller of controllers) controller.abort()
+    for (const controller of controllers) controller.abort('cancelled')
     await Promise.allSettled([http.close(), stdio.close()])
   }
   stdio.onclose = () => {
     void close()
   }
   stdio.onerror = () => {
-    process.stderr.write('lumi-mcp: invalid stdio message\n')
+    streams.stderr.write('lumi-mcp: invalid stdio message\n')
   }
   http.onerror = () => {
-    process.stderr.write('lumi-mcp: Core transport error\n')
+    streams.stderr.write('lumi-mcp: Core transport error\n')
   }
   http.onmessage = (message: JSONRPCMessage) => {
     if (isJSONRPCResultResponse(message) && initializationIds.delete(message.id)) {
@@ -87,6 +100,11 @@ export async function startProxy(config: ProxyConfig): Promise<() => Promise<voi
   }
   stdio.onmessage = (message: JSONRPCMessage) => {
     if (closed) return
+    if ('method' in message && message.method === 'notifications/cancelled') {
+      const id = message.params?.requestId
+      if (typeof id === 'string' || typeof id === 'number')
+        requestControllers.get(id)?.abort('cancelled')
+    }
     if (controllers.size >= 128) {
       if (isJSONRPCRequest(message)) {
         void stdio
@@ -103,12 +121,13 @@ export async function startProxy(config: ProxyConfig): Promise<() => Promise<voi
       initializationIds.add(message.id)
     const controller = new AbortController()
     controllers.add(controller)
-    const timer = setTimeout(() => controller.abort(), 30_000)
+    if (isJSONRPCRequest(message)) requestControllers.set(message.id, controller)
+    const timer = setTimeout(() => controller.abort('timeout'), config.requestTimeoutMs)
     // Concurrent requests stay concurrent. Notifications never acquire synthetic IDs.
     void http
       .send(message, { requestSignal: controller.signal })
       .catch(async () => {
-        if (closed || !isJSONRPCRequest(message)) return
+        if (closed || controller.signal.reason === 'cancelled' || !isJSONRPCRequest(message)) return
         initializationIds.delete(message.id)
         await stdio
           .send({
@@ -117,7 +136,13 @@ export async function startProxy(config: ProxyConfig): Promise<() => Promise<voi
             error: {
               code: -32603,
               message:
-                'Lumi Core is unavailable. Check the running app and refresh its connection configuration.',
+                controller.signal.reason === 'timeout'
+                  ? 'Lumi MCP request timed out. Check task status before retrying; execution may have started.'
+                  : 'Lumi Core connection failed. Check the running app and its connection configuration.',
+              data: {
+                reason:
+                  controller.signal.reason === 'timeout' ? 'request_timeout' : 'connection_failed',
+              },
             },
           })
           .catch(() => close())
@@ -125,6 +150,8 @@ export async function startProxy(config: ProxyConfig): Promise<() => Promise<voi
       .finally(() => {
         clearTimeout(timer)
         controllers.delete(controller)
+        if (isJSONRPCRequest(message) && requestControllers.get(message.id) === controller)
+          requestControllers.delete(message.id)
       })
   }
   await http.start()

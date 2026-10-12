@@ -9,7 +9,7 @@ describe('stdio proxy connection configuration', () => {
   it('accepts the shared session token via environment and canonicalizes the loopback origin', () => {
     expect(
       parseConfig(['--core-url', 'http://127.0.0.1:34567/'], { LUMIPLUG_SESSION_TOKEN: token }),
-    ).toEqual({ coreUrl: 'http://127.0.0.1:34567', sessionToken: token })
+    ).toEqual({ coreUrl: 'http://127.0.0.1:34567', sessionToken: token, requestTimeoutMs: 310000 })
   })
 
   it.each([

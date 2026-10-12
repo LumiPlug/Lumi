@@ -7,15 +7,10 @@ export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue
 export type JsonObject = { [key: string]: JsonValue }
 
 export type JsonSchemaType =
-  | 'array'
-  | 'boolean'
-  | 'integer'
-  | 'null'
-  | 'number'
-  | 'object'
-  | 'string'
+  'array' | 'boolean' | 'integer' | 'null' | 'number' | 'object' | 'string'
 
 export interface JsonSchema {
+  default?: JsonValue
   $schema?: string
   $id?: string
   title?: string
@@ -35,11 +30,16 @@ export interface JsonSchema {
   maximum?: number
   minItems?: number
   maxItems?: number
+  uniqueItems?: boolean
   anyOf?: JsonSchema[]
   oneOf?: JsonSchema[]
   allOf?: JsonSchema[]
-}
-
-export function isJsonObject(value: JsonValue | unknown): value is JsonObject {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
+  dependentRequired?: Record<string, string[]>
+  dependentSchemas?: Record<string, JsonSchema>
+  if?: JsonSchema
+  then?: JsonSchema
+  else?: JsonSchema
+  not?: JsonSchema
+  minProperties?: number
+  maxProperties?: number
 }

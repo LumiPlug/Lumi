@@ -1,0 +1,1004 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+.tools-workspace {
+  overflow: hidden;
+}
+.tools-workspace .desktop-content-inner {
+  height: 100%;
+  min-height: 0;
+  max-width: none;
+}
+.tools-page {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 16px;
+}
+.tools-page[hidden] {
+  display: none;
+}
+.tools-overview {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  gap: 12px;
+}
+.tools-overview[hidden] {
+  display: none;
+}
+.tools-tab-count {
+  font-size: var(--lumi-text-label);
+  font-variant-numeric: tabular-nums;
+}
+.tools-toolbar-heading > .primary-button {
+  flex: none;
+}
+.tools-page ::selection {
+  background: var(--accent-bg);
+  color: var(--text);
+}
+
+.tools-page button:disabled {
+  opacity: 0.5;
+}
+
+.tools-refresh {
+  width: var(--lumi-control-height);
+  flex: 0 0 var(--lumi-control-height);
+  display: grid;
+  place-items: center;
+}
+.tools-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--lumi-shadow-scroll-gutter) max(2px, var(--lumi-shadow-scroll-gutter))
+    max(16px, var(--lumi-shadow-scroll-gutter));
+  /* Top compensation would let scrolling cards paint over the search controls. */
+  margin: 0 calc(var(--lumi-shadow-scroll-gutter) * -1) 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+.tools-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.tool-card {
+  min-width: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tools-card-open {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  border-radius: var(--lumi-radius-container);
+  background: transparent;
+}
+.tools-card-action {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  width: var(--lumi-control-height);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-color: transparent;
+}
+
+.tool-kind-tag {
+  flex: none;
+}
+.tools-dialog {
+  height: min(var(--lumi-form-dialog-height), calc(100dvh - 64px));
+  width: min(var(--lumi-form-dialog-width), calc(100vw - 48px));
+  max-height: calc(100dvh - 64px);
+  padding: 24px;
+}
+.tools-dialog .tools-detail {
+  padding: 0;
+  flex: 1;
+}
+.tools-close {
+  width: var(--lumi-control-height);
+  display: grid;
+  place-items: center;
+  flex: none;
+  padding: 0;
+}
+#tool-dialog-title {
+  outline: none;
+}
+.tool-http-address {
+  display: flex;
+  flex-direction: column;
+}
+.tools-row-title {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: var(--lumi-control-height);
+}
+.tools-row-title > .ui-badge {
+  flex: none;
+}
+.tools-card-identity {
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+}
+.tools-card-identity > span:last-child {
+  margin-inline-start: auto;
+  white-space: nowrap;
+}
+.tools-row-title strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--lumi-text-body);
+}
+.tools-row-title .runner-type {
+  flex: none;
+  font-size: var(--lumi-text-label);
+  letter-spacing: 0;
+}
+.tools-row-description {
+  margin: 0;
+  pointer-events: none;
+  min-height: calc(var(--lumi-leading-body) * 2);
+  overflow-wrap: anywhere;
+}
+.tools-detail {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  outline: 0;
+}
+.tools-subpage {
+  flex: 1;
+}
+.tools-detail-heading {
+  flex: 1;
+  min-width: 0;
+}
+.tools-detail-heading .tool-help {
+  margin: 4px 0 0;
+}
+.tools-detail-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+.tools-subpage .tools-detail-header {
+  flex-wrap: wrap;
+}
+#tool-detail-title {
+  outline: none;
+}
+.tools-detail-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  justify-content: space-between;
+  flex: none;
+}
+.tools-detail h2 {
+  margin: 0;
+  font-size: var(--lumi-text-section);
+  line-height: var(--lumi-leading-section);
+  overflow-wrap: anywhere;
+}
+.tools-detail h3 {
+  margin: 24px 0 12px;
+  font-size: var(--lumi-text-body);
+  line-height: var(--lumi-leading-body);
+}
+.tools-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--line);
+  margin-top: 12px;
+  padding-bottom: 12px;
+  flex: none;
+}
+.tools-detail-scroll {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  padding: 16px 12px 8px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+.tools-empty {
+  display: flex;
+  min-height: 180px;
+  justify-content: center;
+  flex-direction: column;
+  padding: 24px 16px;
+  color: var(--secondary);
+}
+.tools-empty strong {
+  color: var(--text);
+  font-size: var(--lumi-text-body);
+}
+.tools-empty p {
+  font-size: var(--lumi-text-help);
+  max-width: 42ch;
+}
+.tools-empty button {
+  align-self: flex-start;
+}
+.tool-field {
+  min-width: 0;
+  margin: 16px 0;
+  font-size: var(--lumi-text-help);
+}
+.tool-config-layout {
+  container: tool-config / inline-size;
+}
+.tool-field > span:first-child {
+  color: var(--text);
+  font-weight: 600;
+}
+.tool-field > label:first-child {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.tool-field code {
+  padding: 12px 0;
+  overflow-wrap: anywhere;
+}
+.tool-field small,
+.tool-help {
+  margin: 8px 0;
+  color: var(--secondary);
+  font-size: var(--lumi-text-help);
+  line-height: var(--lumi-leading-help);
+  overflow-wrap: anywhere;
+}
+.tool-field small {
+  margin: 0;
+}
+.tools-page pre {
+  max-width: 100%;
+  overflow: auto;
+  padding: 16px;
+  background: var(--input);
+  border-radius: var(--lumi-radius-control);
+  font: var(--lumi-text-help)/var(--lumi-leading-help) var(--lumi-font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tools-page .tool-code,
+.tools-page code {
+  font-family: var(--lumi-font-mono);
+  font-size: var(--lumi-text-help);
+}
+.tool-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.tools-savebar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--line);
+  margin-top: 24px;
+  flex-wrap: wrap;
+  flex: none;
+}
+.tools-service,
+.tools-conflict {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  color: var(--secondary);
+  font-size: var(--lumi-text-help);
+  flex-wrap: wrap;
+}
+.tools-kind-options {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tool-error {
+  color: var(--lumi-error);
+  font-size: var(--lumi-text-help);
+}
+
+.tools-history-row > span {
+  grid-column: 1 / -1;
+}
+.tools-history-row span,
+.tools-history-row time {
+  color: var(--secondary);
+  font-size: var(--lumi-text-help);
+}
+
+.tool-result {
+  border-top: 1px solid var(--line);
+  margin-top: 24px;
+  padding-bottom: 24px;
+}
+.tool-result-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.tool-task-id {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--secondary);
+}
+@media (max-width: 960px) {
+  .tools-detail-actions {
+    flex-basis: 100%;
+  }
+  .tools-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 780px) {
+  .tools-dialog {
+    height: min(var(--lumi-form-dialog-height), calc(100dvh - 48px));
+    padding: 16px;
+    width: calc(100vw - 32px);
+    max-height: calc(100dvh - 48px);
+  }
+}
+@media (max-width: 600px) {
+  .tools-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.tool-directory,
+.tool-control-row {
+  width: 100%;
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+.tool-directory input,
+.tool-control-row input {
+  width: 0;
+  flex: 1;
+}
+.tool-directory button,
+.tool-control-row button {
+  flex: none;
+}
+.tools-detail-scroll [hidden] {
+  display: none;
+}
+@container tool-config (max-width: 559px) {
+  .ui-field--inline {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+}
+@container tool-config (max-width: 439px) {
+  .tool-directory,
+  .tool-control-row {
+    flex-wrap: wrap;
+  }
+  .tool-directory input,
+  .tool-control-row input {
+    flex-basis: 100%;
+  }
+}
+
+.tools-kind-options .ui-choice-card {
+  flex: 1;
+}
+
+/* Run dialogs use the shared Modal header/body/footer, with one content scroller. */
+.tool-run-dialog {
+  flex: none;
+  gap: 0;
+  height: fit-content;
+}
+.tool-run-dialog--task {
+  height: min(var(--lumi-form-dialog-height), calc(100dvh - 48px));
+}
+.tool-run-body--task,
+.tool-run-dialog--task .tool-run,
+.tool-run-dialog--task .tool-result {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.tool-run,
+.tool-run form,
+.tool-run-adjustments {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.tool-run form {
+  gap: 24px;
+}
+.tool-run .tool-field {
+  margin: 0;
+}
+.tool-run-identity {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: none;
+}
+.tool-run-dialog :is(p, pre, h3),
+.tool-run-dialog .tool-help {
+  margin: 0;
+}
+.tool-run-dialog h3 {
+  font-size: var(--lumi-text-body);
+  line-height: var(--lumi-leading-body);
+}
+.tool-run-dialog .tool-result {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  gap: 16px;
+}
+.tool-result-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: none;
+}
+.tool-result-summary:focus {
+  outline: none;
+}
+.tool-result-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.tool-run-dialog .tool-result-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.tool-run-dialog .tool-result-content--stream {
+  overflow: hidden;
+}
+.tool-result-content > button {
+  align-self: flex-start;
+}
+.tool-run-dialog .tool-result-content > :not(.tool-run-log) {
+  flex: none;
+}
+.tool-run-dialog .tool-result-content--stream .tool-run-log {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.tool-run-dialog .tool-result-content:not(.tool-result-content--stream) pre {
+  overflow: visible;
+}
+.tool-run-dialog p.tool-run-text {
+  font-size: var(--lumi-text-body);
+  line-height: var(--lumi-leading-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tool-run-footer-leading {
+  margin-right: auto;
+}
+.tool-run-parameter-values {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 24px 0 0;
+}
+.tool-run-parameter-row {
+  display: grid;
+  grid-template-columns: var(--lumi-form-label-width) minmax(0, 1fr);
+  gap: 8px 16px;
+  align-items: baseline;
+}
+.tool-run-parameter-row dt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+.tool-run-parameter-row dd {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px 16px;
+  flex-wrap: wrap;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.tool-run-parameter-row dd > span:first-child {
+  min-width: 0;
+}
+.tool-run-parameter-row--complex dd {
+  display: block;
+}
+.tool-run-parameter-row--complex {
+  grid-template-columns: minmax(0, 1fr);
+}
+.tool-run-parameter-row--complex dt {
+  flex-direction: row;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+@media (max-width: 600px) {
+  .tool-run-dialog .ui-modal-heading,
+  .tool-run-dialog .ui-modal-actions {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .tool-run-dialog .ui-modal-body {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .tool-run-parameter-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .tool-run-parameter-row dt {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: baseline;
+  }
+}
+
+/* The outer Modal body is the only vertical scroller for a staged execution. */
+.tool-run-dialog--staged {
+  height: min(var(--lumi-form-dialog-height), calc(100dvh - 48px));
+}
+.tool-run-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0 16px;
+}
+.tool-run-title {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.tool-run-title p {
+  margin: 0;
+}
+.tool-run-secondary {
+  display: flex;
+  justify-content: flex-start;
+  flex: none;
+}
+.tool-run-output-navigation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: none;
+  flex-wrap: wrap;
+}
+.tool-run-output-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.tool-run-readable-result {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.tool-run-dialog--staged > .ui-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.tool-stage-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.tool-run-targets {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+}
+.tool-run-targets > div {
+  display: grid;
+  grid-template-columns: var(--lumi-form-label-width) minmax(0, 1fr);
+  gap: 8px 16px;
+}
+.tool-run-targets dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.tool-run-targets + .tool-run-parameter-form {
+  margin-top: 16px;
+}
+.tool-stage-process,
+.tool-run-parameter-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.tool-run-footer-status {
+  margin-right: auto !important;
+  flex: 1 1 200px;
+  align-self: center;
+}
+.tool-run-dialog--staged :is(.tool-result, .tool-result-content) {
+  flex: none;
+  min-height: auto;
+  overflow: visible;
+}
+.tool-run-dialog--staged .tool-result-content--stream .tool-run-log {
+  flex: none;
+  min-height: auto;
+  max-height: none;
+  overflow-y: visible;
+}
+.tool-run-dialog--staged .tool-result-heading h3 {
+  font-size: var(--lumi-text-body);
+}
+@media (max-width: 600px) {
+  .tool-run-targets > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.tool-result-copy {
+  margin-left: auto;
+}
+
+/* Run-window composition only; controls retain their shared styles. */
+.tool-run-window {
+  gap: 0;
+}
+.tool-run-node-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.tool-run-node-flow > .ui-stage {
+  flex: none;
+}
+.tool-run-node-flow > .ui-stage > .ui-stage-content {
+  padding: 4px 0 0;
+}
+.tool-run-node-flow .ui-field--inline:not(.tool-field) {
+  grid-template-columns:
+    minmax(var(--lumi-form-label-width), 1fr)
+    minmax(0, calc(var(--lumi-form-control-width) * 1.5));
+}
+@media (max-width: 600px) {
+  .tool-run-node-flow .ui-field--inline:not(.tool-field) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.tool-run-node-flow--executing > .ui-stage:first-child > .ui-stage-content {
+  max-height: var(--lumi-result-height);
+  overflow: auto;
+}
+.tool-run-node-flow--executing > .ui-stage:last-child,
+.tool-run-node-flow--executing > .ui-stage:last-child > .ui-stage-content:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.tool-run-node-flow--executing > .ui-stage:last-child > .ui-stage-content {
+  overflow: hidden;
+}
+.tool-run-window:has(.tool-run-node-flow--expanded) > .ui-modal-body,
+.tool-run-dialog--output:has(.tool-run-node-flow--expanded) > .ui-modal-body {
+  overflow-y: auto;
+}
+.tool-run-node-flow--expanded {
+  flex: none;
+}
+.tool-run-node-flow--expanded > .ui-stage:last-child > .ui-stage-content:not([hidden]) {
+  flex: none;
+  min-height: var(--lumi-log-height);
+}
+.tool-run-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.tool-run-output,
+.tool-run-viewport {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.tool-run-output,
+.tool-run-pane {
+  gap: 16px;
+}
+.tool-run-viewport--parameters {
+  overflow: auto;
+  gap: 16px;
+}
+.tool-run-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.tool-run-output p,
+.tool-run-pane p {
+  margin: 0;
+}
+.tool-run-pane[hidden],
+.tool-run-viewport[hidden] {
+  display: none;
+}
+.tool-run-output > .ui-choices,
+.tool-run-parameter-form > .ui-choices {
+  flex: none;
+}
+.tool-run-dialog--focused {
+  height: min(var(--lumi-form-dialog-height), calc(100dvh - 48px));
+}
+.tool-run-dialog--output > .ui-modal-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Fixed list region: shared controls keep their appearance; business owns layout only. */
+.tools-parameter-surface {
+  min-width: 0;
+}
+.tools-parameter-viewport {
+  height: calc(var(--lumi-control-height) * 8);
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+}
+.tools-parameter-table {
+  width: 100%;
+  min-width: calc(var(--lumi-form-control-width) * 2.5);
+  table-layout: fixed;
+  border-spacing: 8px;
+}
+.tools-parameter-table .tools-parameter-option {
+  width: calc(var(--lumi-control-height) * 3);
+}
+.tools-parameter-table .tools-parameter-required-column {
+  width: calc(var(--lumi-control-height) + 16px);
+}
+.tools-parameter-table .tools-parameter-action {
+  width: var(--lumi-control-height);
+}
+.tools-parameter-table :is(th, td) {
+  padding: 0;
+  text-align: left;
+  vertical-align: top;
+}
+
+.tools-parameter-table :is(.tools-parameter-visibility, .tools-parameter-centered) {
+  text-align: center;
+}
+.tools-parameter-centered > .ui-field-title {
+  justify-content: center;
+}
+
+.tools-parameter-visibility-controls {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--lumi-control-height);
+}
+.tools-parameter-visibility-controls > .tools-parameter-icon-slot {
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block-start: 0;
+}
+.tools-parameter-order {
+  width: var(--lumi-control-height);
+  touch-action: none;
+  user-select: none;
+}
+.tools-parameter-order:not(:disabled) {
+  cursor: grab;
+}
+.tools-parameter-order[aria-pressed='true'] {
+  cursor: grabbing;
+}
+
+.tools-parameter-icon-slot {
+  width: var(--lumi-control-height);
+  height: var(--lumi-control-height);
+  flex: none;
+}
+
+/* Manual runs omit row management, allowing all five columns in a standard window. */
+.tools-parameter-table--run {
+  min-width: calc(var(--lumi-form-control-width) * 2);
+}
+.tools-parameter-table--run td {
+  vertical-align: middle;
+  overflow-wrap: anywhere;
+}
+
+.tool-run-pane > .tool-field {
+  margin: 0;
+}
+
+/* One parameter per row; controls retain shared styling. */
+.tool-run-preparation {
+  container: run-preparation / inline-size;
+}
+.tool-run-preparation .tool-field.ui-field--inline {
+  grid-template-columns: var(--lumi-form-label-width) minmax(0, 1fr);
+}
+.tool-run-preparation .tool-field > .ui-field-control {
+  width: 100%;
+}
+.tools-run-advanced {
+  min-width: 0;
+  padding: 0 0 12px;
+}
+@container run-preparation (max-width: 559px) {
+  .tool-run-preparation .tool-field.ui-field--inline {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .tool-run-preparation .ui-field-control-row {
+    flex-wrap: wrap;
+  }
+  .tool-run-preparation .ui-field-control-row > :is(.ui-input, .ui-input-hint) {
+    width: 100%;
+    flex-basis: 100%;
+  }
+}
+.tools-run-parameter-viewport {
+  container: run-parameters / inline-size;
+  min-width: 0;
+}
+.tools-run-parameter-list {
+  display: grid;
+  gap: 12px;
+  padding: 12px 0;
+  min-width: 0;
+}
+.tools-run-parameter-row {
+  display: grid;
+  grid-template-columns: var(--lumi-form-label-width) max-content minmax(0, 1fr);
+  align-items: start;
+  gap: 8px 16px;
+  min-width: 0;
+}
+.tools-run-parameter-name {
+  display: flex;
+  min-height: var(--lumi-control-height);
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.tools-run-parameter-name > label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.tools-run-parameter-tags {
+  display: flex;
+  align-items: center;
+  min-height: var(--lumi-control-height);
+  gap: 4px;
+}
+.tools-run-parameter-value {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.tools-run-parameter-value > .ui-button {
+  justify-self: start;
+}
+@container run-parameters (max-width: 559px) {
+  .tools-run-parameter-row {
+    grid-template-columns: minmax(0, 1fr) max-content;
+  }
+  .tools-run-parameter-value {
+    grid-column: 1 / -1;
+  }
+}
+
+.tool-run-result-panels {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.tool-run-result-panels > .ui-output:not(.ui-output--fill) {
+  flex-shrink: 0;
+}
+
+.tool-run-result-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: none;
+  min-height: 0;
+}
+.tool-run-result-panel--fill {
+  flex: 1;
+}
+
+/* Only the inner output viewports scroll; focus must not scroll clipped stage ancestors. */
+.tool-run-window:has(.tool-run-node-flow--executing):not(:has(.tool-run-node-flow--expanded))
+  > .ui-modal-body,
+.tool-run-dialog--output:not(:has(.tool-run-node-flow--expanded)) > .ui-modal-body,
+.tool-run-node-flow--executing > .ui-stage:last-child > .ui-stage-content {
+  overflow: clip;
+}
+
+/* One semantic connection row; all control skins remain shared. */
+.tool-run-connection-controls {
+  display: grid;
+  grid-template-columns: var(--lumi-form-label-width) minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+.tool-run-connection-controls--mcp {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+.tool-run-connection-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.tool-run-connection-item > :is(.ui-input, .ui-input-hint) {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+}
+@container run-preparation (max-width:559px) {
+  .tool-run-connection-controls--mcp {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

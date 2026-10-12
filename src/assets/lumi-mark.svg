@@ -13,8 +13,6 @@
       <stop offset="40%" stop-color="#fbbf24"/>
       <stop offset="100%" stop-color="#ffffff"/>
     </linearGradient>
-
-
   </defs>
   <path d="M180 136 C180 122.745 190.745 112 204 112 C217.255 112 228 122.745 228 136 L228 282 C228 300.778 243.222 316 262 316 L332 316 C345.255 316 356 326.745 356 340 C356 353.255 345.255 364 332 364 L240 364 C206.863 364 180 337.137 180 304 Z" fill="url(#solarAmberGrad)"/>
   <path d="M312 166 L327.5 204 L365 220 L327.5 236 L312 274 L296.5 236 L259 220 L296.5 204 Z" fill="url(#sparkGradient)"/>

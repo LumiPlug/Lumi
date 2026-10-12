@@ -102,7 +102,17 @@ describe('Capability Registry', () => {
       .prepare('SELECT id, name FROM schema_migrations')
       .all() as unknown as Array<{ id: number; name: string }>
     expect(foreignKeys.foreign_keys).toBe(1)
-    expect(migration).toEqual([{ id: 1, name: 'capability_canonical_model' }])
+    expect(migration).toEqual([
+      { id: 1, name: 'capability_canonical_model' },
+      { id: 2, name: 'workbench_versions' },
+      { id: 3, name: 'skill_inventory' },
+      { id: 4, name: 'tool_tasks_and_upstream_names' },
+      { id: 5, name: 'tool_archives' },
+      { id: 6, name: 'knowledge_versions_and_builds' },
+      { id: 7, name: 'knowledge_source_metadata_only' },
+      { id: 8, name: 'knowledge_project_branch_groups' },
+      { id: 9, name: 'mcp_upstream_schema_provenance' },
+    ])
     database.close()
   })
 })

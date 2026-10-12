@@ -4,13 +4,6 @@ import { parseRuntimeConfig } from './config'
 import { isSea } from 'node:sea'
 import { CoreService, genericErrorPayload, writeReadyHandshake } from './service'
 
-export * from './capability/registry'
-export * from './capability/repository'
-export * from './config'
-export * from './db/database'
-export * from './db/migrations'
-export * from './service'
-
 async function main(): Promise<void> {
   let service: CoreService
   try {

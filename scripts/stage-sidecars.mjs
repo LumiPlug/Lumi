@@ -33,19 +33,14 @@ const launchers = [
   ['mcp-stdio-proxy', 'packages/mcp-stdio-proxy/dist/index.js'],
 ]
 
+const shellQuote = (value) => `'${value.replaceAll("'", "'\\''")}'`
+
 for (const [name, entry] of launchers) {
   const outputPath = path.join(outputDirectory, `${name}-${targetTriple}`)
   const launcher = `#!/bin/sh
 # SPDX-License-Identifier: MPL-2.0
 set -eu
-HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-for PROJECT_ROOT in "$HERE/../.." "$HERE/../../.." "$HERE/.."; do
-  if [ -f "$PROJECT_ROOT/${entry}" ]; then
-    exec node "$PROJECT_ROOT/${entry}" "$@"
-  fi
-done
-echo "${name}: bundled Node entry unavailable" >&2
-exit 1
+exec ${shellQuote(process.execPath)} ${shellQuote(path.join(projectRoot, entry))} "$@"
 `
   await writeFile(outputPath, launcher, 'utf8')
   await chmod(outputPath, 0o755)

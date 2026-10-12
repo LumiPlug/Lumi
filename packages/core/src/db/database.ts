@@ -13,7 +13,12 @@ export class CoreDatabase {
       fs.mkdirSync(path.dirname(filename), { recursive: true })
     }
     this.raw = new DatabaseSync(filename)
-    applyMigrations(this.raw)
+    try {
+      applyMigrations(this.raw)
+    } catch (error) {
+      this.raw.close()
+      throw error
+    }
   }
 
   public close(): void {

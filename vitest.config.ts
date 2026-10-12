@@ -4,6 +4,7 @@ import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
+  esbuild: { jsx: 'automatic' },
   resolve: {
     alias: {
       '@lumiplug/shared': fileURLToPath(new URL('./packages/shared/src', import.meta.url)),
@@ -11,7 +12,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['packages/**/*.test.ts', 'src/lib/**/*.test.ts'],
+    include: ['packages/**/*.test.ts', 'src/lib/**/*.test.{ts,tsx}'],
     reporters: ['default'],
   },
 })

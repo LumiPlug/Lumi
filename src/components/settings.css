@@ -1,0 +1,105 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+.settings-page {
+  container: settings / inline-size;
+}
+.settings-row {
+  display: grid;
+  grid-template-columns: minmax(var(--lumi-form-label-width), 1fr) auto;
+  align-items: center;
+  gap: 24px;
+  padding: 24px 0;
+  border-bottom: 1px solid var(--line);
+}
+.settings-row:last-child {
+  border-bottom: 0;
+}
+.settings-row h2 {
+  margin: 0;
+  font-size: var(--lumi-text-section-compact);
+  line-height: var(--lumi-leading-section-compact);
+  font-weight: 600;
+}
+.settings-row-controls {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.settings-service-note {
+  margin: 8px 0 0;
+  color: var(--secondary);
+  font-size: var(--lumi-text-help);
+  line-height: var(--lumi-leading-help);
+  max-width: 40ch;
+}
+.settings-core-values {
+  margin: 0;
+  text-align: right;
+}
+.settings-core-values dd {
+  margin: 0;
+}
+.settings-core-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--lumi-text-body);
+}
+.settings-core-status::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--secondary);
+}
+.settings-core-status[data-state='ready']::before {
+  background: var(--lumi-operational);
+}
+.settings-core-status[data-state='error']::before {
+  background: var(--lumi-error);
+}
+.settings-core-status[data-state='starting']::before,
+.settings-core-status[data-state='restarting']::before {
+  background: var(--accent);
+}
+.settings-core-version {
+  color: var(--secondary);
+  font-family: var(--lumi-font-mono);
+  font-size: var(--lumi-text-help);
+  line-height: var(--lumi-leading-help);
+}
+
+.settings-code-preview {
+  display: block;
+  width: 100%;
+  min-height: calc(var(--lumi-control-height) * 5);
+  font-family: var(--lumi-font-mono);
+}
+.settings-prompt-preview {
+  font-family: var(--lumi-font-ui);
+  line-height: var(--lumi-leading-body);
+}
+@container settings (max-width: 650px) {
+}
+@container settings (max-width: 479px) {
+  .settings-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+}
+
+.settings-button {
+  min-width: 112px;
+}
+
+.mcp-port-controls {
+  align-items: flex-start;
+}
+.mcp-port-field {
+  width: var(--lumi-form-label-width);
+}
+.mcp-port-controls > button {
+  margin-top: calc(var(--lumi-control-height) + 8px);
+}

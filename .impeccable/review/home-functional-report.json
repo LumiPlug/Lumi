@@ -1,0 +1,35 @@
+{
+  "platform": "macOS WKWebView (Tauri dev)",
+  "lumiVersion": "0.1.0",
+  "nativeImport": true,
+  "restoredAsVersion": 3,
+  "history": [
+    3,
+    2,
+    1
+  ],
+  "realDrafts": [
+    "native-qa"
+  ],
+  "exportedSourceRecovered": true,
+  "themeVerified": [
+    "dark",
+    "light"
+  ],
+  "viewports": [
+    {
+      "width": 1120,
+      "height": 820
+    },
+    {
+      "width": 720,
+      "height": 560
+    }
+  ],
+  "dynamicModule": true,
+  "staticImage": true,
+  "parentDomBlocked": true,
+  "credentialIpcBlocked": true,
+  "persistentName": "native-qa",
+  "otherPlatformsVerified": false
+}

@@ -13,6 +13,7 @@ const logo = readFileSync(path.join(root, 'src/assets/lumi-logo-transparent.svg'
 const flatLogo = logo
   .replace(/<filter\b[^>]*>[\s\S]*?<\/filter>/g, '')
   .replace(/ filter="url\(#[^)]+\)"/g, '')
+  .replace(/^[ \t]*\n/gm, '')
 writeFileSync(path.join(root, 'src/assets/lumi-mark.svg'), flatLogo)
 
 const mark = logo
@@ -43,9 +44,6 @@ const traySvg = logo
   .replace(/ filter="url\(#[^)]+\)"/g, '')
   .replace(/fill="[^"]+"/g, 'fill="#ffffff"')
 
-writeFileSync(path.join(icons, 'icon.svg'), appSvg)
-writeFileSync(path.join(icons, 'tray-icon.svg'), traySvg)
-
 function generate(input, output, sizes = []) {
   const result = spawnSync(
     process.execPath,
@@ -56,12 +54,23 @@ function generate(input, output, sizes = []) {
   if (result.status !== 0) throw new Error(`Icon generation failed (${result.status})`)
 }
 
-generate(path.join(icons, 'icon.svg'), icons)
-
-const temporary = mkdtempSync(path.join(tmpdir(), 'lumi-tray-icons-'))
+const temporary = mkdtempSync(path.join(tmpdir(), 'lumi-desktop-icons-'))
 try {
-  generate(path.join(icons, 'tray-icon.svg'), temporary, [22, 44])
-  copyFileSync(path.join(temporary, '44x44.png'), path.join(icons, 'tray-icon.png'))
+  const appSource = path.join(temporary, 'app.svg')
+  const traySource = path.join(temporary, 'tray.svg')
+  const appOutput = path.join(temporary, 'app')
+  const trayOutput = path.join(temporary, 'tray')
+  writeFileSync(appSource, appSvg)
+  writeFileSync(traySource, traySvg)
+  generate(appSource, appOutput)
+  const desktopIcons = JSON.parse(
+    readFileSync(path.join(root, 'src-tauri/tauri.conf.json'), 'utf8'),
+  ).bundle.icon
+  for (const icon of desktopIcons) {
+    copyFileSync(path.join(appOutput, path.basename(icon)), path.join(root, 'src-tauri', icon))
+  }
+  generate(traySource, trayOutput, [44])
+  copyFileSync(path.join(trayOutput, '44x44.png'), path.join(icons, 'tray-icon.png'))
 } finally {
   rmSync(temporary, { recursive: true, force: true })
 }

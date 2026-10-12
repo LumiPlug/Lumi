@@ -1,0 +1,39 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: MPL-2.0 -->
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>我的 Lumi 主页</title>
+    <link rel="stylesheet" href="./theme.css" />
+    <link rel="stylesheet" href="./style.css" />
+    <script defer src="./lumi-sdk.js"></script>
+    <script defer src="./app.js"></script>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>从这里开始开发你的主页</h1>
+        <p>自由修改 HTML、CSS 和 JavaScript，通过 Lumi SDK 使用宿主功能。</p>
+      </header>
+      <p id="connection-state" class="connection-state" role="status">正在连接 Lumi…</p>
+      <section aria-labelledby="tools-title">
+        <h2 id="tools-title">可用工具</h2>
+        <ul id="tools-list"></ul>
+      </section>
+      <section aria-labelledby="draft-title">
+        <h2 id="draft-title">试用功能调用</h2>
+        <p>创建一个 Terminal 能力草稿。草稿不会启用或执行。</p>
+        <form id="draft-form">
+          <label for="draft-name">草稿名称</label>
+          <div class="actions">
+            <input id="draft-name" name="draft-name" value="my-project" aria-describedby="name-help" />
+            <button id="create-draft" type="submit" disabled>创建草稿</button>
+          </div>
+          <p id="name-help" class="help">使用英文字母开头的标识符，例如 my-project。</p>
+        </form>
+      </section>
+    </main>
+    <div id="mock-feedback" class="mock-feedback" role="status"></div>
+  </body>
+</html>

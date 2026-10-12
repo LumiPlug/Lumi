@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 import type { JsonSchema, JsonValue } from './json'
+import { responseFilterSchema } from './response-filter'
 
 export const RUNNER_TYPES = ['terminal', 'http', 'mcp'] as const
 export type RunnerType = (typeof RUNNER_TYPES)[number]
@@ -28,6 +29,7 @@ export interface CapabilityField {
 
 export interface TerminalRunnerSettings {
   type: 'terminal'
+  command?: string
   cwd: string
   shell: string
   environment: Record<string, string>
@@ -39,6 +41,10 @@ export interface HttpRunnerSettings {
   method: 'DELETE' | 'GET' | 'PATCH' | 'POST' | 'PUT'
   timeoutMs: number
   fixedHeaders: Record<string, string>
+  responseMode?: 'json' | 'text'
+  bodyMode?: 'json' | 'form'
+  body?: JsonValue
+  responseFilter?: JsonValue
 }
 
 export interface McpRunnerSettings {
@@ -48,6 +54,8 @@ export interface McpRunnerSettings {
   args: string[]
   url: string | null
   environment: Record<string, string>
+  headers?: Record<string, string>
+  toolName?: string
 }
 
 export type RunnerSettings = TerminalRunnerSettings | HttpRunnerSettings | McpRunnerSettings
@@ -57,6 +65,13 @@ export interface CapabilityTool {
   description: string
   fields: CapabilityField[]
   outputSchema: JsonSchema
+  /** Actual upstream identifier, never derived by stripping a namespace. */
+  upstreamName?: string
+  upstreamSignature?: string
+  /** Canonical upstream constraints, retained internally and checked after merging private fields. */
+  upstreamInputSchema?: JsonSchema
+  /** Distinguishes an absent upstream schema from an explicit output allow-list. */
+  upstreamOutputSchemaMissing?: boolean
 }
 
 export interface CapabilityDefinition {
@@ -68,6 +83,7 @@ export interface CapabilityDefinition {
   source: CapabilitySource
   status: CapabilityStatus
   enabled: boolean
+  archived?: boolean
   runner: {
     type: RunnerType
     settings: RunnerSettings
@@ -93,6 +109,7 @@ export interface CapabilitySummary {
   runnerType: RunnerType
   status: CapabilityStatus
   enabled: boolean
+  archived?: boolean
   toolCount: number
   createdAt: string
   updatedAt: string
@@ -108,6 +125,7 @@ export interface CapabilityDraftBase {
 
 export interface TerminalCapabilityDraft extends CapabilityDraftBase {
   kind: 'terminal'
+  command?: string
   cwd?: string
   shell?: string
 }
@@ -169,8 +187,8 @@ export function validateCapabilityDefinition(definition: CapabilityDefinition): 
   if (!definition.id || typeof definition.id !== 'string') {
     issues.push(issue('id', 'id is required'))
   }
-  if (!SAFE_NAME.test(definition.name)) {
-    issues.push(issue('name', 'name must start with a letter and contain only safe characters'))
+  if (!definition.name.trim() || definition.name.length > 64 || /\p{Cc}/u.test(definition.name)) {
+    issues.push(issue('name', 'name must contain 1 to 64 printable characters'))
   }
   if (!SAFE_NAME.test(definition.namespace)) {
     issues.push(
@@ -193,6 +211,12 @@ export function validateCapabilityDefinition(definition: CapabilityDefinition): 
   }
   if (definition.enabled && definition.status !== 'ready') {
     issues.push(issue('enabled', 'only ready capabilities may be enabled'))
+  }
+  if (definition.archived !== undefined && typeof definition.archived !== 'boolean') {
+    issues.push(issue('archived', 'archived must be a boolean'))
+  }
+  if (definition.archived && definition.enabled) {
+    issues.push(issue('enabled', 'archived capabilities cannot be enabled'))
   }
   if (definition.status === 'draft' && definition.enabled) {
     issues.push(issue('status', 'draft capabilities cannot be enabled'))
@@ -251,12 +275,16 @@ function projectPublicSchema(schema: JsonSchema): JsonSchema {
     'type',
     'format',
     'pattern',
+    'default',
     'minLength',
     'maxLength',
     'minimum',
     'maximum',
     'minItems',
     'maxItems',
+    'minProperties',
+    'maxProperties',
+    'uniqueItems',
   ] as const
 
   for (const key of scalarKeys) {
@@ -300,6 +328,17 @@ function projectPublicSchema(schema: JsonSchema): JsonSchema {
     projected.allOf = schema.allOf.map(projectPublicSchema)
   }
 
+  if (schema.dependentRequired)
+    projected.dependentRequired = structuredClone(schema.dependentRequired)
+  if (schema.dependentSchemas)
+    projected.dependentSchemas = Object.fromEntries(
+      Object.entries(schema.dependentSchemas).map(([key, child]) => [
+        key,
+        projectPublicSchema(child),
+      ]),
+    )
+  for (const key of ['if', 'then', 'else', 'not'] as const)
+    if (schema[key]) projected[key] = projectPublicSchema(schema[key])
   return projected
 }
 
@@ -309,7 +348,8 @@ function projectPublicSchema(schema: JsonSchema): JsonSchema {
  * read while deriving the public view.
  */
 export function deriveAiToolView(
-  capability: Pick<CapabilityDefinition, 'namespace' | 'description'>,
+  capability: Pick<CapabilityDefinition, 'namespace' | 'description'> &
+    Partial<Pick<CapabilityDefinition, 'runner'>>,
   tool: CapabilityTool,
 ): AiToolView {
   const visibleFields = tool.fields.filter((field) => field.aiVisible)
@@ -324,6 +364,12 @@ export function deriveAiToolView(
   }
 
   const inputSchema: JsonSchema = {
+    // Keep root constraints only when every field is public; private schemas stay internal.
+    ...(visibleFields.length === tool.fields.length &&
+    visibleFields.every((field) => !field.binding || field.binding.key === field.key) &&
+    tool.upstreamInputSchema
+      ? projectPublicSchema(tool.upstreamInputSchema)
+      : {}),
     type: 'object',
     properties,
     additionalProperties: false,
@@ -336,7 +382,12 @@ export function deriveAiToolView(
     name: capability.namespace ? `${capability.namespace}.${tool.name}` : tool.name,
     description: tool.description || capability.description,
     inputSchema,
-    outputSchema: projectPublicSchema(tool.outputSchema),
+    outputSchema: projectPublicSchema(
+      capability.runner?.settings.type === 'http' &&
+        capability.runner.settings.responseFilter !== undefined
+        ? responseFilterSchema(capability.runner.settings.responseFilter)
+        : tool.outputSchema,
+    ),
   }
 }
 
@@ -385,6 +436,7 @@ export function createCapabilityDefinition(draft: CapabilityDraft): CapabilityDe
           type: 'terminal',
           settings: {
             type: 'terminal',
+            ...(draft.command !== undefined ? { command: draft.command } : {}),
             cwd: draft.cwd ?? '.',
             shell: draft.shell ?? 'auto',
             environment: {},
@@ -394,17 +446,29 @@ export function createCapabilityDefinition(draft: CapabilityDraft): CapabilityDe
           {
             name: 'run',
             description: base.description,
-            fields: [
-              {
-                key: 'command',
-                schema: { type: 'string', minLength: 1 },
-                required: true,
-                aiVisible: true,
-                value: null,
-                binding: { location: 'stdin', key: 'command' },
+            fields:
+              draft.command !== undefined
+                ? []
+                : [
+                    {
+                      key: 'command',
+                      schema: { type: 'string', minLength: 1 },
+                      required: true,
+                      aiVisible: true,
+                      value: null,
+                      binding: { location: 'stdin', key: 'command' },
+                    },
+                  ],
+            outputSchema: {
+              type: 'object',
+              properties: {
+                stdout: { type: 'string' },
+                stderr: { type: 'string' },
+                exitCode: { type: ['integer', 'null'] },
+                truncated: { type: 'boolean' },
               },
-            ],
-            outputSchema: emptyObjectSchema,
+              additionalProperties: false,
+            },
           },
         ],
       }
@@ -484,6 +548,7 @@ export function toCapabilitySummary(definition: CapabilityDefinition): Capabilit
     runnerType: definition.runner.type,
     status: definition.status,
     enabled: definition.enabled,
+    archived: definition.archived ?? false,
     toolCount: definition.tools.length,
     createdAt: definition.createdAt,
     updatedAt: definition.updatedAt,

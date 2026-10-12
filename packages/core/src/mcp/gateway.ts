@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node'
 import { ProtocolError, Server } from '@modelcontextprotocol/server'
@@ -10,18 +11,18 @@ import type { McpConnectionCheck } from '@lumiplug/shared'
 import { RegistryError } from '../capability/registry'
 import type { CapabilityRegistry } from '../capability/registry'
 
-const SAFE_ERRORS: Record<string, string> = {
-  invalid_tool_arguments: '参数不符合公开 Schema，请检查必填字段和参数类型，不要传入内部配置。',
-  reserved_tool_namespace: 'lumi 为内置工具保留的命名空间，请选择其他命名空间。',
-  capability_draft_invalid: '能力草稿未能保存，请检查名称和命名空间。',
-  public_tool_schema_invalid: '工具 Schema 不可用，请让用户检查能力配置。',
-  runner_execution_not_implemented_until_m4_m6: '当前版本尚未接入此工具的执行器，操作未执行。',
-}
+import { HOME_ERRORS } from '../workbench/errors'
+import { HOME_LIMITS } from '@lumiplug/shared'
+import { TOOL_ERRORS } from '@lumiplug/shared'
+import { ToolError } from '../tools/config'
 
 /** Stateless requests read the live Registry; no duplicated tool catalog or database. */
 export class McpGateway {
   private readonly activeServers = new Set<Server>()
+  private readonly activeCalls = new Map<string | number, Set<AbortController>>()
   private stopping = false
+  public readonly probeToken = randomUUID()
+  public lastExternalActivityAt: string | null = null
 
   public constructor(private readonly registry: CapabilityRegistry) {}
 
@@ -49,17 +50,24 @@ export class McpGateway {
       )
       return
     }
+    const recordExternalActivity = (): void => {
+      if (request.headers['x-lumi-connection-probe'] === this.probeToken) return
+      response.once('finish', () => {
+        if (response.statusCode === 200) this.lastExternalActivityAt = new Date().toISOString()
+      })
+    }
     const server = new Server(
       { name: 'Lumi', version: CORE_VERSION },
       {
         capabilities: { tools: { listChanged: false } },
         instructions:
-          '连接后先调用 lumi.get_context，确认实际可用功能。使用 lumi.list_capabilities 查看目录。能力变化后重新调用 tools/list。AI 仅能保存草稿，启用由 Lumi 用户完成。',
+          '连接后先调用 Lumi.get_context，确认实际可用功能。使用 Lumi.list_capabilities 查看目录。开发主页时读取 Lumi.get_workbench 的源码、开发模板与版本，构建后通过 Lumi.publish_workbench 保存。能力变化后重新调用 tools/list。AI 仅能保存能力草稿，启用由 Lumi 用户完成。',
       },
     )
     server.setRequestHandler('tools/list', async (request) => {
       if (request.params?.cursor !== undefined)
         throw new ProtocolError(-32602, 'This catalog has no pagination cursor.')
+      recordExternalActivity()
       return {
         tools: this.registry.listMcpTools().map((tool) => ({
           name: tool.name,
@@ -68,35 +76,82 @@ export class McpGateway {
           ...(tool.outputSchema.type === 'object'
             ? { outputSchema: tool.outputSchema as Tool['outputSchema'] }
             : {}),
-          ...(tool.name === 'lumi.get_context' || tool.name === 'lumi.list_capabilities'
+          ...([
+            'Lumi.get_context',
+            'Lumi.list_capabilities',
+            'Lumi.get_workbench',
+            'Lumi.get_workbench_template',
+            'Lumi.list_workbench_versions',
+          ].includes(tool.name)
             ? { annotations: { readOnlyHint: true, openWorldHint: false } }
-            : tool.name === 'lumi.create_capability_draft'
+            : ['Lumi.publish_workbench', 'Lumi.restore_workbench_version'].includes(tool.name)
               ? {
-                  annotations: {
-                    readOnlyHint: false,
-                    destructiveHint: false,
-                    openWorldHint: false,
-                  },
+                  annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
                 }
-              : {}),
+              : tool.name === 'Lumi.create_capability_draft'
+                ? {
+                    annotations: {
+                      readOnlyHint: false,
+                      destructiveHint: false,
+                      openWorldHint: false,
+                    },
+                  }
+                : {}),
         })),
       }
     })
-    server.setRequestHandler('tools/call', async (request) => {
+    server.setNotificationHandler('notifications/cancelled', (notification) => {
+      const requestId = notification.params.requestId
+      if (typeof requestId !== 'string' && typeof requestId !== 'number') return
+      const calls = this.activeCalls.get(requestId)
+      // Stateless clients may reuse the same ID. Never cancel an unrelated ambiguous call.
+      if (calls?.size === 1) calls.values().next().value!.abort('cancelled')
+    })
+    server.setRequestHandler('tools/call', async (request, context) => {
+      const controller = new AbortController()
+      const id = context.mcpReq.id
+      const calls = this.activeCalls.get(id) ?? new Set<AbortController>()
+      calls.add(controller)
+      this.activeCalls.set(id, calls)
       try {
         const result = await this.registry.invoke(
           request.params.name,
           request.params.arguments ?? {},
+          'ai',
+          AbortSignal.any([context.mcpReq.signal, controller.signal]),
         )
+        recordExternalActivity()
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result) }],
           structuredContent: result,
         }
       } catch (error) {
+        if (error instanceof RegistryError && error.code.startsWith('knowledge_')) {
+          const result = {
+            error: {
+              code: error.code,
+              retryable: [
+                'knowledge_scan_busy',
+                'knowledge_build_busy',
+                'knowledge_source_changed',
+                'knowledge_revision_conflict',
+                'knowledge_sequence_conflict',
+              ].includes(error.code),
+            },
+          }
+          return {
+            isError: true,
+            structuredContent: result,
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          }
+        }
         if (error instanceof RegistryError && error.code === 'ai_tool_not_found_or_disabled') {
           throw new ProtocolError(-32602, 'Tool is unavailable. Refresh tools/list.')
         }
-        const message = error instanceof RegistryError ? SAFE_ERRORS[error.code] : undefined
+        const message =
+          error instanceof RegistryError || error instanceof ToolError
+            ? (TOOL_ERRORS[error.code] ?? HOME_ERRORS[error.code])
+            : undefined
         return {
           isError: true,
           content: [
@@ -106,12 +161,15 @@ export class McpGateway {
             },
           ],
         }
+      } finally {
+        calls.delete(controller)
+        if (!calls.size && this.activeCalls.get(id) === calls) this.activeCalls.delete(id)
       }
     })
     const transport = new NodeStreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,
-      maxRequestBodySize: 64 * 1024,
+      maxRequestBodySize: HOME_LIMITS.requestBytes,
     })
     this.activeServers.add(server)
     const close = (): void => {
@@ -150,19 +208,27 @@ export class McpGateway {
 export async function checkMcpConnection(
   endpoint: URL,
   token: string,
+  probeToken?: string,
 ): Promise<McpConnectionCheck> {
   const client = new Client({ name: 'Lumi connection check', version: CORE_VERSION })
   const options = { signal: AbortSignal.timeout(1200), timeout: 1200 }
   try {
     await client.connect(
       new StreamableHTTPClientTransport(endpoint, {
-        requestInit: { headers: { [SESSION_TOKEN_HEADER]: token }, redirect: 'error' },
+        requestInit: {
+          headers: {
+            [SESSION_TOKEN_HEADER]: token,
+            ...(probeToken ? { 'x-lumi-connection-probe': probeToken } : {}),
+          },
+          redirect: 'error',
+        },
       }),
       options,
     )
     const tools = await client.listTools({}, options)
     return {
       ok: true,
+      lastExternalActivityAt: null,
       serverName: client.getServerVersion()?.name ?? null,
       serverVersion: client.getServerVersion()?.version ?? null,
       toolCount: tools.tools.length,
@@ -171,6 +237,7 @@ export async function checkMcpConnection(
   } catch {
     return {
       ok: false,
+      lastExternalActivityAt: null,
       serverName: null,
       serverVersion: null,
       toolCount: 0,

@@ -3,14 +3,14 @@
 import { randomUUID } from 'node:crypto'
 import os from 'node:os'
 import path from 'node:path'
-import { LOOPBACK_HOST, SESSION_TOKEN_ENV } from '@lumiplug/shared'
+import { DEFAULT_MCP_PORT, LOOPBACK_HOST, SESSION_TOKEN_ENV } from '@lumiplug/shared'
 
 export interface CoreRuntimeConfig {
   host: typeof LOOPBACK_HOST
   port: number
   sessionToken: string
+  hostToken?: string
   userDataDir: string
-  parentPid: number
 }
 
 function argumentValue(args: string[], name: string): string | undefined {
@@ -23,21 +23,13 @@ function argumentValue(args: string[], name: string): string | undefined {
 
 function positivePort(value: string | undefined): number {
   if (value === undefined || value === '') {
-    return 0
+    return DEFAULT_MCP_PORT
   }
   const port = Number(value)
   if (!Number.isInteger(port) || port < 0 || port > 65_535) {
     throw new Error('invalid_port')
   }
   return port
-}
-
-function positivePid(value: string | undefined): number {
-  const pid = Number(value ?? process.ppid)
-  if (!Number.isInteger(pid) || pid < 1) {
-    throw new Error('invalid_parent_pid')
-  }
-  return pid
 }
 
 /** Parse the narrow launch contract used by the Tauri supervisor. */
@@ -61,11 +53,20 @@ export function parseRuntimeConfig(
     environment.LUMIPLUG_USER_DATA_DIR ??
     path.join(os.tmpdir(), 'lumiplug')
 
+  const hostToken = environment.LUMIPLUG_HOST_TOKEN
+  if (
+    hostToken !== undefined &&
+    (hostToken.length < 32 || /[\r\n]/.test(hostToken) || hostToken === sessionToken)
+  )
+    throw new Error('invalid_host_token')
+  // Do not inherit the host credential into Terminal or upstream MCP subprocesses.
+  if (environment === process.env) delete process.env.LUMIPLUG_HOST_TOKEN
+
   return {
     host: LOOPBACK_HOST,
     port: positivePort(argumentValue(args, '--port') ?? environment.LUMIPLUG_CORE_PORT),
     sessionToken,
+    hostToken,
     userDataDir: path.resolve(userDataDir),
-    parentPid: positivePid(argumentValue(args, '--parent-pid') ?? environment.LUMIPLUG_PARENT_PID),
   }
 }

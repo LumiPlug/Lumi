@@ -1,39 +1,42 @@
 // SPDX-License-Identifier: MPL-2.0
 
-import { useCallback, useEffect, useState } from 'react'
-import type {
-  CapabilityDraftKind,
-  CapabilitySummary,
-  McpConnectionInfo,
-  UiCoreStatus,
-} from '@lumiplug/shared'
-import {
-  createCapabilityDraft,
-  disconnectedStatus,
-  getCoreStatus,
-  getMcpConnectionInfo,
-  listCapabilities,
-} from './lib/tauri'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import type { McpConnectionInfo, UiCoreStatus } from '@lumiplug/shared'
+import { disconnectedStatus, getCoreStatus, getMcpConnectionInfo } from './lib/tauri'
 import lumiMark from './assets/lumi-mark.svg'
 import WorkbenchPage from './components/WorkbenchPage'
-import McpConnectionCard from './components/McpConnectionCard'
+import { NavigationButton, SurfaceEffects } from './components/ui'
+import SettingsPage from './components/SettingsPage'
+import SkillsPage from './components/SkillsPage'
+import ToolsPage from './components/ToolsPage'
+import KnowledgePage from './components/KnowledgePage'
+import { BookOpen } from 'lucide-react'
+import { useTheme } from './lib/useTheme'
+import { listen } from '@tauri-apps/api/event'
+import { useToast } from './components/ToastProvider'
 
-type NavKey = 'workbench' | 'capabilities' | 'skills' | 'memory' | 'settings'
-type CapabilityFilter = 'all' | CapabilityDraftKind
+const UiComponentsPage = import.meta.env.DEV
+  ? lazy(() => import('./components/UiComponentsPage'))
+  : null
+
+type NavKey =
+  'workbench' | 'capabilities' | 'skills' | 'knowledge' | 'memory' | 'settings' | 'ui-components'
 type GlyphName =
-  'home' | 'capability' | 'layers' | 'memory' | 'settings' | 'plus' | 'terminal' | 'mcp'
+  | 'home'
+  | 'capability'
+  | 'layers'
+  | 'memory'
+  | 'settings'
+  | 'plus'
+  | 'terminal'
+  | 'mcp'
+  | 'knowledge'
 
 const navigation: Array<{ id: NavKey; label: string; icon: GlyphName }> = [
   { id: 'workbench', label: '工作台', icon: 'home' },
-  { id: 'capabilities', label: '能力', icon: 'capability' },
+  { id: 'capabilities', label: '工具', icon: 'capability' },
   { id: 'skills', label: 'Skills', icon: 'layers' },
-  { id: 'memory', label: 'Memory', icon: 'memory' },
-]
-
-const draftKinds: Array<{ kind: CapabilityDraftKind; label: string; icon: GlyphName }> = [
-  { kind: 'terminal', label: 'Terminal', icon: 'terminal' },
-  { kind: 'http', label: 'HTTP', icon: 'capability' },
-  { kind: 'mcp', label: 'MCP', icon: 'mcp' },
+  { id: 'knowledge', label: '知识库', icon: 'knowledge' },
 ]
 
 function Glyph({ name, size = 20 }: { name: GlyphName; size?: number }) {
@@ -47,6 +50,7 @@ function Glyph({ name, size = 20 }: { name: GlyphName; size?: number }) {
     plus: 'M12 5v14M5 12h14',
     terminal: 'm5 7 5 5-5 5m7 0h7',
     mcp: 'M4 8h16M4 16h16M8 4v16m8-16v16',
+    knowledge: '',
   }
   return (
     <svg
@@ -60,59 +64,11 @@ function Glyph({ name, size = 20 }: { name: GlyphName; size?: number }) {
       <path
         d={paths[name]}
         stroke="currentColor"
-        strokeWidth="1.7"
+        strokeWidth="1.8"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
     </svg>
-  )
-}
-
-function statusLabel(status: UiCoreStatus['state']): string {
-  switch (status) {
-    case 'ready':
-      return 'Core 已连接'
-    case 'starting':
-      return 'Core 启动中'
-    case 'restarting':
-      return 'Core 重启中'
-    case 'error':
-      return 'Core 连接异常'
-    case 'stopped':
-      return 'Core 已停止'
-    case 'disconnected':
-      return 'Core 未连接'
-  }
-}
-
-function capabilityStatusLabel(status: CapabilitySummary['status']): string {
-  switch (status) {
-    case 'draft':
-      return '草稿'
-    case 'ready':
-      return '已就绪'
-    case 'disabled':
-      return '已停用'
-  }
-}
-
-function PageHeader({
-  title,
-  description,
-  action,
-}: {
-  title: string
-  description?: string
-  action?: React.ReactNode
-}) {
-  return (
-    <header className="page-header">
-      <div>
-        <h1>{title}</h1>
-        {description && <p>{description}</p>}
-      </div>
-      {action}
-    </header>
   )
 }
 
@@ -134,295 +90,85 @@ function EmptyState({
   )
 }
 
-function CapabilityList({ capabilities }: { capabilities: CapabilitySummary[] }) {
-  return (
-    <div className="capability-list">
-      {capabilities.map((capability) => (
-        <article className="capability-row" key={capability.id}>
-          <span className={'capability-icon capability-icon-' + capability.runnerType}>
-            <Glyph
-              name={
-                capability.runnerType === 'terminal'
-                  ? 'terminal'
-                  : capability.runnerType === 'mcp'
-                    ? 'mcp'
-                    : 'capability'
-              }
-              size={19}
-            />
-          </span>
-          <div className="capability-main">
-            <strong>{capability.name}</strong>
-            {capability.description && <span>{capability.description}</span>}
-          </div>
-          <span className="runner-type">{capability.runnerType.toUpperCase()}</span>
-          <span className={'status-badge status-' + capability.status}>
-            {capabilityStatusLabel(capability.status)}
-          </span>
-        </article>
-      ))}
-    </div>
-  )
-}
-
-function CapabilitiesPage({
-  capabilities,
-  coreStatus,
-  draftName,
-  busyKind,
-  notice,
-  filter,
-  onDraftNameChange,
-  onFilterChange,
-  onCreate,
-}: {
-  capabilities: CapabilitySummary[]
-  coreStatus: UiCoreStatus
-  draftName: string
-  busyKind: CapabilityDraftKind | null
-  notice: string | null
-  filter: CapabilityFilter
-  onDraftNameChange: (value: string) => void
-  onFilterChange: (value: CapabilityFilter) => void
-  onCreate: (kind: CapabilityDraftKind) => void
-}) {
-  const visibleCapabilities =
-    filter === 'all' ? capabilities : capabilities.filter((item) => item.runnerType === filter)
-  return (
-    <>
-      <PageHeader title="能力" description="创建和管理 Terminal、HTTP 与 MCP 能力声明。" />
-      <section className="create-card" aria-labelledby="create-title">
-        <h2 id="create-title">新建草稿</h2>
-        <label className="field-label" htmlFor="draft-name">
-          能力名称
-        </label>
-        <div className="create-form">
-          <input
-            id="draft-name"
-            value={draftName}
-            onChange={(event) => onDraftNameChange(event.target.value)}
-            placeholder="例如：本地开发服务"
-            maxLength={64}
-          />
-          <div className="create-type-buttons">
-            {draftKinds.map((entry) => (
-              <button
-                type="button"
-                className="type-button"
-                key={entry.kind}
-                disabled={coreStatus.state !== 'ready' || busyKind !== null}
-                onClick={() => onCreate(entry.kind)}
-              >
-                <Glyph name={entry.icon} size={16} />
-                {busyKind === entry.kind ? '保存中…' : entry.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        {coreStatus.state !== 'ready' && <p className="form-hint">连接 Core 后可保存草稿。</p>}
-        {notice && (
-          <p className="notice" role="status">
-            {notice}
-          </p>
-        )}
-      </section>
-      <div className="section-heading list-heading">
-        <h2>
-          已保存的能力 <span>{capabilities.length}</span>
-        </h2>
-        {capabilities.length > 0 && (
-          <div className="filter-group" aria-label="按类型筛选">
-            {(['all', 'terminal', 'http', 'mcp'] as CapabilityFilter[]).map((item) => (
-              <button
-                type="button"
-                className={'filter-button ' + (filter === item ? 'filter-button-active' : '')}
-                key={item}
-                aria-pressed={filter === item}
-                onClick={() => onFilterChange(item)}
-              >
-                {item === 'all' ? '全部' : item.toUpperCase()}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-      {visibleCapabilities.length > 0 ? (
-        <CapabilityList capabilities={visibleCapabilities} />
-      ) : (
-        <EmptyState
-          title={capabilities.length ? '没有匹配的能力' : '还没有能力声明'}
-          description={
-            capabilities.length ? '切换类型查看其他能力。' : '在上方输入名称并选择能力类型。'
-          }
-        />
-      )}
-    </>
-  )
-}
-
 function PlannedPage({ title, description }: { title: string; description: string }) {
   return (
     <>
-      <PageHeader title={title} />
+      <h1 className="sr-only">{title}</h1>
       <EmptyState title="尚未接入" description={description} />
-    </>
-  )
-}
-
-type Theme = 'dark' | 'light'
-
-function SettingsPage({
-  coreStatus,
-  mcpConnection,
-  theme,
-  onThemeChange,
-}: {
-  coreStatus: UiCoreStatus
-  mcpConnection: McpConnectionInfo | null
-  theme: Theme
-  onThemeChange: (theme: Theme) => void
-}) {
-  return (
-    <>
-      <PageHeader title="设置" description="调整外观，管理 MCP 连接与本地服务。" />
-      <section className="settings-card appearance-card">
-        <h2>外观</h2>
-        <p>选择适合你的工作环境的主题。</p>
-        <div className="appearance-options" aria-label="主题">
-          {(['dark', 'light'] as const).map((option) => (
-            <button
-              type="button"
-              key={option}
-              className={
-                'appearance-option ' + (theme === option ? 'appearance-option-selected' : '')
-              }
-              aria-pressed={theme === option}
-              onClick={() => onThemeChange(option)}
-            >
-              <span className={'appearance-swatch appearance-swatch-' + option} aria-hidden="true">
-                <i />
-                <i />
-                <i />
-              </span>
-              <span>
-                {option === 'dark' ? '深色' : '浅色'}
-                {theme === option && <span className="appearance-selection">已选择</span>}
-              </span>
-            </button>
-          ))}
-        </div>
-      </section>
-      <McpConnectionCard connection={mcpConnection} />
-      <section className="settings-card">
-        <h2>Core</h2>
-        <dl>
-          <div>
-            <dt>连接状态</dt>
-            <dd>{statusLabel(coreStatus.state)}</dd>
-          </div>
-          <div>
-            <dt>版本</dt>
-            <dd>{coreStatus.coreVersion ?? '—'}</dd>
-          </div>
-          <div>
-            <dt>本地数据目录</dt>
-            <dd>{coreStatus.userDataPathAvailable ? '可用' : '不可用'}</dd>
-          </div>
-        </dl>
-      </section>
     </>
   )
 }
 
 export default function App() {
   const [activeNav, setActiveNav] = useState<NavKey>('workbench')
-  const [theme, setTheme] = useState<Theme>(() => {
-    try {
-      return localStorage.getItem('lumi.theme') === 'light' ? 'light' : 'dark'
-    } catch {
-      return 'dark'
-    }
-  })
+  const [theme, setTheme] = useTheme()
+  const showToast = useToast()
   const [coreStatus, setCoreStatus] = useState<UiCoreStatus>(disconnectedStatus)
+  const [coreStatusLoaded, setCoreStatusLoaded] = useState(false)
+  const mcpCredentialRevision = useRef(0)
   const [mcpConnection, setMcpConnection] = useState<McpConnectionInfo | null>(null)
-  const [capabilities, setCapabilities] = useState<CapabilitySummary[]>([])
-  const [draftName, setDraftName] = useState('')
-  const [busyKind, setBusyKind] = useState<CapabilityDraftKind | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
-  const [capabilityFilter, setCapabilityFilter] = useState<CapabilityFilter>('all')
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme
-    document
-      .querySelector('meta[name="theme-color"]')
-      ?.setAttribute('content', theme === 'dark' ? '#0e0e11' : '#f0f0ee')
-    try {
-      localStorage.setItem('lumi.theme', theme)
-    } catch {
-      /* Theme remains usable when storage is unavailable. */
-    }
-  }, [theme])
-
-  const refresh = useCallback(async () => {
-    const [nextStatus, nextCapabilities, nextMcpConnection] = await Promise.all([
-      getCoreStatus(),
-      listCapabilities(),
-      getMcpConnectionInfo(),
-    ])
-    setCoreStatus(nextStatus)
-    setCapabilities(nextCapabilities)
-    setMcpConnection(nextMcpConnection)
+  const leaveTools = useRef<(leave: () => void) => void>((leave) => leave())
+  const registerLeave = useCallback((guard: (leave: () => void) => void) => {
+    leaveTools.current = guard
   }, [])
+  const navigate = (next: NavKey) => {
+    if (activeNav === 'capabilities' && next !== activeNav)
+      leaveTools.current(() => setActiveNav(next))
+    else setActiveNav(next)
+  }
 
   useEffect(() => {
-    void refresh()
-    const timer = window.setInterval(() => void refresh(), 2_000)
-    return () => window.clearInterval(timer)
-  }, [refresh])
-
-  function showNotice(message: string): void {
-    setNotice(message)
-    window.setTimeout(() => setNotice(null), 4_000)
-  }
-
-  async function handleCreate(kind: CapabilityDraftKind): Promise<void> {
-    const name = draftName.trim()
-    if (!name) {
-      showNotice('请先填写能力名称')
-      return
+    let cancelled = false
+    let unlisten: (() => void) | undefined
+    void listen<string>('tool-run-window-feedback', ({ payload }) => showToast(payload, 'success'))
+      .then((dispose) => {
+        if (cancelled) dispose()
+        else unlisten = dispose
+      })
+      .catch(() => {
+        /* Browser previews have no native window events. */
+      })
+    return () => {
+      cancelled = true
+      unlisten?.()
     }
-    setBusyKind(kind)
-    setNotice(null)
-    try {
-      const created = await createCapabilityDraft(kind, name)
-      setCapabilities((current) => [created, ...current.filter((item) => item.id !== created.id)])
-      setDraftName('')
-      showNotice(created.name + ' 已保存为草稿')
-    } catch {
-      showNotice('保存失败，请检查名称或 Core 连接状态')
-    } finally {
-      setBusyKind(null)
+  }, [showToast])
+
+  useEffect(() => {
+    // Read startup readiness promptly; settle into normal polling once Core is ready.
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout>
+    const poll = async () => {
+      const credentialRevision = mcpCredentialRevision.current
+      const [nextStatus, nextMcpConnection] = await Promise.all([
+        getCoreStatus(),
+        getMcpConnectionInfo(),
+      ])
+      if (cancelled) return
+      setCoreStatus(nextStatus)
+      setCoreStatusLoaded(true)
+      if (credentialRevision === mcpCredentialRevision.current) setMcpConnection(nextMcpConnection)
+      timer = setTimeout(
+        () => void poll(),
+        ['starting', 'restarting', 'disconnected'].includes(nextStatus.state) ? 250 : 2_000,
+      )
     }
-  }
+    void poll()
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [])
 
   function navButton(item: { id: NavKey; label: string; icon: GlyphName }) {
     return (
-      <button
-        type="button"
-        className={'nav-item ' + (activeNav === item.id ? 'nav-item-active' : '')}
+      <NavigationButton
         key={item.id}
-        aria-label={item.label}
-        aria-current={activeNav === item.id ? 'page' : undefined}
-        onClick={() => {
-          setActiveNav(item.id)
-          setNotice(null)
-        }}
-      >
-        <Glyph name={item.icon} />
-        <span className="nav-tooltip" aria-hidden="true">
-          {item.label}
-        </span>
-      </button>
+        label={item.label}
+        icon={item.icon === 'knowledge' ? <BookOpen size={20} /> : <Glyph name={item.icon} />}
+        current={activeNav === item.id || (item.id === 'settings' && activeNav === 'ui-components')}
+        onClick={() => navigate(item.id)}
+      />
     )
   }
 
@@ -434,7 +180,7 @@ export default function App() {
       </a>
       <aside className="sidebar" aria-label="Lumi 导航">
         <div className="sidebar-brand" title="Lumi">
-          <img src={lumiMark} alt="Lumi" />
+          <img src={lumiMark} alt="Lumi" width={34} height={34} />
         </div>
         <nav className="main-nav" aria-label="主导航">
           {navigation.map(navButton)}
@@ -444,36 +190,68 @@ export default function App() {
         </nav>
       </aside>
       <section className="workspace">
-        <div className="workspace-content" id="main-content">
+        <div
+          className={`workspace-content${activeNav === 'skills' ? ' skills-workspace' : activeNav === 'capabilities' ? ' tools-workspace' : activeNav === 'knowledge' ? ' knowledge-workspace' : ''}`}
+          id="main-content"
+        >
           <div className="desktop-content-inner">
-            {activeNav === 'workbench' && <WorkbenchPage connection={mcpConnection} />}
-            {activeNav === 'capabilities' && (
-              <CapabilitiesPage
-                capabilities={capabilities}
-                coreStatus={coreStatus}
-                draftName={draftName}
-                busyKind={busyKind}
-                notice={notice}
-                filter={capabilityFilter}
-                onDraftNameChange={setDraftName}
-                onFilterChange={setCapabilityFilter}
-                onCreate={(kind) => void handleCreate(kind)}
+            <WorkbenchPage
+              connection={mcpConnection}
+              coreStatus={coreStatus}
+              coreStatusLoaded={coreStatusLoaded}
+              openSettings={() => navigate('settings')}
+              active={activeNav === 'workbench'}
+            />
+            <SurfaceEffects depth="heavy" className="app-ui-surfaces">
+              <ToolsPage
+                active={activeNav === 'capabilities'}
+                coreReady={coreStatus.state === 'ready'}
+                registerLeave={registerLeave}
+                openSettings={() => navigate('settings')}
               />
-            )}
-            {activeNav === 'skills' && (
-              <PlannedPage title="Skills" description="Skill 导入与同步功能正在开发中。" />
-            )}
-            {activeNav === 'memory' && (
-              <PlannedPage title="Memory" description="个人和项目经验功能正在开发中。" />
-            )}
-            {activeNav === 'settings' && (
-              <SettingsPage
-                coreStatus={coreStatus}
-                mcpConnection={mcpConnection}
-                theme={theme}
-                onThemeChange={setTheme}
+              <SkillsPage
+                active={activeNav === 'skills'}
+                coreReady={coreStatus.state === 'ready'}
               />
-            )}
+              <KnowledgePage
+                active={activeNav === 'knowledge'}
+                coreStatus={coreStatus}
+                coreStatusLoaded={coreStatusLoaded}
+                openSettings={() => navigate('settings')}
+              />
+              {activeNav === 'memory' && (
+                <PlannedPage title="Memory" description="个人和项目经验功能正在开发中。" />
+              )}
+              {activeNav === 'settings' && (
+                <SettingsPage
+                  coreStatus={coreStatus}
+                  mcpConnection={mcpConnection}
+                  onMcpConnectionChange={(next) => {
+                    mcpCredentialRevision.current += 1
+                    setMcpConnection(next)
+                  }}
+                  theme={theme}
+                  onThemeChange={setTheme}
+                  openComponents={() => navigate('ui-components')}
+                />
+              )}
+              {import.meta.env.DEV && activeNav === 'ui-components' && UiComponentsPage && (
+                <Suspense fallback={<p role="status">加载组件…</p>}>
+                  <UiComponentsPage
+                    theme={theme}
+                    onThemeChange={setTheme}
+                    back={() => {
+                      navigate('settings')
+                      requestAnimationFrame(() =>
+                        document
+                          .getElementById('ui-components-entry')
+                          ?.focus({ preventScroll: true }),
+                      )
+                    }}
+                  />
+                </Suspense>
+              )}
+            </SurfaceEffects>
           </div>
         </div>
       </section>

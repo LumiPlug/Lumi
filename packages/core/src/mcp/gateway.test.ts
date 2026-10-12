@@ -7,11 +7,9 @@ import { request as httpRequest } from 'node:http'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
-import { Client as LegacyClient } from '@modelcontextprotocol/sdk/client/index.js'
-import { StreamableHTTPClientTransport as LegacyHttp } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { createCapabilityDefinition, SESSION_TOKEN_HEADER } from '@lumiplug/shared'
+import { createCapabilityDefinition, SESSION_TOKEN_HEADER, KNOWLEDGE_TOOLS } from '@lumiplug/shared'
 import type { CapabilityDefinition } from '@lumiplug/shared'
 import { CoreService } from '../service'
 
@@ -35,7 +33,7 @@ function fixture(namespace = 'example'): CapabilityDefinition {
       type: 'terminal',
       settings: {
         type: 'terminal',
-        cwd: `/private/${canary}`,
+        cwd: dataDir,
         shell: 'auto',
         environment: { internal_env: canary },
       },
@@ -59,11 +57,13 @@ function fixture(namespace = 'example'): CapabilityDefinition {
   }
 }
 
-async function connectLegacy(): Promise<LegacyClient> {
-  const client = new LegacyClient({ name: 'test-client-v1', version: '1.0.0' })
+async function connectClient(): Promise<Client> {
+  const client = new Client({ name: 'test-client', version: '1.0.0' })
   clients.push(client)
   await client.connect(
-    new LegacyHttp(endpoint, { requestInit: { headers: { [SESSION_TOKEN_HEADER]: mcpToken } } }),
+    new StreamableHTTPClientTransport(endpoint, {
+      requestInit: { headers: { [SESSION_TOKEN_HEADER]: mcpToken } },
+    }),
   )
   return client
 }
@@ -90,10 +90,9 @@ beforeEach(async () => {
     port: 0,
     sessionToken: mcpToken,
     userDataDir: dataDir,
-    parentPid: process.ppid,
   })
   const handshake = await service.start()
-  expect(handshake.mcpAvailable).toBe(true)
+  expect(handshake.kind).toBe('sidecar.ready')
   endpoint = new URL(`http://127.0.0.1:${service.port}/mcp`)
 })
 
@@ -104,46 +103,72 @@ afterEach(async () => {
 })
 
 describe('Lumi unified MCP gateway', () => {
-  it('supports official v1 and v2 clients and real built-in calls', async () => {
-    const legacy = await connectLegacy()
-    expect(legacy.getServerVersion()?.name).toBe('Lumi')
-    expect(legacy.getServerCapabilities()?.tools?.listChanged).toBe(false)
-    const tools = await legacy.listTools()
-    expect(tools.tools.map((tool) => tool.name)).toEqual([
-      'lumi.create_capability_draft',
-      'lumi.get_context',
-      'lumi.list_capabilities',
-    ])
-    const context = await legacy.callTool({ name: 'lumi.get_context', arguments: {} })
+  it('supports the official client and real built-in calls', async () => {
+    const client = await connectClient()
+    expect(client.getServerVersion()?.name).toBe('Lumi')
+    expect(client.getServerCapabilities()?.tools?.listChanged).toBe(false)
+    const tools = await client.listTools()
+    expect(tools.tools.map((tool) => tool.name)).toEqual(
+      [
+        'Lumi.create_capability_draft',
+        'Lumi.export_workbench_project',
+        'Lumi.get_context',
+        'Lumi.get_task',
+        'Lumi.get_workbench',
+        'Lumi.get_workbench_template',
+        'Lumi.list_capabilities',
+        'Lumi.list_tasks',
+        'Lumi.list_workbench_versions',
+        'Lumi.publish_workbench',
+        'Lumi.restart_task',
+        'Lumi.restore_workbench_version',
+        'Lumi.stop_task',
+        ...KNOWLEDGE_TOOLS.map((tool) => tool.name),
+      ].sort(),
+    )
+    const context = await client.callTool({ name: 'Lumi.get_context', arguments: {} })
     expect(context.structuredContent).toMatchObject({
       name: 'Lumi',
-      features: { capabilityDrafts: true, runnerExecution: false, workbenchEditing: false },
+      features: { capabilityDrafts: true, runnerExecution: true, workbenchEditing: true },
     })
     expectPrivateFieldsAbsent(context)
     const check = await fetch(new URL('/app/mcp/check', endpoint), {
       headers: { [SESSION_TOKEN_HEADER]: mcpToken },
     })
     expect(await check.json()).toMatchObject({
-      data: { ok: true, serverName: 'Lumi', toolCount: 3, error: null },
+      data: { ok: true, serverName: 'Lumi', toolCount: 13 + KNOWLEDGE_TOOLS.length, error: null },
     })
 
-    const modern = new Client({ name: 'test-client-v2', version: '1.0.0' })
-    clients.push(modern)
-    await modern.connect(
-      new StreamableHTTPClientTransport(endpoint, {
-        requestInit: { headers: { [SESSION_TOKEN_HEADER]: mcpToken } },
-      }),
-    )
-    expect((await modern.listTools()).tools).toEqual(tools.tools)
     expect(
-      (await modern.callTool({ name: 'lumi.list_capabilities', arguments: {} })).structuredContent,
+      (await client.callTool({ name: 'Lumi.list_capabilities', arguments: {} })).structuredContent,
     ).toEqual({ capabilities: [] })
+    await expect(client.callTool({ name: 'lumi.get_context', arguments: {} })).rejects.toThrow(
+      'Tool is unavailable',
+    )
+  })
+
+  it('does not count self-checks as external access, but records real tool discovery', async () => {
+    const check = async () =>
+      (
+        await (
+          await fetch(new URL('/app/mcp/check', endpoint), {
+            headers: { [SESSION_TOKEN_HEADER]: mcpToken },
+          })
+        ).json()
+      ).data
+    expect(await check()).toMatchObject({ ok: true, lastExternalActivityAt: null })
+    const client = await connectClient()
+    expect(await check()).toMatchObject({ lastExternalActivityAt: null })
+    await expect(client.listTools({ cursor: 'invalid' })).rejects.toThrow()
+    expect(await check()).toMatchObject({ lastExternalActivityAt: null })
+    await client.listTools()
+    expect(await check()).toMatchObject({ ok: true, lastExternalActivityAt: expect.any(String) })
   })
 
   it('creates persistent AI drafts without exposing or enabling them', async () => {
-    const client = await connectLegacy()
+    const client = await connectClient()
     const result = await client.callTool({
-      name: 'lumi.create_capability_draft',
+      name: 'Lumi.create_capability_draft',
       arguments: {
         kind: 'http',
         name: 'new-api',
@@ -159,7 +184,7 @@ describe('Lumi unified MCP gateway', () => {
     expect(draft.source).toBe('ai')
     expect(draft.runner.type).toBe('http')
     expect(draft.enabled).toBe(false)
-    const list = await client.callTool({ name: 'lumi.list_capabilities', arguments: {} })
+    const list = await client.callTool({ name: 'Lumi.list_capabilities', arguments: {} })
     expect(list.structuredContent).toMatchObject({
       capabilities: [{ id: draft.id, enabled: false }],
     })
@@ -170,8 +195,32 @@ describe('Lumi unified MCP gateway', () => {
     expectPrivateFieldsAbsent(list)
   })
 
+  it('persists fixed Terminal commands through MCP without running or enabling them', async () => {
+    const client = await connectClient()
+    const marker = path.join(dataDir, 'must-not-exist')
+    const command = `touch '${marker}'`
+    const result = await client.callTool({
+      name: 'Lumi.create_capability_draft',
+      arguments: { kind: 'terminal', name: 'restartLumi', namespace: 'desktop', command },
+    })
+    expect(result.isError).not.toBe(true)
+    const draft = service.repository.listAll()[0]!
+    expect(draft.runner.settings).toMatchObject({ type: 'terminal', command, cwd: '' })
+    expect(draft.tools[0]!.fields).toEqual([])
+    expect(draft).toMatchObject({ source: 'ai', enabled: false, status: 'draft' })
+    expect(fs.existsSync(marker)).toBe(false)
+    expect(JSON.stringify(result)).not.toContain(command)
+    expect((await client.listTools()).tools.some((t) => t.name === 'desktop.run')).toBe(false)
+    const invalid = await client.callTool({
+      name: 'Lumi.create_capability_draft',
+      arguments: { kind: 'http', name: 'wrongKind', command },
+    })
+    expect(invalid.isError).toBe(true)
+    expect(service.repository.listAll()).toHaveLength(1)
+  })
+
   it('refreshes enabled tools live, hides private fields, and rejects calls after disable', async () => {
-    const client = await connectLegacy()
+    const client = await connectClient()
     const capability = service.repository.saveDraft(fixture())
     expect((await client.listTools()).tools.some((tool) => tool.name === 'example.run')).toBe(false)
     service.registry.enable(capability.id, 'ui')
@@ -184,11 +233,11 @@ describe('Lumi unified MCP gateway', () => {
     })
     expectPrivateFieldsAbsent(enabled)
     expectPrivateFieldsAbsent(
-      await client.callTool({ name: 'lumi.list_capabilities', arguments: {} }),
+      await client.callTool({ name: 'Lumi.list_capabilities', arguments: {} }),
     )
     const unavailable = await client.callTool({
       name: 'example.run',
-      arguments: { command: 'echo test' },
+      arguments: { command: 'exit 1' },
     })
     expect(unavailable.isError).toBe(true)
     expectPrivateFieldsAbsent(unavailable)
@@ -200,20 +249,22 @@ describe('Lumi unified MCP gateway', () => {
   })
 
   it('validates arguments, sanitizes errors and reserves the built-in namespace', async () => {
-    const client = await connectLegacy()
+    const client = await connectClient()
     await expect(client.listTools({ cursor: canary })).rejects.toThrow('no pagination cursor')
     const invalid = await client.callTool({
-      name: 'lumi.create_capability_draft',
+      name: 'Lumi.create_capability_draft',
       arguments: { kind: 'terminal', name: 'test-task', enabled: true, sessionToken: canary },
     })
     expect(invalid.isError).toBe(true)
     expectPrivateFieldsAbsent(invalid)
     const reserved = await client.callTool({
-      name: 'lumi.create_capability_draft',
-      arguments: { kind: 'terminal', name: 'test-task', namespace: 'lumi' },
+      name: 'Lumi.create_capability_draft',
+      arguments: { kind: 'terminal', name: 'test-task', namespace: 'Lumi' },
     })
     expect(reserved.isError).toBe(true)
-    expect(service.repository.count()).toBe(0)
+    expect(service.repository.listAll()).toHaveLength(0)
+    const reservedDraft = service.repository.saveDraft(fixture('Lumi'))
+    expect(() => service.registry.enable(reservedDraft.id, 'ui')).toThrow('reserved_tool_namespace')
     await expect(client.callTool({ name: canary, arguments: {} })).rejects.toThrow(
       'Tool is unavailable',
     )
@@ -285,7 +336,7 @@ describe('Lumi unified MCP gateway', () => {
         await fetch(endpoint, {
           method: 'POST',
           headers,
-          body: JSON.stringify({ data: 'x'.repeat(70 * 1024) }),
+          body: JSON.stringify({ data: 'x'.repeat(24 * 1024 * 1024 + 1) }),
         })
       ).status,
     ).toBe(413)
@@ -295,8 +346,8 @@ describe('Lumi unified MCP gateway', () => {
   })
 
   it('bridges stdio to the same Core, preserving tool lists, IDs and parallel calls', async () => {
-    const http = await connectLegacy()
-    const client = new LegacyClient({ name: 'stdio-test', version: '1' })
+    const http = await connectClient()
+    const client = new Client({ name: 'stdio-test', version: '1' })
     clients.push(client)
     const transport = new StdioClientTransport({
       command: process.execPath,
@@ -311,9 +362,9 @@ describe('Lumi unified MCP gateway', () => {
     await client.connect(transport)
     expect((await client.listTools()).tools).toEqual((await http.listTools()).tools)
     const results = await Promise.all([
-      client.callTool({ name: 'lumi.get_context', arguments: {} }),
+      client.callTool({ name: 'Lumi.get_context', arguments: {} }),
       client.callTool({
-        name: 'lumi.create_capability_draft',
+        name: 'Lumi.create_capability_draft',
         arguments: { kind: 'terminal', name: 'from-stdio' },
       }),
     ])
@@ -322,7 +373,7 @@ describe('Lumi unified MCP gateway', () => {
       capability: { name: 'from-stdio', enabled: false },
     })
     expect(
-      (await http.callTool({ name: 'lumi.list_capabilities', arguments: {} })).structuredContent,
+      (await http.callTool({ name: 'Lumi.list_capabilities', arguments: {} })).structuredContent,
     ).toMatchObject({ capabilities: [{ name: 'from-stdio' }] })
     expectPrivateFieldsAbsent(results)
     expect(diagnostic).not.toContain(mcpToken)
@@ -388,7 +439,7 @@ describe('Lumi unified MCP gateway', () => {
         result: { serverInfo: { name: 'Lumi' } },
       })
       child.stdin.write(
-        `${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n${JSON.stringify({ jsonrpc: '2.0', id: 'catalog', method: 'tools/list', params: {} })}\n${JSON.stringify({ jsonrpc: '2.0', id: 17, method: 'tools/call', params: { name: 'lumi.get_context', arguments: {} } })}\n`,
+        `${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n${JSON.stringify({ jsonrpc: '2.0', id: 'catalog', method: 'tools/list', params: {} })}\n${JSON.stringify({ jsonrpc: '2.0', id: 17, method: 'tools/call', params: { name: 'Lumi.get_context', arguments: {} } })}\n`,
       )
       await waitForMessages(3)
       child.stdin.end()

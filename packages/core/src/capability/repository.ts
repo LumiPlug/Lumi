@@ -21,6 +21,7 @@ interface CapabilityRow {
   source: CapabilityDefinition['source']
   status: CapabilityDefinition['status']
   enabled: number
+  archived: number
   created_at: string
   updated_at: string
 }
@@ -31,6 +32,10 @@ interface RunnerRow {
 }
 
 interface ToolRow {
+  upstream_name: string | null
+  upstream_signature: string | null
+  upstream_input_schema_json: string | null
+  upstream_output_schema_missing: number | null
   name: string
   description: string
   output_schema_json: string
@@ -76,19 +81,23 @@ function rollback(database: DatabaseSync): void {
 export class CapabilityRepository {
   public constructor(private readonly database: DatabaseSync) {}
 
-  public saveDraft(input: CapabilityDefinition): CapabilityDefinition {
+  public saveDraft(input: CapabilityDefinition, expectedVersion?: number): CapabilityDefinition {
     const validation = validateCapabilityDefinition(input)
     if (!validation.valid) {
       throw new CapabilityValidationError(validation.issues)
     }
 
     const existing = this.getById(input.id)
+    if (expectedVersion !== undefined && (existing?.version ?? 0) !== expectedVersion) {
+      throw new Error('tool_version_conflict')
+    }
     const timestamp = new Date().toISOString()
     const definition: CapabilityDefinition = {
       ...input,
       version: existing ? existing.version + 1 : input.version,
       status: 'draft',
       enabled: false,
+      archived: existing?.archived ?? false,
       createdAt: existing?.createdAt ?? input.createdAt,
       updatedAt: timestamp,
     }
@@ -136,17 +145,14 @@ export class CapabilityRepository {
   }
 
   public getById(id: string): CapabilityDefinition | null {
-    const row = this.database
-      .prepare('SELECT * FROM capabilities WHERE id = ?')
-      .get(id) as CapabilityRow | undefined
+    const row = this.database.prepare('SELECT * FROM capabilities WHERE id = ?').get(id) as
+      CapabilityRow | undefined
     if (!row) {
       return null
     }
 
     const runner = this.database
-      .prepare(
-        'SELECT runner_type, settings_json FROM runner_configs WHERE capability_id = ?',
-      )
+      .prepare('SELECT runner_type, settings_json FROM runner_configs WHERE capability_id = ?')
       .get(id) as RunnerRow | undefined
     if (!runner) {
       throw new Error('capability_runner_missing')
@@ -154,7 +160,7 @@ export class CapabilityRepository {
 
     const toolRows = this.database
       .prepare(
-        `SELECT name, description, output_schema_json, position
+        `SELECT name, description, output_schema_json, position, upstream_name, upstream_signature, upstream_input_schema_json, upstream_output_schema_missing
          FROM capability_tools WHERE capability_id = ? ORDER BY position ASC`,
       )
       .all(id) as unknown as ToolRow[]
@@ -181,6 +187,14 @@ export class CapabilityRepository {
       }))
 
       return {
+        ...(toolRow.upstream_name ? { upstreamName: toolRow.upstream_name } : {}),
+        ...(toolRow.upstream_signature ? { upstreamSignature: toolRow.upstream_signature } : {}),
+        ...(toolRow.upstream_input_schema_json
+          ? { upstreamInputSchema: parseJson<JsonSchema>(toolRow.upstream_input_schema_json) }
+          : {}),
+        ...(toolRow.upstream_output_schema_missing !== null
+          ? { upstreamOutputSchemaMissing: toolRow.upstream_output_schema_missing === 1 }
+          : {}),
         name: toolRow.name,
         description: toolRow.description,
         fields,
@@ -197,6 +211,7 @@ export class CapabilityRepository {
       source: row.source,
       status: row.status,
       enabled: row.enabled === 1,
+      archived: row.archived === 1,
       runner: {
         type: runner.runner_type,
         settings: parseJson<CapabilityDefinition['runner']['settings']>(runner.settings_json),
@@ -221,7 +236,7 @@ export class CapabilityRepository {
     const rows = this.database
       .prepare(
         `SELECT id FROM capabilities
-         WHERE enabled = 1 AND status = 'ready'
+         WHERE enabled = 1 AND status = 'ready' AND archived = 0
          ORDER BY updated_at DESC, id ASC`,
       )
       .all() as unknown as Array<{ id: string }>
@@ -235,21 +250,6 @@ export class CapabilityRepository {
     return this.listAll().map(toCapabilitySummary)
   }
 
-  public count(): number {
-    const row = this.database.prepare('SELECT COUNT(*) AS count FROM capabilities').get() as {
-      count: number
-    }
-    return row.count
-  }
-
-  public validateDraft(id: string): { valid: boolean; issues: ValidationIssue[] } {
-    const definition = this.getById(id)
-    if (!definition) {
-      return { valid: false, issues: [{ path: 'id', message: 'capability_not_found' }] }
-    }
-    return validateCapabilityDefinition(definition)
-  }
-
   public enable(id: string, actor: 'ui'): CapabilityDefinition {
     if (actor !== 'ui') {
       throw new Error('only_ui_may_enable_capabilities')
@@ -258,6 +258,7 @@ export class CapabilityRepository {
     if (!current) {
       throw new Error('capability_not_found')
     }
+    if (current.archived) throw new Error('tool_archived')
 
     const next: CapabilityDefinition = {
       ...current,
@@ -319,6 +320,32 @@ export class CapabilityRepository {
     return next
   }
 
+  public setArchived(id: string, archived: boolean): CapabilityDefinition {
+    const current = this.getById(id)
+    if (!current) throw new Error('capability_not_found')
+    const next: CapabilityDefinition = {
+      ...current,
+      archived,
+      enabled: false,
+      status: archived ? 'disabled' : 'draft',
+      updatedAt: new Date().toISOString(),
+    }
+    begin(this.database)
+    try {
+      this.database
+        .prepare(
+          'UPDATE capabilities SET archived = ?, enabled = 0, status = ?, updated_at = ? WHERE id = ?',
+        )
+        .run(archived ? 1 : 0, next.status, next.updatedAt, id)
+      this.saveVersionSnapshot(next)
+      commit(this.database)
+    } catch (error) {
+      rollback(this.database)
+      throw error
+    }
+    return next
+  }
+
   private replaceRunner(definition: CapabilityDefinition): void {
     this.database.prepare('DELETE FROM runner_configs WHERE capability_id = ?').run(definition.id)
     this.database
@@ -337,8 +364,8 @@ export class CapabilityRepository {
 
     const toolStatement = this.database.prepare(
       `INSERT INTO capability_tools
-        (capability_id, name, description, output_schema_json, position)
-       VALUES (?, ?, ?, ?, ?)`,
+        (capability_id, name, description, output_schema_json, position, upstream_name, upstream_signature, upstream_input_schema_json, upstream_output_schema_missing)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     const fieldStatement = this.database.prepare(
       `INSERT INTO capability_tool_fields
@@ -353,6 +380,14 @@ export class CapabilityRepository {
         tool.description,
         JSON.stringify(tool.outputSchema),
         toolIndex,
+        tool.upstreamName ?? null,
+        tool.upstreamSignature ?? null,
+        tool.upstreamInputSchema ? JSON.stringify(tool.upstreamInputSchema) : null,
+        tool.upstreamOutputSchemaMissing === undefined
+          ? null
+          : tool.upstreamOutputSchemaMissing
+            ? 1
+            : 0,
       )
       tool.fields.forEach((field, fieldIndex) => {
         fieldStatement.run(
@@ -377,11 +412,6 @@ export class CapabilityRepository {
           (capability_id, version, definition_json, created_at)
          VALUES (?, ?, ?, ?)`,
       )
-      .run(
-        definition.id,
-        definition.version,
-        JSON.stringify(definition),
-        new Date().toISOString(),
-      )
+      .run(definition.id, definition.version, JSON.stringify(definition), new Date().toISOString())
   }
 }

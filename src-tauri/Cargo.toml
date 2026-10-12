@@ -23,3 +23,4 @@ tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-shell = "2"
 uuid = { version = "1", features = ["v4", "fast-rng"] }
+rfd = "0.17.2"

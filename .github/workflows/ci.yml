@@ -31,6 +31,8 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Check official homepage contract
+        run: pnpm check:home-contract
       - name: Typecheck
         run: pnpm typecheck
       - name: Lint

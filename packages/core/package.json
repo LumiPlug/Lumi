@@ -5,23 +5,17 @@
   "private": true,
   "type": "commonjs",
   "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    }
-  },
   "dependencies": {
     "@lumiplug/shared": "workspace:*",
     "@modelcontextprotocol/client": "2.1.0",
     "@modelcontextprotocol/node": "2.1.0",
     "@modelcontextprotocol/server": "2.1.0",
-    "ajv": "8.17.1"
+    "ajv": "8.17.1",
+    "ignore": "^7.0.12",
+    "yaml": "^2.9.1"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "dev": "tsx src/index.ts"
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   }
 }

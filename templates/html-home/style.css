@@ -1,0 +1,129 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--content-card);
+  color: var(--text);
+  font: var(--lumi-text-body)/var(--lumi-leading-body) var(--lumi-font-ui);
+}
+main {
+  max-width: 1152px;
+  margin: auto;
+  padding: 24px;
+}
+h1 {
+  margin: 0 0 12px;
+  font-size: var(--lumi-text-page);
+  line-height: var(--lumi-leading-page);
+  font-weight: 600;
+}
+h2 {
+  margin: 0 0 12px;
+  font-size: var(--lumi-text-section);
+  line-height: var(--lumi-leading-section);
+}
+p {
+  max-width: 72ch;
+  color: var(--secondary);
+  overflow-wrap: anywhere;
+}
+section {
+  margin-top: 32px;
+}
+ul {
+  list-style: none;
+  padding: 0;
+}
+li {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+li p {
+  margin: 4px 0;
+}
+label {
+  display: block;
+  margin: 16px 0 8px;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+button,
+input {
+  min-height: var(--lumi-control-height);
+  border-radius: var(--lumi-radius-control);
+  padding: 10px 16px;
+  font: inherit;
+}
+input {
+  min-width: 0;
+  border: 1px solid var(--line);
+  background: var(--input);
+  color: var(--text);
+}
+input[aria-invalid='true'] {
+  border-color: var(--lumi-error);
+}
+button {
+  min-width: 100px;
+  border: 0;
+  background: var(--button);
+  color: var(--button-text);
+  cursor: pointer;
+  transition: background var(--lumi-motion-hover);
+}
+button:hover:not(:disabled) {
+  background: var(--lumi-primary-hover);
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+button:active:not(:disabled) {
+  transform: scale(0.985);
+  transition: transform var(--lumi-motion-press);
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.help,
+.connection-state,
+.mock-feedback {
+  font-size: var(--lumi-text-help);
+  line-height: var(--lumi-leading-help);
+}
+.mock-feedback {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  max-width: min(90vw, 420px);
+  padding: 12px;
+  border-radius: var(--lumi-radius-floating);
+  background: var(--panel);
+}
+.mock-feedback:empty {
+  display: none;
+}
+@media (max-width: 600px) {
+  main {
+    padding: 16px;
+  }
+  input {
+    width: 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+  }
+}

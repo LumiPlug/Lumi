@@ -110,6 +110,7 @@ After building the production frontend, run `node scripts/check-dev-ui-productio
 
 ## Documentation and contributing
 
+
 - [Documentation index](docs/README.md)
 - [Product specification](docs/PRODUCT_SPEC.md)
 - [Technical architecture](docs/TECHNICAL_ARCHITECTURE.md)

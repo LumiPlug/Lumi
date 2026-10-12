@@ -15,13 +15,18 @@ if (!targetTriple) {
 }
 
 if (process.platform === 'win32') {
-  throw new Error(
-    'Windows self-contained sidecar staging is deferred to M10; frontend/Core builds remain available.',
-  )
+  await import('./build-sidecars.mjs')
+  process.exit(0)
 }
 
 const outputDirectory = path.join(projectRoot, 'src-tauri', 'binaries')
 await mkdir(outputDirectory, { recursive: true })
+const noticeDirectory = path.join(projectRoot, 'dist', 'sidecars')
+await mkdir(noticeDirectory, { recursive: true })
+await writeFile(
+  path.join(noticeDirectory, 'THIRD_PARTY_NOTICES.txt'),
+  'Development launchers use locally installed Node.js. Production packaging replaces this notice with the bundled runtime and dependency licenses.\n',
+)
 
 const launchers = [
   ['lumi-core', 'packages/core/dist/index.js'],

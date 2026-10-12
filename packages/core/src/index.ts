@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 import { parseRuntimeConfig } from './config'
+import { isSea } from 'node:sea'
 import { CoreService, genericErrorPayload, writeReadyHandshake } from './service'
 
 async function main(): Promise<void> {
@@ -22,6 +23,6 @@ async function main(): Promise<void> {
   process.once('SIGINT', stop)
 }
 
-if (require.main === module) {
+if (isSea() || require.main === module) {
   void main()
 }

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+import { isSea } from 'node:sea'
 import {
   StreamableHTTPClientTransport,
   isJSONRPCRequest,
@@ -173,4 +174,4 @@ async function main(): Promise<void> {
   }
 }
 
-if (require.main === module) void main()
+if (isSea() || require.main === module) void main()

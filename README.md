@@ -2,55 +2,126 @@
 
 # Lumi
 
-Lumi 是运行在个人电脑上的 AI 经验与能力中心，让不同 AI 软件共享 Memory、标准 Skills 和可执行 Capabilities，并提供个人工作台。
+**English** · [简体中文](README.zh-CN.md)
 
-项目使用 Tauri 2、React、TypeScript 和 Node Core Sidecar，通过统一 MCP 连接外部 AI 客户端。当前处于开发阶段；功能范围与实现进度见 [产品规格](docs/PRODUCT_SPEC.md) 和 [开发计划](docs/DEVELOPMENT_PLAN.md)。
+**Your tools and knowledge. Your control.**
 
-## 开发
+Lumi is an open-source desktop app that brings your private tools, Skills, and project knowledge together on your own computer. Let AI call tools you have authorized, manage Skills visually, reuse knowledge across AI apps, and build a private workbench around the way you work.
 
-安装 Node.js、pnpm 和 Rust，并按 [Tauri 官方文档](https://v2.tauri.app/start/prerequisites/) 准备对应平台的系统依赖。开发工具版本可参考 [CI 配置](.github/workflows/ci.yml)。
+**Status:** In active development. See the [product specification](docs/PRODUCT_SPEC.md) and [development plan](docs/DEVELOPMENT_PLAN.md) for scope and progress. Project documentation is currently primarily in Chinese.
+
+## What Lumi brings to your workflow
+
+### Private tool calls, with control over what AI can see
+
+**You decide what to expose.**
+
+Turn scripts, private APIs, and MCP services into reusable tools. Review the complete configuration and authorize a tool before it becomes available. AI supplies public task parameters; Lumi adds the internal connection settings when executing the call. You control which fields are exposed through the tool interface.
+
+Terminal, HTTP, and MCP tools share the same execution path for manual use and AI calls, with task status, logs, and results available for review.
+
+### Visual Skills management
+
+**See your Skills. Keep them organized.**
+
+Browse Skills stored locally by different AI apps in one place. Read descriptions, explore file trees, and preview instructions and resources. Filter by source, search, and archive entries to keep your collection easy to navigate.
+
+Local discovery covers standard directories for Codex, Claude Code, Qoder, QoderWork, Cursor, and Gemini CLI. Archiving hides an entry in Lumi without changing the original Skill files.
+
+### Knowledge graphs across AI apps
+
+**Connect your knowledge. Carry it into your next AI workflow.**
+
+Organize project experience and knowledge into searchable documents and graphs, so the connections between ideas remain visible. Different AI apps can access the same knowledge through Lumi's unified Model Context Protocol (MCP) connection and continue from what you have already learned.
+
+Knowledge is grouped by project and branch, with independent versions and readable history. Your AI app reads the project within its existing access scope and submits the organized knowledge to Lumi.
+
+### Your private workbench
+
+**Build a workspace around the way you work.**
+
+Ask AI to build a workbench that brings your everyday entry points and project information together. Keep and adjust that workspace locally, with source export and version recovery.
+
+Lumi provides an HTML/CSS/JavaScript template and browser SDK. AI can publish a workbench through MCP; workbench customization does not require you to install Node.js or run a build.
+
+## Start with one tool
+
+1. **Configure a tool.** Choose Terminal, HTTP, or MCP, then set its purpose, connection details, and parameters.
+2. **Review and try it.** Check public parameters and internal fields, authorize the tool, and run it manually to inspect its logs and results.
+3. **Connect your AI app.** Get the current MCP configuration from Lumi's settings and add it to your client. Use the same connection to call tools and work with project knowledge.
+4. **Make the workbench yours.** Use a workbench prompt from Lumi to ask your AI app to build and publish your workspace.
+
+For desktop test packages and platform requirements, see the [build and download guide](docs/DESKTOP_BUILDS.md).
+
+## Current scope
+
+Available today: Terminal/HTTP/MCP tool configuration and execution, local Skills browsing and archiving, versioned project knowledge with search and graphs, and AI-authored workbenches with publishing, source export, and version recovery.
+
+Automatic Skills synchronization between apps, Memory, persistent file/image artifacts, and richer result views remain in development or planning.
+
+Tool authorization applies to the whole tool. Internal fields are excluded from the public tool interface; this does not imply encryption at rest or sandboxed tool execution. Review upstream responses for sensitive content. Network requests and data destinations depend on the tools and external AI clients you configure.
+
+## Development
+
+Built with Tauri 2, React, TypeScript, and a Node Core sidecar.
+
+Install Node.js 26, pnpm 11.19.0, Rust, and the platform dependencies listed in the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/). See the [CI configuration](.github/workflows/ci.yml) for the current toolchain.
 
 ```sh
 pnpm install
 pnpm dev
 ```
 
-常用命令：
+Common commands:
 
 ```sh
-pnpm check       # 类型、代码规范、测试与 Rust 检查
-pnpm build       # 前端与 Core 构建
-pnpm tauri:build # 桌面应用打包
+pnpm check       # Type checks, lint, tests, and Rust checks
+pnpm build       # Frontend and Core builds
+pnpm tauri:build # Desktop app packaging
 ```
 
-各平台的交付限制和进度见 [开发计划](docs/DEVELOPMENT_PLAN.md)。
+### Developing a workbench with AI
 
-## 文档与贡献
+The official template uses `index.html`, `app.js`, and `style.css` as its root entry files. Add static assets or use a framework that produces compatible static output. The SDK exposes public Core tools, project storage, theme synchronization, and toast notifications. Authorized tools use the same registry as external AI clients and manual execution.
 
-- [项目文档索引](docs/README.md)
-- [技术架构](docs/TECHNICAL_ARCHITECTURE.md)
-- [贡献指南](CONTRIBUTING.md)
-- [GitHub 桌面打包与下载](docs/DESKTOP_BUILDS.md)
+- [Workbench development plan](docs/HOMEPAGE_DEVELOPMENT_PLAN.md)
+- [Template development guide](templates/html-home/LUMI_DEVELOPMENT.md)
+- `pnpm sync:home` updates the version, SDK, and embedded template.
+- `pnpm check:home-contract` checks their consistency.
 
-## 许可证
+<details>
+<summary>Development-only one-shot UI action</summary>
 
-本项目采用 **Mozilla Public License 2.0（MPL-2.0）**，完整条款见 [LICENSE](LICENSE)，许可范围及品牌说明见 [许可与品牌说明](docs/LICENSING.md)。
+Disabled by default. Enable the specified main-window tool action only during a normal `pnpm tauri dev` launch by passing `--lumi-dev-ui-action=terminal.start --lumi-dev-ui-target=<tool-UUID>`. For example:
 
-MPL-2.0 允许商用、修改和分发。分发受其覆盖的文件及其修改时，应按许可证要求提供相应源码；独立且不包含 MPL 代码的新文件可以采用其他许可。第三方依赖继续遵循各自许可证。
+```sh
+pnpm tauri dev --no-watch --config <isolated-review-config.json> -- -- --lumi-dev-ui-action=terminal.start --lumi-dev-ui-target=<tool-UUID>
+```
 
-Lumi 名称及 Logo 的使用还涉及品牌和商标权利，MPL-2.0 不授予相关商标权利。
+Open the corresponding run page directly in that main window; other windows receive no preset. The frontend module is gated by `import.meta.env.DEV`; the Rust module and audit command compile only with `debug_assertions`. A debug desktop package using the production frontend cannot trigger it, and release builds do not register it.
 
-## AI 开发 Lumi 主页
+The sole registered action holds a reference to the real start button and calls its DOM `click()`, preserving validation, disabled state, duplicate-submission protection, and the Runner path. It does not call the execution API directly. The immutable startup preset is bound to the UUID; frontend concurrency protection and a single claim per Rust process prevent HMR or repeated Effect replay.
 
-Lumi 提供同版本的 HTML/CSS/JavaScript 官方主页模板、浏览器 SDK 与知识库。外部 AI 只需编辑根目录 `index.html`、`app.js`、`style.css`，可添加其他静态资源或使用其他框架生成静态输出；用户无需安装 Node 或构建。AI 通过 MCP 发布标准包、导出源码和恢复版本。页面通过 SDK 调用公开 Core 工具、使用项目 KV、同步主题与顶部气泡。当前能创建真实能力草稿，Runner 执行仍未接入。
+Auditing uses the host nonce and accepts only fixed events from the enabled main window with the matching UUID. It rejects unknown fields and actions, stores at most 64 events, and includes no user parameters, commands, or keys. The audit source is `development-ui`; the task still follows the existing manual UI path with `source=manual`. No control HTTP server, public listener, arbitrary selector, eval, shell capability, or new persistent credential is added.
 
-- 完整方案：[官方主页开发方案](docs/HOMEPAGE_DEVELOPMENT_PLAN.md)。
-- 模板入口：[LUMI_DEVELOPMENT.md](templates/html-home/LUMI_DEVELOPMENT.md)。
-- 维护：`pnpm sync:home` 更新版本、SDK和嵌入模板；`pnpm check:home-contract` 检查一致性。
+After building the production frontend, run `node scripts/check-dev-ui-production.mjs [release-executable]` to verify that the development entry points are excluded.
 
+</details>
 
-## 开发专用一次性 UI 动作
+## Documentation and contributing
 
-默认关闭。仅在普通 `pnpm tauri dev` 开发启动时传入 `--lumi-dev-ui-action=terminal.start --lumi-dev-ui-target=<工具UUID>` 启用主窗口的指定工具动作，例如 `pnpm tauri dev --no-watch --config <隔离验收配置.json> -- -- --lumi-dev-ui-action=terminal.start --lumi-dev-ui-target=<工具UUID>`。需在该主窗口直接打开对应运行页；其他窗口不注入预设。前端 `import.meta.env.DEV` 门控动态模块，Rust模块及审计命令只在 `debug_assertions` 编译。debug桌面包若使用生产前端也不能触发；release不注册该能力。
+- [Documentation index](docs/README.md)
+- [Product specification](docs/PRODUCT_SPEC.md)
+- [Technical architecture](docs/TECHNICAL_ARCHITECTURE.md)
+- [MCP connection guide](docs/MCP_DESIGN.md)
+- [Project and branch knowledge](docs/KNOWLEDGE_BRANCHES.md)
+- [Desktop builds and downloads](docs/DESKTOP_BUILDS.md)
+- [Contributing guide](CONTRIBUTING.md)
 
-唯一登记动作持有实际开始运行按钮引用并调用 DOM `click()`，沿用原校验、disabled、防重复和Runner，不直接调用运行接口。启动预设不可写，绑定UUID；前端防并发、Rust进程内只允许领取一次，防止HMR或重复Effect重放。审计沿用宿主nonce，仅主窗口、已启用且匹配UUID的固定事件可写；拒绝未知字段和动作，最多64条，无用户参数、命令或密钥。来源记录为development-ui；实际任务仍经现有手动UI路径，任务source仍为manual。无控制HTTP、公网监听、任意selector、eval、shell能力或新持久凭据。生产前端构建后运行 `node scripts/check-dev-ui-production.mjs [release可执行文件]` 检查入口排除。
+## License
+
+Lumi is licensed under the **Mozilla Public License 2.0 (MPL-2.0)**. See [LICENSE](LICENSE) for the full terms and the [licensing and branding notes](docs/LICENSING.md) for scope and brand usage.
+
+MPL-2.0 permits commercial use, modification, and distribution. When distributing covered files or their modifications, provide the corresponding source as required by the license. Independent new files containing no MPL-covered code may use another license. Third-party dependencies retain their own licenses.
+
+The license does not grant rights to Lumi trademarks or logos.

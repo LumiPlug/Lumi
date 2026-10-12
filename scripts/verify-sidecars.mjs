@@ -12,7 +12,11 @@ import { setTimeout, clearTimeout } from 'node:timers'
 import { fileURLToPath, URL } from 'node:url'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio'
-import { SESSION_TOKEN_HEADER } from '../packages/shared/dist/index.js'
+import {
+  CORE_PROTOCOL_VERSION,
+  CORE_VERSION,
+  SESSION_TOKEN_HEADER,
+} from '../packages/shared/dist/index.js'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const directoryIndex = process.argv.indexOf('--directory')
@@ -85,7 +89,10 @@ try {
   await Promise.race([
     (async () => {
       const handshake = await ready
-      assert.equal(handshake.mcpAvailable, true)
+      assert.equal(handshake.protocolVersion, CORE_PROTOCOL_VERSION)
+      assert.equal(handshake.coreVersion, CORE_VERSION)
+      assert.equal(handshake.pid, core.pid)
+      assert.ok(Number.isInteger(handshake.port) && handshake.port > 0 && handshake.port <= 65535)
       const url = `http://127.0.0.1:${handshake.port}`
       const health = await globalThis.fetch(`${url}/healthz`)
       assert.equal(health.status, 200)

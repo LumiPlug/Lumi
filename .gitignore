@@ -8,6 +8,7 @@ node_modules/
 .turbo/
 .eslintcache
 *.tsbuildinfo
+.impeccable
 
 # Build and test output (keep pnpm-lock.yaml and Cargo.lock tracked)
 dist/
@@ -56,3 +57,4 @@ Desktop.ini
 
 # Generated homepage delivery artifacts
 /templates/html-home/output/
+/.impeccable/

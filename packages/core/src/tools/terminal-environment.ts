@@ -24,7 +24,7 @@ export function withoutLumiCredentials(environment: NodeJS.ProcessEnv): NodeJS.P
 }
 
 export function terminalCommandArguments(shell: string, command: string): string[] {
-  if (process.platform === 'win32') return ['/d', '/s', '/c', command]
+  if (process.platform === 'win32') return ['/d', '/s', '/c', `"${command}"`]
   // The environment already contains .zshenv followed by login/interactive overrides.
   // Loading .zshenv again would undo those overrides and the tool's own variables.
   return path.basename(shell) === 'zsh' ? ['-f', '-c', command] : ['-c', command]

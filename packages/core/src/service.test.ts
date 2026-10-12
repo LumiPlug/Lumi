@@ -52,7 +52,7 @@ describe('Core HTTP boundary', () => {
           JSON.stringify({
             id: skillId,
             name: 'fixture',
-            path: fs.realpathSync(path.join(skillDirectory, 'SKILL.md')),
+            path: await fs.promises.realpath(path.join(skillDirectory, 'SKILL.md')),
             present: true,
             sources: [],
             archived: false,

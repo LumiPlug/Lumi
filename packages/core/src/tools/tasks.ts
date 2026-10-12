@@ -335,6 +335,7 @@ export class TaskManager {
         cwd: terminalDirectory(s.cwd),
         env: withoutLumiCredentials(environment),
         detached: process.platform !== 'win32',
+        windowsVerbatimArguments: process.platform === 'win32',
         stdio: ['ignore', 'pipe', 'pipe'],
       })
       a.process = child

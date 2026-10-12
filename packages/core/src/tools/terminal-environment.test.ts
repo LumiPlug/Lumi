@@ -2,7 +2,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   defaultTerminalShell,
@@ -24,6 +24,17 @@ function fixtureShell(startup: string): string {
   return shell
 }
 describe('system terminal environment', () => {
+  it('executes quoted executable paths and inline code through the native shell', () => {
+    const shell = defaultTerminalShell()
+    const command = `"${process.execPath}" -e "process.stdout.write(process.env.LUMI_QUOTING_FIXTURE)"`
+    const result = spawnSync(shell, terminalCommandArguments(shell, command), {
+      windowsVerbatimArguments: process.platform === 'win32',
+      env: { ...process.env, LUMI_QUOTING_FIXTURE: 'space ; " quoted & literal' },
+      encoding: 'utf8',
+    })
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toBe('space ; " quoted & literal')
+  })
   it('selects the account shell before inherited SHELL, with explicit platform fallbacks', () => {
     expect(defaultTerminalShell({ SHELL: '/bin/bash' }, 'darwin', '/bin/zsh')).toBe('/bin/zsh')
     expect(defaultTerminalShell({ SHELL: '/bin/bash' }, 'linux', null)).toBe('/bin/bash')

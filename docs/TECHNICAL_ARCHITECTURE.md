@@ -224,15 +224,15 @@ Node Core 必须按 target triple 生成 Sidecar，并由 Tauri bundle 配置一
 
 Core 的 Skills Repository 通过异步、有深度/目录数/单文件大小限制的只读扫描发现 SKILL.md，解析 YAML frontmatter，不执行脚本、不导入正文指令。按真实文件路径生成 ID，同一符号链接目标聚合软件与目录来源；不同路径不按名称合并。发现一个技能后，仅继续扫描其标准 `skills/` 子目录，以支持技能包中的独立子技能。Codex 支持 CODEX_HOME（默认 ~/.codex）的 skills 和 plugins/cache、共享 ~/.agents/skills；Claude 支持 CLAUDE_CONFIG_DIR（默认 ~/.claude）的 skills 和 plugins/cache；Gemini CLI 同时扫描 ~/.gemini/skills、共享 ~/.agents/skills 和 ~/.gemini/extensions；其余适配器读取各自个人目录。用户添加的项目只扫描各适配器的标准子目录，历史 Codex 项目的 .codex/skills 也保留支持。
 
-SQLite 保存元数据、来源、发现状态、归档状态和项目扫描根目录。技能元数据 JSON 保存 `firstSeenAt` 和 `fileCreatedAt`（UTC ISO 时间或 null）。`firstSeenAt` 首次插入时记录本轮收录时间，在写事务内读取现有记录以保留最早收录值；历史缺失值保持 null。`fileCreatedAt` 来自读取真实 SKILL.md 的文件句柄 stat.birthtimeMs，通过 shared 的 normalizeSkillTimestamp 标准化为 UTC ISO；无效、非正及 Unix 纪元首秒（0–1000ms）的占位值均返回 null，首次发现时间沿用同一校验。扫描、缓存读取与前端日期显示共用该规则，不以当前扫描时间补造历史日期，每次成功扫描更新，可为历史记录补充或反映重建文件；文件缺失或读取失败时保留缓存值。文件系统创建时间不承诺实际安装日期，mtime 不参与排序。无需表结构迁移；读取旧 JSON 时将缺失或无效日期标准化为 null。Repository 按每项的 fileCreatedAt（未知时回退 firstSeenAt）倒序，两者都未知的记录置后，同时间按名称／真实路径／ID 排序，前端筛选保留返回顺序。缺失目录属于正常空目录；权限、格式、超限错误进入扫描诊断。读取失败的目录保留上一轮数据；只有完成的扫描更新对应发现状态。受保护 /app/skills API 和宿主 nonce 校验的 Tauri 白名单命令共用 Repository；主页 SDK/MCP 暂不开放 Skills。浏览器模式不伪造本机数据。市场精选使用经核验的官方仓库目录链接，不代表实时市场。
+SQLite 保存元数据、来源、发现状态、归档状态和项目扫描根目录。技能元数据 JSON 保存 `firstSeenAt` 和 `fileCreatedAt`（UTC ISO 时间或 null）。`firstSeenAt` 首次插入时记录本轮收录时间，在写事务内读取现有记录以保留最早收录值；历史缺失值保持 null。`fileCreatedAt` 来自读取真实 SKILL.md 的文件句柄 stat.birthtimeMs，通过 shared 的 normalizeSkillTimestamp 标准化为 UTC ISO；无效、非正及 Unix 纪元首秒（0–1000ms）的占位值均返回 null，首次发现时间沿用同一校验。扫描、缓存读取与前端日期显示共用该规则，不以当前扫描时间补造历史日期，每次成功扫描更新，可为历史记录补充或反映重建文件；文件缺失或读取失败时保留缓存值。文件系统创建时间不承诺实际安装日期，mtime 不参与排序。无需表结构迁移；读取旧 JSON 时将缺失或无效日期标准化为 null。Repository 按每项的 fileCreatedAt（未知时回退 firstSeenAt）倒序，两者都未知的记录置后，同时间按名称／真实路径／ID 排序，前端筛选保留返回顺序。缺失目录属于正常空目录；权限、格式、超限错误进入扫描诊断。读取失败的目录保留上一轮数据；只有完成的扫描更新对应发现状态。受保护 /app/skills API 和宿主 nonce 校验的 Tauri 白名单命令共用 Repository；主页 SDK 暂不开放 Skills；MCP 仅开放已托管技能的搜索和读取。浏览器模式不伪造本机数据。市场精选使用经核验的官方仓库目录链接，不代表实时市场。
 
-当前归档／恢复仅更新 SQLite 的归档状态，不移动、删除或重命名源技能目录；目录迁移尚未实现。
+当前归档／恢复仅更新 SQLite 的归档状态，不移动、删除或重命名源技能目录；托管技能归档后停止 MCP 发现和读取，外部扫描技能的归档仅影响 Lumi 列表。
 
 项目目录验证要求可解析的绝对目录路径，最多保存 32 个项目；路径或数量校验抛出 `SkillProjectValidationError`，API 返回 `invalid_skill_project`。其他项目处理失败返回 `skill_project_failed`。Skills 页面已移除扫描位置展开区及项目添加表单，Core 的项目配置与扫描接口保留兼容既有配置。
 
 前端将 Skills 内容区约束为窗口内布局，并取消该页面的通用最大宽度，随窗口铺满宽度、调整高度。Tab 与搜索工具栏保持固定；来源筛选按钮组最大占内容宽度 50%、内部水平滚动，搜索框使用共享宽度变量，刷新图标保持固定点击区域。来源筛选保留各页面状态与无技能选项，提供选中状态、方向键及焦点滚入可见范围。技能列表拥有独立垂直滚动区域；网格依据内容区宽度切换三、二、一列。`skillSourceKey` 将软件／发布方映射到来源标签的 `data-source`，背景和文字复用 `palette.css` 的深浅主题来源变量，未知来源使用中性色；共享技能的来源排序优先当前筛选平台。详情使用 `SkillDetailDialog`，通过原生 `dialog.showModal()` 进入顶层，初始焦点置于标题，提供模态焦点约束、Escape 关闭和触发点焦点恢复。左侧目录与右侧文件内容独立滚动，异步文件请求使用序号防止过期响应覆盖当前选择。`react-markdown` + `remark-gfm` 渲染 Markdown，跳过原始 HTML、不执行脚本；GFM 表格、任务列表、代码块与标题按共享主题排版，非 Markdown UTF-8 文件显示源码。相对文档链接限制在技能目录内，支持光栅图片文件及按可见范围读取的本地 Markdown 图片，外部图片不自动请求；宿主 `open_skill_link` 校验 http/https 链接，用户点击后才交给系统浏览器。`useToastViewport` 在弹窗期间将同一个 `ToastProvider` 的气泡区域 portal 到 dialog，保持窗口顶部位置及原有状态与计时，避免反馈被模态顶层遮挡。
 
-只读文件 API `/app/skills/directory` 与 `/app/skills/file` 沿用 Host/Origin/session 检查及宿主 nonce。由已发现的技能 ID 查库得到规范主文件路径，以该文件所在目录为边界；拒绝绝对路径、路径穿越、内部符号链接及目录重定向。目录枚举最多 800 项、12 层，依赖和构建目录省略；文本预览最多 256 KiB、光栅图片最多 1 MiB，不预览其他二进制或特殊文件。文件读取前后检查真实路径及打开句柄，超限文件返回状态而非正文。只读操作不移动、修改或执行技能文件，主页 SDK/MCP 暂不开放该接口。Markdown 实现依据 [react-markdown](https://github.com/remarkjs/react-markdown) 与 [remark-gfm](https://github.com/remarkjs/remark-gfm) 官方说明。
+只读文件 API `/app/skills/directory` 与 `/app/skills/file` 沿用 Host/Origin/session 检查及宿主 nonce。由已发现的技能 ID 查库得到规范主文件路径，以该文件所在目录为边界；拒绝绝对路径、路径穿越、内部符号链接及目录重定向。目录枚举最多 800 项、12 层，依赖和构建目录省略；文本预览最多 256 KiB、光栅图片最多 1 MiB，不预览其他二进制或特殊文件。文件读取前后检查真实路径及打开句柄，超限文件返回状态而非正文。只读操作不移动、修改或执行技能文件，主页 SDK 暂不开放该接口；MCP 的托管技能接口复用该文件边界。Markdown 实现依据 [react-markdown](https://github.com/remarkjs/react-markdown) 与 [remark-gfm](https://github.com/remarkjs/remark-gfm) 官方说明。
 
 适配器目录依据：[Codex Skills](https://learn.chatgpt.com/docs/build-skills)、[Claude Code Skills](https://code.claude.com/docs/en/skills)、[Qoder Skills](https://docs.qoder.com/cli/Skills)、[QoderWork Skills](https://docs.qoder.com/qoderwork/skills)、[Cursor Skills](https://prod.cursor.com/docs/skills)、[Gemini CLI Skills](https://geminicli.com/docs/cli/skills/)。这些文档说明客户端的目录约定；Lumi 的扫描范围以 `skillRoots` 为准，来源标签不复现客户端的加载优先级、启用状态或所有兼容目录。
 
@@ -313,3 +313,9 @@ MCP下拉仅列出已保存且有upstreamName/upstreamSignature的真实discover
 上游完整输入 schema 及输出 schema 缺失来源分别保存到 CapabilityTool.upstreamInputSchema/upstreamOutputSchemaMissing；migration9给capability_tools添加两个nullable列，原有配置保持。预检和执行校验合并后的上游参数；公开目录只投影可见字段，隐藏完整 schema 不直接公开。无声明输出保持实际结构，再经过64KiB限制及私密过滤；显式白名单继续生效。歧义旧text规则在执行前要求重新发现并确认，不做来源猜测或自动改配置。HTTP/MCP同步返回及Terminal.start的异步taskId契约保持。
 
 stdio proxy转发默认310000ms，支持--request-timeout-ms及LUMIPLUG_REQUEST_TIMEOUT_MS（100–3600000ms，CLI优先）；这是转发等待预算，区别于Runner执行期限。取消对应在途请求且不关闭其他请求；短预算返回request_timeout而非Core unavailable，保留结果不确定性。详细协议、旧缓存和取消限制见MCP_DESIGN.md。新增回归只使用临时数据库和可信loopback/stdio fixture，未访问用户服务或真实凭据。本轮不新增权限层、不修改元数据脱敏、不统一HTTP/MCP执行ID，也不创建官网。
+
+## Skills 托管及 MCP 读取（2026-10-14）
+
+SkillsRepository 接收 userDataDir/skills 托管根目录。通过暂存目录、受限文件复制、有效 SKILL.md 校验和原子目录重命名安装；源规范路径的 SHA-256 用作安装槽，同源重试不覆盖已有安装，同名不同来源可共存。单次复制最多 2000 项、12 层、32 MiB，总量及单文件均有界；忽略 .git/node_modules/target/__pycache__，拒绝符号链接和特殊文件。托管扫描与外部扫描共用现有库存，不修改原软件目录。
+
+新增宿主专用 POST /app/skills/import（已扫描 id 或本地绝对 directory 二选一），经过 session 与独立 host token 检查，Tauri skills_request 白名单转发。MCP 会话不能调用安装接口。Registry 注入同一 SkillsRepository，开放 search_skills/get_skill/read_skill_file 三个只读工具；只返回托管、存在、有效、未归档条目。读取每次重新检查可见性和规范目录边界，沿用现有路径穿越/内部链接/文件大小防护，错误通过 MCP isError 和稳定代码返回。搜索分页只返回摘要，不泄露外部扫描位置；正文和附件按需加载。初始化说明及 get_context 提供发现与使用指引。首页 SDK 仍不开放 Skills。

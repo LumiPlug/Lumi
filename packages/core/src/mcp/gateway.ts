@@ -15,6 +15,8 @@ import { HOME_ERRORS } from '../workbench/errors'
 import { HOME_LIMITS } from '@lumiplug/shared'
 import { TOOL_ERRORS } from '@lumiplug/shared'
 import { ToolError } from '../tools/config'
+import { SKILL_ERRORS } from '../skills/managed'
+import { SKILL_TOOLS } from '../skills/tools'
 
 /** Stateless requests read the live Registry; no duplicated tool catalog or database. */
 export class McpGateway {
@@ -61,7 +63,7 @@ export class McpGateway {
       {
         capabilities: { tools: { listChanged: false } },
         instructions:
-          '连接后先调用 Lumi.get_context，确认实际可用功能。使用 Lumi.list_capabilities 查看目录。开发主页时读取 Lumi.get_workbench 的源码、开发模板与版本，构建后通过 Lumi.publish_workbench 保存。能力变化后重新调用 tools/list。AI 仅能保存能力草稿，启用由 Lumi 用户完成。',
+          '连接后先调用 Lumi.get_context，确认实际可用功能。任务开始时用 Lumi.search_skills 查找相关技能，用 Lumi.get_skill 加载说明、Lumi.read_skill_file 按需读取附件，脚本只读不执行。使用 Lumi.list_capabilities 查看工具目录。开发主页时读取 Lumi.get_workbench 的源码、开发模板与版本，构建后通过 Lumi.publish_workbench 保存。能力变化后重新调用 tools/list。AI 仅能保存能力草稿，启用由 Lumi 用户完成。',
       },
     )
     server.setRequestHandler('tools/list', async (request) => {
@@ -82,6 +84,7 @@ export class McpGateway {
             'Lumi.get_workbench',
             'Lumi.get_workbench_template',
             'Lumi.list_workbench_versions',
+            ...SKILL_TOOLS.map((tool) => tool.name),
           ].includes(tool.name)
             ? { annotations: { readOnlyHint: true, openWorldHint: false } }
             : ['Lumi.publish_workbench', 'Lumi.restore_workbench_version'].includes(tool.name)
@@ -126,6 +129,14 @@ export class McpGateway {
           structuredContent: result,
         }
       } catch (error) {
+        if (error instanceof RegistryError && SKILL_ERRORS[error.code]) {
+          const result = { error: { code: error.code, message: SKILL_ERRORS[error.code] } }
+          return {
+            isError: true,
+            structuredContent: result,
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          }
+        }
         if (error instanceof RegistryError && error.code.startsWith('knowledge_')) {
           const result = {
             error: {

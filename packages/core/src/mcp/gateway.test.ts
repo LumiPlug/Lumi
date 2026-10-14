@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createCapabilityDefinition, SESSION_TOKEN_HEADER, KNOWLEDGE_TOOLS } from '@lumiplug/shared'
 import type { CapabilityDefinition } from '@lumiplug/shared'
 import { CoreService } from '../service'
+import { SKILL_TOOLS } from '../skills/tools'
 
 const mcpToken = 'mcp-session-test-0123456789abcdef'
 const canary = 'PRIVATE-CANARY-DO-NOT-LEAK'
@@ -124,6 +125,7 @@ describe('Lumi unified MCP gateway', () => {
         'Lumi.restore_workbench_version',
         'Lumi.stop_task',
         ...KNOWLEDGE_TOOLS.map((tool) => tool.name),
+        ...SKILL_TOOLS.map((tool) => tool.name),
       ].sort(),
     )
     const context = await client.callTool({ name: 'Lumi.get_context', arguments: {} })
@@ -136,7 +138,12 @@ describe('Lumi unified MCP gateway', () => {
       headers: { [SESSION_TOKEN_HEADER]: mcpToken },
     })
     expect(await check.json()).toMatchObject({
-      data: { ok: true, serverName: 'Lumi', toolCount: 13 + KNOWLEDGE_TOOLS.length, error: null },
+      data: {
+        ok: true,
+        serverName: 'Lumi',
+        toolCount: 13 + KNOWLEDGE_TOOLS.length + SKILL_TOOLS.length,
+        error: null,
+      },
     })
 
     expect(

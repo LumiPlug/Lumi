@@ -496,3 +496,29 @@ MCP下拉仅列出已保存且有upstreamName/upstreamSignature的真实discover
 2026-10-12 用户微调：运行配置中不显示“固定／固定值”视觉Badge，包括HTTP合并请求行、MCP合并连接行及共享请求头／正文值行。只读method／地址、值与实际内容保持；类型、可见性、必填等有意义标签保持。MCP下拉／空态／切换及认证、请求构造不变；“显示固定值／恢复固定值”等动作名称仍保留其原语义。
 
 固定标签移除验收：类型检查和34项相关测试通过；完整pnpm check通过（29文件、221测试），含lint、Rust fmt/check/clippy。真实本地浏览器只读配置展示核实HTTP方式／地址仍readOnly、MCP地址仍readOnly且下拉／空态保持；必填与可见性标签保持。仅复制上一轮隔离fixture定义，测试桥只允许get/tasks/prepare，没有执行端点，任务数0，没有协议调用或外部请求。本轮不尝试原生锁屏验证。Library新版HTTP图libfile_35722b9119248191b4d05eacd1e1af50，MCP图libfile_4024d9314b908191b370c5c2e1df605f。源码保留供review，无commit/push。
+
+### Lumi 托管 Skills 与 MCP（2026-10-14）
+
+本轮实现：本地目录安装、扫描结果导入、独立托管副本、托管分类、归档控制 MCP 可见性，以及只读搜索/说明/附件接口。保留扫描与文件预览。验证覆盖复制完整性、重试与同名隔离、失败清理、目录边界、归档立即失效、宿主安装鉴权和真实 MCP 客户端端到端读取；完成后记录 pnpm check 与界面验证结果。
+
+验证：最终完整 `pnpm check` 通过，32 个测试文件、245 项测试全部通过；主页契约、TypeScript、ESLint、Rust fmt/check/clippy 通过。Impeccable 检测无发现。真实 MCP 客户端覆盖搜索、说明、附件、参数边界与归档拒绝读取；托管测试覆盖原文件保留、源目录删除后的独立可用性、同源不覆盖、同名共存、二进制附件与脚本权限、超限/链接拒绝、失败清理及扫描/导入并发。通过隔离 QA IPC 数据在 Chrome 检查真实 App/Skills 页面 1120×820 与 720×560：本地目录导入、扫描技能导入、托管分类、归档恢复、键盘分类导航和错误聚焦/aria-describedby 正常，无横向溢出。截图保存在 `.impeccable/skills-managed/desktop.png`（临时验证数据）；测试入口已移除，未修改用户真实技能。本轮未打包或重启原生桌面应用，未验证浅色实机。
+
+生产前端 `pnpm build:frontend` 通过；Vite 提示主包超过 500 kB，构建成功。本轮未进行无关的拆包调整。
+
+### Skills 桌面实机包（2026-10-14）
+
+使用与 CI 一致的官方 Node v26.10.0 darwin-arm64（校验官方 SHA-256）重建自包含 Core 和 stdio 代理，`pnpm tauri:build --bundles app` Release 打包成功，codesign --verify --deep --strict 及生产开发入口排除检查通过。空 PATH 独立 sidecar 检查通过，HTTP/stdio 均公开 30 个工具。使用 .app 内实际二进制和临时数据目录验证宿主独占导入、删除源目录后独立副本仍可用，以及两种 MCP 传输上的搜索/说明/附件读取，验证通过并清理临时数据。
+
+更新 /Applications/Lumi.app 并通过原生 UI 启动；原应用保留于 `.impeccable/skills-native/replaced-Lumi.app`，用户数据目录不变。实际桌面 Core 的 `features.skills=true`，可发现 search_skills/get_skill/read_skill_file 三个接口，首次检查托管技能数量为 0。原生 Skills 导入弹窗正常显示并聚焦目录输入，留待用户选择真实技能；没有导入或归档用户的实际技能。原生截图 `.impeccable/skills-native/import-window.png`。
+
+### 用户现有 Skill 实机端到端验收（2026-10-14）
+
+经用户授权，从原生 Lumi 导入弹窗安装现有 `hyperframes-core`，主说明与 10 份参考文档共 11 个文件；导入前 MCP 搜索无托管记录，导入后只返回一个托管实例。实际 /Applications/Lumi.app 的 HTTP MCP 与应用内 stdio 代理均完成 search_skills → get_skill → read_skill_file，逐文件读取的 SHA-256 与源目录快照全部一致，原目录文件哈希不变，目录完整且未截断；两种传输均拒绝路径穿越。通过原生 UI 归档该技能后，HTTP MCP 搜索不再返回，get_skill 和 read_skill_file 均返回 skill_not_available；随后从归档列表恢复，再次以 HTTP 和 stdio 逐文件验证通过，最终保持未归档可用状态。
+
+原生页面已打开托管副本的 references/minimal-composition.md，可继续人工查看。实际验收截图 `.impeccable/skills-native/live-import-and-read.png`，读取结果摘要 `.impeccable/skills-native/live-skill-verify.json` 与 `live-skill-restored.json`；没有执行技能指令或脚本，也没有改动其他技能。
+
+### 0.1.1 版本与代码提交（2026-10-15）
+
+将应用、Tauri/Cargo、Core、shared、stdio 代理、主页 SDK 统一从 0.1.0 升到 0.1.1，使用 sync:home 同步主页契约、浏览器 SDK 和嵌入模板，并补充 CHANGELOG。修正版本生成脚本的依赖顺序：先写入 SDK 版本契约，再打包浏览器 SDK；模拟旧契约后单次同步即可通过一致性检查。上游 MCP 客户端握手复用 CORE_VERSION，避免遗留硬编码版本。脚本执行权限保留断言仅在支持 POSIX 权限位的平台运行。
+
+完整 pnpm check 通过（32 文件、245 测试，含主页契约、类型、ESLint 与 Rust fmt/check/clippy）。提交仅包含源码、必要的版本/锁文件及文档，实际技能、凭据、QA 截图、本地数据库和桌面构建产物保留在工作区外或忽略目录，不进入仓库。本轮提交到 develop；未创建发布标签或合并 main。

@@ -7,6 +7,7 @@ import type { InstalledSkill, SkillInventory } from '@lumiplug/shared'
 import { normalizeSkillTimestamp } from '@lumiplug/shared'
 import { scanSkillRoots, skillRoots } from './scanner'
 import { SkillFileError, skillDirectoryRoot, listSkillDirectory, readSkillFile } from './files'
+import { insideSkillRoot, installSkill } from './managed'
 
 export class SkillProjectValidationError extends Error {}
 
@@ -25,6 +26,7 @@ export class SkillsRepository {
     private readonly database: DatabaseSync,
     private readonly home?: string,
     private readonly environment: NodeJS.ProcessEnv = process.env,
+    private readonly managedRoot?: string,
   ) {}
 
   public inventory(): SkillInventory {
@@ -59,6 +61,7 @@ export class SkillsRepository {
   }
 
   public scan(): Promise<SkillInventory> {
+    if (this.installing) return this.installing
     if (this.scanning) return this.scanning
     this.scanning = this.performScan().finally(() => {
       this.scanning = null
@@ -68,7 +71,19 @@ export class SkillsRepository {
 
   private async performScan(): Promise<SkillInventory> {
     const previous = this.inventory()
-    const result = await scanSkillRoots(skillRoots(previous.projects, this.home, this.environment))
+    const roots = skillRoots(previous.projects, this.home, this.environment)
+    if (this.managedRoot)
+      roots.unshift({ client: 'Lumi', scope: 'personal', path: this.managedRoot })
+    const result = await scanSkillRoots(roots)
+    const canonicalManaged = this.managedRoot
+      ? await fs.realpath(this.managedRoot).catch(() => null)
+      : null
+    for (const skill of result.skills) {
+      skill.managed =
+        !!canonicalManaged &&
+        insideSkillRoot(canonicalManaged, skill.path) &&
+        skill.sources.some((source) => source.client === 'Lumi' && source.root === this.managedRoot)
+    }
     const failedRoots = new Set(
       result.locations.filter((item) => item.status === 'error').map((item) => item.path),
     )
@@ -137,6 +152,100 @@ export class SkillsRepository {
       .run(archived ? 1 : 0, id)
     if (!changed.changes) throw new Error('skill_not_found')
     return this.inventory()
+  }
+
+  public async importSkill(input: { id?: string; directory?: string }): Promise<SkillInventory> {
+    if (
+      !this.managedRoot ||
+      (input.id === undefined) === (input.directory === undefined) ||
+      input.id === '' ||
+      input.directory === ''
+    )
+      throw new SkillFileError('skill_import_invalid')
+    // Serialize against scanning and imports so UI mutations never publish stale inventory.
+    if (this.installing) throw new SkillFileError('skill_import_unavailable')
+    const root = this.managedRoot
+    this.installing = (async () => {
+      if (this.scanning) await this.scanning
+      const directory = input.id ? (await this.fileRoot(input.id)).root : input.directory!
+      await installSkill(directory, root)
+      return this.performScan()
+    })().finally(() => {
+      this.installing = null
+    })
+    return this.installing
+  }
+  private installing: Promise<SkillInventory> | null = null
+
+  private async availableSkill(id: string): Promise<InstalledSkill> {
+    const skill = this.inventory().skills.find((item) => item.id === id)
+    const root = this.managedRoot ? await fs.realpath(this.managedRoot).catch(() => null) : null
+    if (
+      !skill?.managed ||
+      !skill.present ||
+      skill.archived ||
+      !skill.metadataValid ||
+      !root ||
+      !insideSkillRoot(root, skill.path)
+    )
+      throw new SkillFileError('skill_not_available')
+    await skillDirectoryRoot(skill.path)
+    return skill
+  }
+
+  public async searchSkills(query = '', offset = 0, limit = 20) {
+    const words = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean)
+    const candidates = this.inventory().skills.filter(
+      (skill) =>
+        skill.managed &&
+        skill.present &&
+        !skill.archived &&
+        skill.metadataValid &&
+        words.every((word) =>
+          `${skill.name}\n${skill.description}`.toLocaleLowerCase().includes(word),
+        ),
+    )
+    const available: InstalledSkill[] = []
+    for (const skill of candidates) {
+      try {
+        available.push(await this.availableSkill(skill.id))
+      } catch {
+        /* Hide missing/replaced packages. */
+      }
+    }
+    return {
+      skills: available
+        .slice(offset, offset + limit)
+        .map(({ id, name, description }) => ({ id, name, description })),
+      total: available.length,
+      nextOffset: offset + limit < available.length ? offset + limit : null,
+    }
+  }
+
+  public async getSkill(id: string) {
+    const skill = await this.availableSkill(id)
+    const instructions = await this.file(id, 'SKILL.md')
+    if (instructions.kind !== 'markdown' || !instructions.content)
+      throw new SkillFileError('skill_file_unavailable')
+    const directory = await this.directory(id)
+    await this.availableSkill(id)
+    return {
+      id,
+      name: skill.name,
+      description: skill.description,
+      instructions: instructions.content,
+      files: directory.entries,
+      truncated: directory.truncated,
+      guidance:
+        '将这些说明用于当前任务。相对路径以此技能为根，用 Lumi.read_skill_file 按需读取。脚本仅供读取，执行需要客户端可用工具与相应依赖；不提供执行授权。',
+    }
+  }
+
+  public async readManagedFile(id: string, relativePath: string) {
+    await this.availableSkill(id)
+    const file = await this.file(id, relativePath)
+    await this.availableSkill(id)
+    return { id, file }
   }
 
   private async fileRoot(id: string): Promise<{ root: string; mainFile: string }> {

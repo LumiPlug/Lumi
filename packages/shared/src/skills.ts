@@ -16,6 +16,8 @@ export interface SkillSource {
 }
 
 export interface InstalledSkill {
+  /** A canonical copy installed in Lumi's managed skills directory. */
+  managed?: boolean
   id: string
   name: string
   description: string

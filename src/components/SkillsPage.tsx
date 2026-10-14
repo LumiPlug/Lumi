@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-import { IconButton, Input, Button, Tabs, SurfaceButton, Card, Badge } from './ui'
+import { IconButton, Input, Button, Tabs, SurfaceButton, Card, Badge, Modal, Field } from './ui'
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import type { InstalledSkill, SkillInventory } from '@lumiplug/shared'
@@ -9,6 +9,7 @@ import {
   skillAddedTime,
   skillClientOptions,
   skillSourceKey,
+  skillImportFailure,
 } from '../lib/skills'
 import { useToast } from './ToastProvider'
 import SkillDetailPage, { type SkillDetail } from './SkillDetailPage'
@@ -149,6 +150,14 @@ export default function SkillsPage({ active, coreReady }: { active: boolean; cor
   const [failed, setFailed] = useState(false)
   const [pending, setPending] = useState<string | null>(null)
   const [opening, setOpening] = useState<string | null>(null)
+  const [importDialog, setImportDialog] = useState(false)
+  const [importPath, setImportPath] = useState('')
+  const [importError, setImportError] = useState('')
+  const importInput = useRef<HTMLInputElement>(null)
+  const importErrorId = useId()
+  useEffect(() => {
+    if (importDialog && importError && pending === null) importInput.current?.focus()
+  }, [importDialog, importError, pending])
   const scanLock = useRef(false)
   const mutationLock = useRef(false)
   const initialized = useRef(false)
@@ -205,14 +214,58 @@ export default function SkillsPage({ active, coreReady }: { active: boolean; cor
       categoryButtons.current.get(category)?.focus({ preventScroll: true })
       showToast(
         skill.archived
-          ? skill.present
-            ? '已恢复到已安装'
-            : '已移出归档，源文件尚未找到'
-          : '已归档，原软件仍可使用此技能',
+          ? skill.managed && skill.present && skill.metadataValid
+            ? '已恢复，MCP 可搜索和读取此技能'
+            : skill.present
+              ? '已恢复到已安装'
+              : '已移出归档，源文件尚未找到'
+          : skill.managed
+            ? '已归档，MCP 已停止提供此技能'
+            : '已归档，原软件仍可使用此技能',
         'success',
       )
     } catch {
       showToast('归档状态保存失败，请检查 Core 连接后重试', 'error')
+    } finally {
+      mutationLock.current = false
+      setPending(null)
+    }
+  }
+
+  async function importSkill(skill?: InstalledSkill) {
+    if (mutationLock.current || scanLock.current || !coreReady) return
+    if (!skill && !importPath.trim()) {
+      const message = '请输入包含 SKILL.md 的完整本地目录'
+      setImportError(message)
+      showToast(message, 'error')
+      importInput.current?.focus()
+      return
+    }
+    mutationLock.current = true
+    setPending(skill?.id ?? 'import-directory')
+    setImportError('')
+    try {
+      const next = await skillsRequest(
+        'import',
+        skill ? { id: skill.id } : { directory: importPath.trim() },
+      )
+      setInventory(next)
+      setImportDialog(false)
+      setImportPath('')
+      setDetail(null)
+      setFilters((previous) => ({ ...previous, installed: { query: '', client: 'Lumi' } }))
+      setTab('installed')
+      requestAnimationFrame(() =>
+        categoryButtons.current.get('Lumi')?.focus({ preventScroll: true }),
+      )
+      showToast('已导入 Lumi，外部 AI 可通过 MCP 搜索和读取；原文件已保留', 'success')
+    } catch (error) {
+      const message = skillImportFailure(error)
+      showToast(message, 'error')
+      if (!skill) {
+        setImportError(message)
+        importInput.current?.focus()
+      }
     } finally {
       mutationLock.current = false
       setPending(null)
@@ -244,7 +297,11 @@ export default function SkillsPage({ active, coreReady }: { active: boolean; cor
     setFilters((previous) => ({ ...previous, [tab]: { ...previous[tab], ...patch } }))
   const sourceOptions = [
     { value: 'all', label: '全部来源' },
-    ...skillClientOptions(clients, filters.installed.client),
+    { value: 'Lumi', label: 'Lumi 托管' },
+    ...skillClientOptions(
+      clients.filter((client) => client !== 'Lumi'),
+      filters.installed.client,
+    ).filter((option) => option.value !== 'Lumi'),
     { value: 'archived', label: '已归档' },
   ]
   const category = tab === 'archived' ? 'archived' : filter.client
@@ -284,6 +341,15 @@ export default function SkillsPage({ active, coreReady }: { active: boolean; cor
                 else categoryButtons.current.delete(value)
               }}
             />
+            <Button
+              disabled={busy || !coreReady}
+              onClick={() => {
+                setImportError('')
+                setImportDialog(true)
+              }}
+            >
+              导入目录
+            </Button>
           </div>
           <div className="ui-list-toolbar-filters">
             <Input
@@ -361,7 +427,9 @@ export default function SkillsPage({ active, coreReady }: { active: boolean; cor
                       ? '试试其他关键词或软件来源。'
                       : tab === 'archived'
                         ? '在软件分类的技能卡片中选择“归档”，可将技能收起到这里。'
-                        : '在软件的标准技能目录中添加 SKILL.md 后，点击搜索栏右侧刷新按钮重新扫描。'}
+                        : filter.client === 'Lumi'
+                          ? '选择“导入目录”，或打开已扫描技能的详情并选择“导入 Lumi”。托管后可通过 MCP 使用。'
+                          : '重新扫描本机技能，在详情中选择“导入 Lumi”，或选择“导入目录”安装本地技能。'}
                   </p>
                   {total > 0 ? (
                     <Button
@@ -394,7 +462,66 @@ export default function SkillsPage({ active, coreReady }: { active: boolean; cor
           opening={opening !== null}
           onClose={closeDetail}
           onSource={(skill) => void openSource(skill.id, skill.url)}
+          onImport={(skill) => void importSkill(skill)}
+          importing={pending === detail.skill.id}
+          importDisabled={busy || !coreReady}
         />
+      )}
+      {importDialog && (
+        <Modal
+          title="导入技能到 Lumi"
+          onClose={() => setImportDialog(false)}
+          busy={pending !== null}
+          initialFocus={importInput}
+          actions={(close) => (
+            <>
+              <Button disabled={pending !== null} onClick={close}>
+                取消
+              </Button>
+              <Button
+                variant="primary"
+                loading={pending === 'import-directory'}
+                loadingLabel="导入中…"
+                disabled={!coreReady}
+                type="submit"
+                form="skill-import-form"
+              >
+                导入 Lumi
+              </Button>
+            </>
+          )}
+        >
+          <form
+            id="skill-import-form"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void importSkill()
+            }}
+          >
+            <Field
+              label="技能目录"
+              controlWidth="wide"
+              description="填写包含 SKILL.md 的完整本地目录。复制说明和附件到 Lumi，保留原文件；导入后可通过 MCP 搜索和读取。"
+            >
+              <Input
+                ref={importInput}
+                value={importPath}
+                disabled={pending !== null}
+                aria-invalid={!!importError}
+                aria-describedby={importError ? importErrorId : undefined}
+                onChange={(event) => {
+                  setImportPath(event.target.value)
+                  setImportError('')
+                }}
+              />
+            </Field>
+            {importError && (
+              <span id={importErrorId} className="sr-only">
+                {importError}
+              </span>
+            )}
+          </form>
+        </Modal>
       )}
     </div>
   )

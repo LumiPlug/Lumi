@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio'
 import type { CapabilityDefinition, CapabilityTool, JsonObject, JsonSchema } from '@lumiplug/shared'
+import { CORE_VERSION } from '@lumiplug/shared'
 import { ToolError, safeUrl, validateMcpArguments } from './config'
 
 function stable(value: unknown): unknown {
@@ -65,7 +66,7 @@ export class McpConnections {
     const environment = { ...process.env, ...s.environment } as Record<string, string>
     delete environment.LUMIPLUG_HOST_TOKEN
     delete environment.LUMIPLUG_SESSION_TOKEN
-    const client = new Client({ name: 'Lumi upstream', version: '0.1.0' })
+    const client = new Client({ name: 'Lumi upstream', version: CORE_VERSION })
     if (watch)
       client.setNotificationHandler('notifications/tools/list_changed', () => this.changed(def))
     const deadline = AbortSignal.timeout(10000)

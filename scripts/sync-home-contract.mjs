@@ -27,20 +27,8 @@ const output = new Map([
   ['templates/html-home/knowledge/versions.json', `${JSON.stringify(contract, null, 2)}\n`],
   ['templates/html-home/theme.css', `${fs.readFileSync(path.join(root, 'src/theme/obsidian-solar-amber.css'), 'utf8')}\n${fs.readFileSync(path.join(root, 'src/theme/palette.css'), 'utf8')}`],
 ])
-const sdk = await build({
-  entryPoints: [path.join(root, 'packages/home-sdk/src/browser.ts')],
-  bundle: true,
-  write: false,
-  format: 'iife',
-  platform: 'browser',
-  target: 'safari15.4',
-  minify: true,
-  legalComments: 'none',
-  logLevel: 'silent',
-})
-output.set('templates/html-home/lumi-sdk.js', `// SPDX-License-Identifier: MPL-2.0\n${sdk.outputFiles[0].text}`)
 let stale = false
-for (const [relative, raw] of output) {
+function writeOutput(relative, raw) {
   const target = path.join(root, relative)
   const content = normalize(raw)
   if (check) {
@@ -53,6 +41,20 @@ for (const [relative, raw] of output) {
     fs.writeFileSync(target, content)
   }
 }
+// The SDK bundle imports version.ts; update its contract before bundling a new release.
+for (const [relative, raw] of output) writeOutput(relative, raw)
+const sdk = await build({
+  entryPoints: [path.join(root, 'packages/home-sdk/src/browser.ts')],
+  bundle: true,
+  write: false,
+  format: 'iife',
+  platform: 'browser',
+  target: 'safari15.4',
+  minify: true,
+  legalComments: 'none',
+  logLevel: 'silent',
+})
+writeOutput('templates/html-home/lumi-sdk.js', `// SPDX-License-Identifier: MPL-2.0\n${sdk.outputFiles[0].text}`)
 const versions = [
   JSON.parse(fs.readFileSync(path.join(root, 'src-tauri/tauri.conf.json'), 'utf8')).version,
   ...['core', 'shared', 'mcp-stdio-proxy', 'home-sdk'].map((name) =>

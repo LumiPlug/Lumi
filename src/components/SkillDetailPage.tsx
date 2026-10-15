@@ -212,11 +212,17 @@ export default function SkillDetailPage({
   opening,
   onClose,
   onSource,
+  onImport,
+  importing = false,
+  importDisabled = false,
 }: {
   detail: SkillDetail
   opening: boolean
   onClose: () => void
   onSource: (skill: MarketSkill) => void
+  onImport?: (skill: InstalledSkill) => void
+  importing?: boolean
+  importDisabled?: boolean
 }) {
   const title = useRef<HTMLHeadingElement>(null)
   const viewport = useRef<HTMLDivElement>(null)
@@ -358,6 +364,16 @@ export default function SkillDetailPage({
           {detail.skill.name}
         </h2>
         <div className="skill-detail-actions">
+          {detail.kind === 'installed' && !detail.skill.managed && onImport && (
+            <Button
+              disabled={importDisabled || !detail.skill.present}
+              loading={importing}
+              loadingLabel="导入中…"
+              onClick={() => onImport(detail.skill)}
+            >
+              导入 Lumi
+            </Button>
+          )}
           {detail.kind === 'installed' ? (
             <Button className="type-button" type="button" onClick={() => void copyPath()}>
               复制路径
@@ -419,7 +435,14 @@ export default function SkillDetailPage({
                     <p>
                       {detail.skill.archived ? '已归档 · ' : ''}
                       {!detail.skill.present ? '未找到源文件 · ' : ''}
-                      {!detail.skill.metadataValid ? '信息不完整 · ' : ''}归档仅在 Lumi 中收起
+                      {!detail.skill.metadataValid ? '信息不完整 · ' : ''}
+                      {detail.skill.managed
+                        ? detail.skill.archived
+                          ? 'Lumi 托管 · MCP 已停用'
+                          : detail.skill.present && detail.skill.metadataValid
+                            ? 'Lumi 托管 · MCP 可搜索与读取'
+                            : 'Lumi 托管 · MCP 暂不可用'
+                        : '外部扫描 · 导入 Lumi 后可通过 MCP 使用；归档仅在 Lumi 中收起'}
                     </p>
                     <dl>
                       {detail.skill.sources.map((source) => (

@@ -434,6 +434,7 @@ impl CoreSupervisor {
                 | "/app/workbench/rpc"
                 | "/app/skills"
                 | "/app/skills/scan"
+                | "/app/skills/import"
                 | "/app/skills/archive"
                 | "/app/skills/project"
                 | "/app/skills/directory"
@@ -734,6 +735,7 @@ async fn skills_request(
     let (method, route) = match action.as_str() {
         "list" => ("GET", "/app/skills"),
         "scan" => ("POST", "/app/skills/scan"),
+        "import" => ("POST", "/app/skills/import"),
         "archive" => ("POST", "/app/skills/archive"),
         "project" => ("POST", "/app/skills/project"),
         "directory" => ("POST", "/app/skills/directory"),

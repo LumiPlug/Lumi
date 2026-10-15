@@ -260,3 +260,7 @@ MCP下拉仅列出已保存且有upstreamName/upstreamSignature的真实discover
 
 
 2026-10-12 用户微调：运行配置中不显示“固定／固定值”视觉Badge，包括HTTP合并请求行、MCP合并连接行及共享请求头／正文值行。只读method／地址、值与实际内容保持；类型、可见性、必填等有意义标签保持。MCP下拉／空态／切换及认证、请求构造不变；“显示固定值／恢复固定值”等动作名称仍保留其原语义。
+
+## Skills 托管采用（2026-10-14）
+
+托管分类、导入按钮和本地目录输入复用现有 Tabs、Button、Modal、Field、Input；详情中的导入操作复用 Button。无需增加组件视觉或状态。业务仅传入文案、数据、回调、禁用和布局，所有操作结果复用 ToastProvider。目录校验通过 Input 的 aria-invalid 和 aria-describedby 标记，辅助说明保留，错误正文仅在顶部气泡展示。

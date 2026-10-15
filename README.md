@@ -26,6 +26,8 @@ Terminal, HTTP, and MCP tools share the same execution path for manual use and A
 
 Browse Skills stored locally by different AI apps in one place. Read descriptions, explore file trees, and preview instructions and resources. Filter by source, search, and archive entries to keep your collection easy to navigate.
 
+Import a discovered Skill from its details, or choose **Import directory** to install a local folder containing `SKILL.md` into Lumi. Lumi keeps an independent copy of its instructions and bundled files without changing the source. Connected AI apps can use `Lumi.search_skills`, `Lumi.get_skill`, and `Lumi.read_skill_file` to discover and read managed Skills on demand. Archiving a managed Skill stops MCP access until it is restored. Scripts are provided as content; execution and required dependencies remain with the AI client. Local directory installation is supported; repository downloads, ZIP packages, and automatic updates are not yet supported.
+
 Local discovery covers standard directories for Codex, Claude Code, Qoder, QoderWork, Cursor, and Gemini CLI. Archiving hides an entry in Lumi without changing the original Skill files.
 
 ### Knowledge graphs across AI apps
@@ -55,7 +57,7 @@ For desktop test packages and platform requirements, see the [build and download
 
 ## Current scope
 
-Available today: Terminal/HTTP/MCP tool configuration and execution, local Skills browsing and archiving, versioned project knowledge with search and graphs, and AI-authored workbenches with publishing, source export, and version recovery.
+Available today: Terminal/HTTP/MCP tool configuration and execution, local Skills browsing, managed installation and MCP discovery/reading, versioned project knowledge with search and graphs, and AI-authored workbenches with publishing, source export, and version recovery.
 
 Automatic Skills synchronization between apps, Memory, persistent file/image artifacts, and richer result views remain in development or planning.
 

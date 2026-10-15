@@ -28,6 +28,9 @@ import type { HomeRpcRequest, HomeRpcResponse, JsonValue } from '@lumiplug/share
 import type { TaskSource, ToolTask, ToolRunOverrides } from '@lumiplug/shared'
 import type { TaskManager } from '../tools/tasks'
 import { prepareRunArguments } from '../tools/run-parameters'
+import type { SkillsRepository } from '../skills/repository'
+import { SKILL_TOOLS } from '../skills/tools'
+import { SkillFileError } from '../skills/files'
 import {
   checkExecutable,
   parseDefinition,
@@ -59,6 +62,7 @@ export class CapabilityRegistry {
     private readonly workbench?: WorkbenchRepository,
     private readonly tasks?: TaskManager,
     private readonly knowledge?: KnowledgeService,
+    private readonly skills?: SkillsRepository,
   ) {}
 
   public listUiCapabilities(): CapabilitySummary[] {
@@ -75,6 +79,7 @@ export class CapabilityRegistry {
     return [
       ...BUILTIN_TOOLS,
       ...(this.knowledge ? KNOWLEDGE_TOOLS : []),
+      ...(this.skills ? SKILL_TOOLS : []),
       ...this.listAiTools(),
     ].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
   }
@@ -136,9 +141,11 @@ export class CapabilityRegistry {
     source: TaskSource = 'ai',
     signal?: AbortSignal,
   ): Promise<JsonObject> {
-    const builtin = [...BUILTIN_TOOLS, ...(this.knowledge ? KNOWLEDGE_TOOLS : [])].find(
-      (tool) => tool.name === name,
-    )
+    const builtin = [
+      ...BUILTIN_TOOLS,
+      ...(this.knowledge ? KNOWLEDGE_TOOLS : []),
+      ...(this.skills ? SKILL_TOOLS : []),
+    ].find((tool) => tool.name === name)
     const view = builtin ?? this.getAiTool(name)
     if (!view) throw new RegistryError('ai_tool_not_found_or_disabled')
     this.validateArguments(view, argumentsObject)
@@ -178,7 +185,30 @@ export class CapabilityRegistry {
         )
       }
     }
-    if (name === 'Lumi.get_context') return publicContext(Boolean(this.knowledge))
+    if (this.skills && SKILL_TOOLS.some((tool) => tool.name === name)) {
+      try {
+        const result =
+          name === 'Lumi.search_skills'
+            ? await this.skills.searchSkills(
+                argumentsObject.query as string | undefined,
+                argumentsObject.offset as number | undefined,
+                argumentsObject.limit as number | undefined,
+              )
+            : name === 'Lumi.get_skill'
+              ? await this.skills.getSkill(argumentsObject.id as string)
+              : await this.skills.readManagedFile(
+                  argumentsObject.id as string,
+                  argumentsObject.path as string,
+                )
+        return JSON.parse(JSON.stringify(result)) as JsonObject
+      } catch (error) {
+        throw new RegistryError(
+          error instanceof SkillFileError ? error.message : 'skill_file_unavailable',
+        )
+      }
+    }
+    if (name === 'Lumi.get_context')
+      return publicContext(Boolean(this.knowledge), Boolean(this.skills))
     if (name === 'Lumi.get_workbench_template') return homeTemplate()
     if (
       [

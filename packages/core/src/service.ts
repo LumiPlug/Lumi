@@ -28,6 +28,7 @@ import type { HomeRpcRequest } from '@lumiplug/shared'
 import { HomeRuntimeServer } from './workbench/runtime-server'
 import { SkillProjectValidationError, SkillsRepository } from './skills/repository'
 import { SkillFileError } from './skills/files'
+import { SKILL_ERRORS } from './skills/managed'
 import { ToolsApi } from './tools/api'
 import { TaskManager } from './tools/tasks'
 import { McpConnections } from './tools/mcp'
@@ -133,7 +134,12 @@ export class CoreService {
     this.knowledge = new KnowledgeService(this.database.raw)
     this.repository = new CapabilityRepository(this.database.raw)
     this.workbench = new WorkbenchRepository(this.database.raw)
-    this.skills = new SkillsRepository(this.database.raw)
+    this.skills = new SkillsRepository(
+      this.database.raw,
+      undefined,
+      process.env,
+      path.join(options.userDataDir, 'skills'),
+    )
     const upstream = new McpConnections((definition) => {
       const current = this.repository.getById(definition.id)
       if (current?.version === definition.version && current.enabled)
@@ -145,6 +151,7 @@ export class CoreService {
       this.workbench,
       this.tasks,
       this.knowledge,
+      this.skills,
     )
     this.tools = new ToolsApi(this.repository, this.registry, this.tasks, upstream)
     this.mcp = new McpGateway(this.registry)
@@ -347,6 +354,43 @@ export class CoreService {
     }
     if (route === '/app/skills/scan' && method === 'POST') {
       writeJson(responseObject, 200, response(await this.skills.scan()))
+      return
+    }
+    if (route === '/app/skills/import' && method === 'POST') {
+      if (
+        !this.options.hostToken ||
+        !this.tokenMatches(request.headers['x-lumiplug-host-token'], this.options.hostToken)
+      ) {
+        writeJson(
+          responseObject,
+          403,
+          failure('skill_import_host_required', '安装技能需要 Lumi 桌面宿主授权。'),
+        )
+        return
+      }
+      try {
+        const body = await readBody(request)
+        if (
+          !isRecord(body) ||
+          Object.keys(body).some((key) => !['id', 'directory'].includes(key)) ||
+          (body.id !== undefined && typeof body.id !== 'string') ||
+          (body.directory !== undefined &&
+            (typeof body.directory !== 'string' || body.directory.length > 4096))
+        )
+          throw new SkillFileError('skill_import_invalid')
+        writeJson(
+          responseObject,
+          200,
+          response(await this.skills.importSkill(body as { id?: string; directory?: string })),
+        )
+      } catch (error) {
+        const code = error instanceof SkillFileError ? error.message : 'skill_import_unavailable'
+        writeJson(
+          responseObject,
+          400,
+          failure(code, SKILL_ERRORS[code] ?? SKILL_ERRORS.skill_import_unavailable!),
+        )
+      }
       return
     }
     if ((route === '/app/skills/directory' || route === '/app/skills/file') && method === 'POST') {

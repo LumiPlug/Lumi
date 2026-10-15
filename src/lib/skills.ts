@@ -51,7 +51,10 @@ export function filterInstalledSkills(
   const needle = query.trim().toLocaleLowerCase()
   return skills.filter(
     (skill) =>
-      (client === 'all' || skill.sources.some((source) => source.client === client)) &&
+      (client === 'all' ||
+        (client === 'Lumi'
+          ? skill.managed === true
+          : skill.sources.some((source) => source.client === client))) &&
       (!needle ||
         [
           skill.name,
@@ -123,6 +126,22 @@ export function skillProjectFailure(error: unknown): { fieldError: boolean; mess
   return code === 'invalid_skill_project'
     ? { fieldError: true, message: '无法添加项目，请检查完整路径、目录权限及项目数量上限' }
     : { fieldError: false, message: '项目扫描未完成，请检查 Core 连接后重试' }
+}
+
+export function skillImportFailure(error: unknown): string {
+  const code = error instanceof Error ? error.message : error
+  const messages: Record<string, string> = {
+    skill_import_invalid: '请选择包含有效 SKILL.md（名称和描述）的完整本地目录',
+    skill_already_imported: '此技能已经导入 Lumi，已有副本未被覆盖',
+    skill_import_link: '技能包含链接或特殊文件，请先整理为独立的普通文件目录',
+    skill_import_limit: '技能超过 2000 项、12 层或 32 MiB，请移除大文件或依赖后重试',
+    skill_import_host_required: '导入需要 Lumi 桌面宿主，请重新启动 Lumi 后重试',
+    skill_source_changed: '技能源目录已变化，请重新扫描后再导入',
+    skill_not_found: '技能记录已失效，请重新扫描后再导入',
+  }
+  return typeof code === 'string' && Object.hasOwn(messages, code)
+    ? messages[code]!
+    : '导入失败，请检查目录权限和 Core 连接后重试'
 }
 
 export function skillSourceKey(client: string): string {

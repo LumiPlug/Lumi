@@ -76,7 +76,7 @@ export function createCapabilityDraft(
 }
 
 export function skillsRequest(
-  action: 'list' | 'scan' | 'archive' | 'project',
+  action: 'list' | 'scan' | 'archive' | 'project' | 'import',
   payload: Record<string, unknown> | null = null,
 ): Promise<SkillInventory> {
   return hostInvoke('skills_request', { action, payload })

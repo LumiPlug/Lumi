@@ -21,6 +21,7 @@ export class ToolsApi {
     if (body.action === 'list') return this.registry.listUiCapabilities()
     if (body.action === 'tasks') return this.tasks.metadata(id || undefined)
     if (body.action === 'task') return this.tasks.get(id)
+    if (body.action === 'snapshot') return this.tasks.snapshot(id)
     if (body.action === 'stop') return this.tasks.stop(id)
     if (body.action === 'restart') return this.registry.restartTask(id, 'manual')
     if (body.action === 'get') {

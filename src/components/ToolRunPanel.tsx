@@ -30,6 +30,7 @@ import type {
   ToolTask,
   ToolRunPreparation,
   ToolRunOverrides,
+  ToolTaskInputSnapshot,
 } from '@lumiplug/shared'
 import { TOOL_ERRORS } from '@lumiplug/shared'
 import { useToast } from './ToastProvider'
@@ -45,6 +46,7 @@ import {
 import type { RunValues } from '../lib/tool-run'
 import { toolsRequest, toolErrorMessage } from '../lib/tools'
 import { copyText } from '../lib/clipboard'
+import { refreshRunState } from '../lib/run-task-refresh'
 import { terminalOutputText } from '../lib/terminal-output'
 
 export const taskStatusLabel: Record<ToolTask['status'], string> = {
@@ -107,7 +109,9 @@ function TaskActions({
           variant="danger"
           className="tool-run-footer-leading"
           disabled={busy || unavailable || task.status === 'stopping'}
-          onClick={stop}
+          onClick={(event) => {
+            if (event.detail < 2) stop()
+          }}
         >
           {task.status === 'stopping' ? '正在停止…' : '停止'}
         </Button>
@@ -188,9 +192,13 @@ export function TaskResult({
   const summary = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!active) return
-    setClock(Date.now())
-    const timer = setInterval(() => setClock(Date.now()), 1000)
-    return () => clearInterval(timer)
+    return refreshRunState({
+      wakeTarget: window,
+      interval: 1000,
+      read: async () => Date.now(),
+      update: setClock,
+      fail: () => {},
+    })
   }, [active, task.id])
   useEffect(() => {
     if (!active && task.status !== 'completed') {
@@ -700,6 +708,57 @@ export function RunProcess({ task, parameters }: { task: ToolTask; parameters?: 
   )
 }
 
+/** Host-only persisted input; the saved definition may since have changed. */
+export function HistoricalTaskConfiguration({
+  snapshot,
+}: {
+  snapshot: ToolTaskInputSnapshot | null
+}) {
+  if (!snapshot) return <p className="tool-help">这条旧运行记录没有保留当时的输入，无法查看。</p>
+  const { definition, operation, arguments: args } = snapshot
+  const fields = definition.tools.find((tool) => tool.name === operation)?.fields ?? []
+  return (
+    <>
+      {definition.runner.settings.type === 'terminal' ? (
+        <TerminalWorkingDirectory
+          inputHint
+          value={definition.runner.settings.cwd}
+          change={() => {}}
+          readOnly
+        />
+      ) : (
+        <RunConfigurationFields
+          settings={definition.runner.settings}
+          disabled
+          change={() => {}}
+          operationName={operation}
+        />
+      )}
+      <RunParameters
+        fields={fields}
+        label="运行时参数"
+        renderValue={(field, descriptionId, inputId) => {
+          const value = field.aiVisible
+            ? Object.hasOwn(args, field.key)
+              ? args[field.key]
+              : field.schema.default
+            : field.value
+          return (
+            <Input
+              id={inputId}
+              aria-describedby={descriptionId}
+              aria-label={`${field.key} 当时的输入`}
+              readOnly
+              type={field.aiVisible ? 'text' : 'password'}
+              value={value === undefined ? '' : formatRunValue(field, value)}
+            />
+          )
+        }}
+      />
+    </>
+  )
+}
+
 export default function ToolRunPanel({
   definition: d,
   tasks,
@@ -1106,6 +1165,7 @@ export default function ToolRunPanel({
       )}
       {stage === 0 ? (
         <Button
+          key="start"
           ref={developmentStart}
           variant="primary"
           loading={submitting || (enabled && !!tool && preflight === null)}
@@ -1119,7 +1179,9 @@ export default function ToolRunPanel({
         <Button
           variant="danger"
           disabled={locked || !runAvailable || task.status === 'stopping'}
-          onClick={() => stop(task.id)}
+          onClick={(event) => {
+            if (event.detail < 2) stop(task.id)
+          }}
         >
           {task.status === 'stopping' ? '正在停止…' : '停止运行'}
         </Button>

@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
+import { refreshRunState } from '../lib/run-task-refresh'
+import { useRetainWindowState } from '../lib/window-retention'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   Archive,
@@ -112,6 +114,21 @@ export default function KnowledgePage({
     [busy, setBusy] = useState(false),
     [failed, setFailed] = useState(false)
   const [searchRequest, setSearchRequest] = useState({ query: '', request: 0 })
+  useRetainWindowState(
+    !!view ||
+      !!dialog ||
+      !!confirm ||
+      !!takeover ||
+      busy ||
+      loading ||
+      !!query ||
+      !!name ||
+      !!description ||
+      !!projectKey ||
+      branch !== 'main' ||
+      git ||
+      tab !== 'all',
+  )
   const searchInput = useRef<HTMLInputElement>(null)
   const [detailQuery, setDetailQuery] = useState(''),
     [results, setResults] = useState<SearchResult[] | null>(null)
@@ -148,25 +165,16 @@ export default function KnowledgePage({
   }, [])
   useEffect(() => {
     if (!active || !coreReady) return
-    let stopped = false,
-      timer: ReturnType<typeof setTimeout>
-    const poll = async () => {
-      try {
-        const response = await knowledgeRequest<{ libraries: KnowledgeSummary[] }>('list')
-        if (!stopped) {
-          setLibraries(response.libraries)
-          setFailed(false)
-        }
-      } catch {
-        if (!stopped) setFailed(true)
-      }
-      if (!stopped) timer = setTimeout(() => void poll(), 3000)
-    }
-    void poll()
-    return () => {
-      stopped = true
-      clearTimeout(timer)
-    }
+    return refreshRunState({
+      wakeTarget: window,
+      interval: 3000,
+      read: () => knowledgeRequest<{ libraries: KnowledgeSummary[] }>('list'),
+      update: (response) => {
+        setLibraries(response.libraries)
+        setFailed(false)
+      },
+      fail: () => setFailed(true),
+    })
   }, [active, coreReady])
   useEffect(() => {
     if (!active) {
@@ -355,16 +363,11 @@ export default function KnowledgePage({
   async function exportLibrary() {
     if (!current) return
     await mutate(async () => {
-      const bundle = await knowledgeRequest('export', { kbId: current.id })
-      const url = URL.createObjectURL(
-        new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' }),
-      )
-      const anchor = globalThis.document.createElement('a')
-      anchor.href = url
-      anchor.download = `${`${current.name}-${current.branch}`.replace(/[^\p{L}\p{N}._-]/gu, '_')}.lumi-knowledge.json`
-      anchor.click()
-      setTimeout(() => URL.revokeObjectURL(url), 1000)
-      toast('知识库已导出', 'success')
+      const saved = await hostInvoke<string | null>('export_knowledge', {
+        kbId: current.id,
+        fileName: `${`${current.name}-${current.branch}`.replace(/[^\p{L}\p{N}._-]/gu, '_')}.lumi-knowledge.json`,
+      })
+      if (saved) toast('知识库已导出', 'success')
     })
   }
   async function importLibrary(file: File) {

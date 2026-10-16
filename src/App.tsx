@@ -12,6 +12,9 @@ import ToolsPage from './components/ToolsPage'
 import KnowledgePage from './components/KnowledgePage'
 import { BookOpen } from 'lucide-react'
 import { useTheme } from './lib/useTheme'
+import { refreshRunState } from './lib/run-task-refresh'
+import { useNativeWindowActivity } from './lib/window-activity'
+import { useMainWindowIdle } from './lib/window-retention'
 import { listen } from '@tauri-apps/api/event'
 import { useToast } from './components/ToastProvider'
 
@@ -101,6 +104,8 @@ function PlannedPage({ title, description }: { title: string; description: strin
 
 export default function App() {
   const [activeNav, setActiveNav] = useState<NavKey>('workbench')
+  useNativeWindowActivity()
+  useMainWindowIdle(activeNav === 'workbench')
   const [theme, setTheme] = useTheme()
   const showToast = useToast()
   const [coreStatus, setCoreStatus] = useState<UiCoreStatus>(disconnectedStatus)
@@ -135,29 +140,26 @@ export default function App() {
   }, [showToast])
 
   useEffect(() => {
-    // Read startup readiness promptly; settle into normal polling once Core is ready.
-    let cancelled = false
-    let timer: ReturnType<typeof setTimeout>
-    const poll = async () => {
-      const credentialRevision = mcpCredentialRevision.current
-      const [nextStatus, nextMcpConnection] = await Promise.all([
-        getCoreStatus(),
-        getMcpConnectionInfo(),
-      ])
-      if (cancelled) return
-      setCoreStatus(nextStatus)
-      setCoreStatusLoaded(true)
-      if (credentialRevision === mcpCredentialRevision.current) setMcpConnection(nextMcpConnection)
-      timer = setTimeout(
-        () => void poll(),
-        ['starting', 'restarting', 'disconnected'].includes(nextStatus.state) ? 250 : 2_000,
-      )
-    }
-    void poll()
-    return () => {
-      cancelled = true
-      clearTimeout(timer)
-    }
+    return refreshRunState({
+      wakeTarget: window,
+      interval: ({ nextStatus }) =>
+        ['starting', 'restarting', 'disconnected'].includes(nextStatus.state) ? 250 : 2000,
+      read: async () => {
+        const credentialRevision = mcpCredentialRevision.current
+        const [nextStatus, nextMcpConnection] = await Promise.all([
+          getCoreStatus(),
+          getMcpConnectionInfo(),
+        ])
+        return { credentialRevision, nextStatus, nextMcpConnection }
+      },
+      update: ({ credentialRevision, nextStatus, nextMcpConnection }) => {
+        setCoreStatus(nextStatus)
+        setCoreStatusLoaded(true)
+        if (credentialRevision === mcpCredentialRevision.current)
+          setMcpConnection(nextMcpConnection)
+      },
+      fail: () => {},
+    })
   }, [])
 
   function navButton(item: { id: NavKey; label: string; icon: GlyphName }) {

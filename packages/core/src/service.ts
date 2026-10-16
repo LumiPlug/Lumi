@@ -208,7 +208,7 @@ export class CoreService {
   }
 
   public async stop(): Promise<void> {
-    await this.knowledge.close()
+    await this.knowledge.shutdown()
     await this.tasks.close()
     await this.mcp.close()
     await this.homeRuntime.close()
@@ -273,6 +273,21 @@ export class CoreService {
     request: IncomingMessage,
     responseObject: ServerResponse,
   ): Promise<void> {
+    // These desktop APIs expose private definitions and user approval operations.
+    // The MCP token still grants every enabled tool through the public MCP interface.
+    if (
+      route === '/app/tools' ||
+      route === '/app/capabilities' ||
+      route.startsWith('/app/capabilities/')
+    ) {
+      if (
+        !this.options.hostToken ||
+        !this.tokenMatches(request.headers['x-lumiplug-host-token'], this.options.hostToken)
+      ) {
+        writeJson(responseObject, 403, failure('tools_host_required', '桌面工具管理需要宿主授权。'))
+        return
+      }
+    }
     if (route === '/app/mcp/token' && method === 'POST') {
       if (
         !this.options.hostToken ||

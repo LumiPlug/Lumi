@@ -12,6 +12,7 @@ import type {
   ToolTask,
   TaskSource,
   ToolRunOverrides,
+  ToolTaskInputSnapshot,
 } from '@lumiplug/shared'
 import {
   ToolError,
@@ -103,7 +104,7 @@ export class TaskManager {
   private store(task: ToolTask): void {
     this.db
       .prepare(
-        'INSERT OR REPLACE INTO tool_tasks(id,capability_id,started_at,task_json) VALUES(?,?,?,?)',
+        'INSERT INTO tool_tasks(id,capability_id,started_at,task_json) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET task_json=excluded.task_json',
       )
       .run(task.id, task.capabilityId, task.startedAt, JSON.stringify(task))
     this.db
@@ -140,6 +141,13 @@ export class TaskManager {
       { task_json: string } | undefined
     if (!row) throw new ToolError('task_not_found')
     return this.withReplay(JSON.parse(row.task_json) as ToolTask)
+  }
+  snapshot(id: string): ToolTaskInputSnapshot | null {
+    this.get(id)
+    const row = this.db
+      .prepare('SELECT snapshot_json FROM tool_task_inputs WHERE task_id=?')
+      .get(id) as { snapshot_json: string } | undefined
+    return row ? (JSON.parse(row.snapshot_json) as ToolTaskInputSnapshot) : null
   }
   private withReplay(task: ToolTask): ToolTask {
     return {
@@ -195,6 +203,9 @@ export class TaskManager {
     }
     this.active.set(task.id, a)
     this.store(task)
+    this.db
+      .prepare('INSERT INTO tool_task_inputs(task_id,snapshot_json) VALUES(?,?)')
+      .run(task.id, JSON.stringify({ definition: a.def, operation: tool.name, arguments: a.args }))
     this.recent.set(task.id, {
       name: task.operation,
       args: structuredClone(args),

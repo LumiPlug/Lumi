@@ -85,7 +85,7 @@ describe('run task snapshot refresh', () => {
     second.resolve('fresh')
     await vi.advanceTimersByTimeAsync(0)
     dispose()
-    expect(remove).toHaveBeenCalledTimes(2)
+    expect(remove).toHaveBeenCalledTimes(3)
     target.dispatchEvent(new Event('focus'))
     await vi.advanceTimersByTimeAsync(2000)
     expect(read).toHaveBeenCalledTimes(2)
@@ -127,5 +127,78 @@ describe('run task snapshot refresh', () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(update).toHaveBeenCalledWith('complete')
     dispose()
+  })
+})
+
+describe('background resource lifecycle', () => {
+  it('makes no reads while hidden, pauses an in-flight timer and refreshes on return', async () => {
+    vi.useFakeTimers()
+    const target = new EventTarget()
+    let visible = false
+    const read = vi.fn().mockResolvedValue('fresh')
+    const update = vi.fn()
+    const stop = refreshRunState({
+      read,
+      update,
+      fail: vi.fn(),
+      interval: 1000,
+      wakeTarget: target,
+      isActive: () => visible,
+    })
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(read).not.toHaveBeenCalled()
+    visible = true
+    target.dispatchEvent(new Event('lumi-window-activity'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(read).toHaveBeenCalledTimes(1)
+    visible = false
+    target.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(read).toHaveBeenCalledTimes(1)
+    visible = true
+    target.dispatchEvent(new Event('lumi-window-activity'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(read).toHaveBeenCalledTimes(2)
+    stop()
+  })
+  it('retains a final snapshot without polling until a visible wakeup', async () => {
+    vi.useFakeTimers()
+    const target = new EventTarget()
+    const read = vi.fn().mockResolvedValue(task('done', 'final', 'completed'))
+    const stop = refreshRunState({
+      read,
+      update: vi.fn(),
+      fail: vi.fn(),
+      interval: 500,
+      wakeTarget: target,
+      shouldPoll: (t: ToolTask) => t.status === 'running',
+    })
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(read).toHaveBeenCalledTimes(1)
+    target.dispatchEvent(new Event('focus'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(read).toHaveBeenCalledTimes(2)
+    stop()
+  })
+  it('does not resume when a pending read completes after hiding', async () => {
+    vi.useFakeTimers()
+    let visible = true
+    const pending = deferred<string>()
+    const read = vi.fn().mockReturnValue(pending.promise)
+    const target = new EventTarget()
+    const stop = refreshRunState({
+      read,
+      update: vi.fn(),
+      fail: vi.fn(),
+      interval: 500,
+      wakeTarget: target,
+      isActive: () => visible,
+    })
+    visible = false
+    target.dispatchEvent(new Event('lumi-window-activity'))
+    pending.resolve('final')
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(read).toHaveBeenCalledTimes(1)
+    stop()
   })
 })

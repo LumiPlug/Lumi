@@ -312,7 +312,7 @@ describe('Lumi unified MCP gateway', () => {
         })
       ).status,
     ).toBe(401)
-    expect((await fetch(new URL('/app/capabilities', endpoint), { headers })).status).toBe(200)
+    expect((await fetch(new URL('/app/capabilities', endpoint), { headers })).status).toBe(403)
     expect(
       (
         await fetch(endpoint, {

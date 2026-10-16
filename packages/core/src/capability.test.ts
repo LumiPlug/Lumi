@@ -112,6 +112,8 @@ describe('Capability Registry', () => {
       { id: 7, name: 'knowledge_source_metadata_only' },
       { id: 8, name: 'knowledge_project_branch_groups' },
       { id: 9, name: 'mcp_upstream_schema_provenance' },
+      { id: 10, name: 'knowledge_build_status_index' },
+      { id: 11, name: 'host_task_input_snapshots' },
     ])
     database.close()
   })

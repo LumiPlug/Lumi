@@ -3,13 +3,14 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { KNOWLEDGE_TOOLS } from '@lumiplug/shared'
 import type { KnowledgeOperation, KnowledgeView } from '@lumiplug/shared'
 import { CoreDatabase } from '../db/database'
 import { KnowledgeService } from './service'
 import { CoreService } from '../service'
+import { KnowledgeComputer } from './compute'
 
 const shaA = 'a'.repeat(40),
   shaB = 'b'.repeat(40),
@@ -608,4 +609,176 @@ describe('Real MCP branch contract', () => {
       await core.stop()
     }
   })
+})
+
+describe('knowledge worker publication races and startup recovery', () => {
+  async function prepared() {
+    const { kbId } = await group()
+    const write = await begin(kbId)
+    await call('write_batch', {
+      buildId: write.buildId,
+      resumeToken: write.resumeToken,
+      batchId: 'batch',
+      expectedSeq: 0,
+      operations: operations(),
+    })
+    const { validationId } = await call('validate_build', {
+      buildId: write.buildId,
+      resumeToken: write.resumeToken,
+      expectedSeq: 1,
+    })
+    await service.close()
+    return {
+      kbId,
+      write,
+      args: {
+        buildId: write.buildId,
+        resumeToken: write.resumeToken,
+        expectedRevision: 0,
+        expectedSeq: 1,
+        validationId,
+        requestKey: 'publish',
+        latestCommitSha: shaA,
+      },
+    }
+  }
+  it('does not publish a build cancelled during worker computation', async () => {
+    const { kbId, write, args } = await prepared()
+    const pending = call('publish_build', args)
+    await call('cancel_build', {
+      buildId: write.buildId,
+      resumeToken: write.resumeToken,
+      requestKey: 'cancel',
+    })
+    await expect(pending).rejects.toThrow('knowledge_validation_required')
+    expect(service.view(kbId).revision).toBe(0)
+  })
+  it('does not publish into an archived library after worker computation', async () => {
+    const { kbId, args } = await prepared()
+    const pending = call('publish_build', args)
+    await service.hostRequest('archive', { kbId, archived: true })
+    await expect(pending).rejects.toThrow('knowledge_archived')
+    expect(service.view(kbId).revision).toBe(0)
+  })
+  for (const mutation of ['archive', 'takeover'] as const) {
+    it(`rechecks ${mutation} exactly while publication worker completion is paused`, async () => {
+      const { kbId, write, args } = await prepared()
+      const original = KnowledgeComputer.prototype.run
+      let entered!: () => void, release!: () => void
+      const started = new Promise<void>((resolve) => {
+        entered = resolve
+      })
+      const barrier = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const spy = vi.spyOn(KnowledgeComputer.prototype, 'run').mockImplementationOnce(function (
+        this: KnowledgeComputer,
+        ...parameters: Parameters<KnowledgeComputer['run']>
+      ) {
+        entered()
+        return barrier.then(() => original.apply(this, parameters))
+      })
+      const pending = call('publish_build', args)
+      // Attach a rejection assertion before releasing the deterministic barrier.
+      const rejected = expect(pending).rejects.toThrow(
+        mutation === 'archive' ? 'knowledge_archived' : 'knowledge_invalid_build_token',
+      )
+      try {
+        await started
+        if (mutation === 'archive') await service.hostRequest('archive', { kbId, archived: true })
+        else {
+          const takeover = (await service.hostRequest('takeover', {
+            kbId,
+            buildId: write.buildId,
+          })) as { resumeToken: string }
+          expect(takeover.resumeToken).not.toBe(write.resumeToken)
+        }
+        release()
+        await rejected
+        expect(service.view(kbId).revision).toBe(0)
+      } finally {
+        release()
+        spy.mockRestore()
+        await pending.catch(() => {})
+      }
+    })
+  }
+  it('publishes concurrent identical requests once and preserves search terms', async () => {
+    const { kbId, args } = await prepared()
+    const results = await Promise.all([call('publish_build', args), call('publish_build', args)])
+    expect(results.map((r) => r.duplicate).sort()).toEqual([false, true])
+    expect(service.view(kbId).revision).toBe(1)
+    const found = await call<{ items: unknown[] }>('search', { kbId, query: '知识' })
+    expect(found.items.length).toBeGreaterThan(0)
+  })
+  it('ignores completed history bodies during startup and uses the status index', async () => {
+    const { kbId, write } = await prepared()
+    const row = database.raw
+      .prepare('SELECT data FROM knowledge_builds WHERE id=?')
+      .get(write.buildId) as { data: string }
+    const completed = {
+      ...JSON.parse(row.data),
+      id: 'old',
+      status: 'published',
+      marker: 'completed-body',
+    }
+    database.raw
+      .prepare('INSERT INTO knowledge_builds VALUES (?,?,?,?,?)')
+      .run('old', kbId, 'hash', 'old', JSON.stringify(completed))
+    database.raw
+      .prepare(
+        "UPDATE knowledge_builds SET data=json_set(data, '$.status', 'validating') WHERE id=?",
+      )
+      .run(write.buildId)
+    const parse = vi.spyOn(JSON, 'parse')
+    const recovered = new KnowledgeService(database.raw)
+    const parsed = parse.mock.calls.map(([value]) => value)
+    parse.mockRestore()
+    expect(parsed).not.toContain(JSON.stringify(completed))
+    await recovered.close()
+    const states = database.raw
+      .prepare(
+        "SELECT id, json_extract(data, '$.status') AS status FROM knowledge_builds ORDER BY id",
+      )
+      .all()
+    expect(states).toContainEqual({ id: write.buildId, status: 'writing' })
+    expect(states).toContainEqual({ id: 'old', status: 'published' })
+    const plan = database.raw
+      .prepare(
+        "EXPLAIN QUERY PLAN SELECT data FROM knowledge_builds WHERE json_extract(data, '$.status')='validating'",
+      )
+      .all()
+    expect(JSON.stringify(plan)).toContain('idx_knowledge_build_status')
+  })
+})
+
+it('drains accepted worker publications and rejects new requests while shutting down', async () => {
+  const { kbId } = await group()
+  const write = await begin(kbId)
+  await call('write_batch', {
+    buildId: write.buildId,
+    resumeToken: write.resumeToken,
+    batchId: 'one',
+    expectedSeq: 0,
+    operations: operations(),
+  })
+  const { validationId } = await call('validate_build', {
+    buildId: write.buildId,
+    resumeToken: write.resumeToken,
+    expectedSeq: 1,
+  })
+  await service.close()
+  const publication = call('publish_build', {
+    buildId: write.buildId,
+    resumeToken: write.resumeToken,
+    expectedRevision: 0,
+    expectedSeq: 1,
+    validationId,
+    requestKey: 'publish',
+    latestCommitSha: shaA,
+  })
+  await service.shutdown()
+  expect(await publication).toMatchObject({ revision: 1 })
+  await expect(call('get_contract')).rejects.toThrow('knowledge_operation_failed')
+  await expect(service.hostRequest('list', {})).rejects.toThrow('knowledge_operation_failed')
 })

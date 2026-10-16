@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { useRetainWindowState } from '../lib/window-retention'
 import { Textarea, Button, ChoiceCard } from './ui'
 
 import { useEffect, useReducer, useRef, useState } from 'react'
@@ -45,6 +46,7 @@ export default function WorkbenchPage({
   const showToast = useToast()
   const { view, loadError, ready, refresh } = useWorkbenchDocument(connection, active)
 
+  useRetainWindowState(!!view?.manifest || copying || checking || !!copyFallback)
   const promptField = useRef<HTMLTextAreaElement>(null)
   const promptDetails = useRef<HTMLDetailsElement>(null)
   const heading = useRef<HTMLHeadingElement>(null)
@@ -237,7 +239,8 @@ export default function WorkbenchPage({
 
   if (
     !view &&
-    (coreStarting || (!loadError && coreStatus.state === 'ready' && connection?.coreState === 'ready'))
+    (coreStarting ||
+      (!loadError && coreStatus.state === 'ready' && connection?.coreState === 'ready'))
   ) {
     return (
       <section

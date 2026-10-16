@@ -10,6 +10,16 @@ interface Migration {
 
 const MIGRATIONS: Migration[] = [
   {
+    id: 11,
+    name: 'host_task_input_snapshots',
+    sql: `CREATE TABLE tool_task_inputs (task_id TEXT PRIMARY KEY REFERENCES tool_tasks(id) ON DELETE CASCADE, snapshot_json TEXT NOT NULL);`,
+  },
+  {
+    id: 10,
+    name: 'knowledge_build_status_index',
+    sql: `CREATE INDEX idx_knowledge_build_status ON knowledge_builds(json_extract(data, '$.status'));`,
+  },
+  {
     id: 9,
     name: 'mcp_upstream_schema_provenance',
     sql: `ALTER TABLE capability_tools ADD COLUMN upstream_input_schema_json TEXT;

@@ -7,6 +7,7 @@ export default tseslint.config(
   {
     ignores: [
       '**/dist/**',
+      'packages/core/vendor/codeburn/**',
       '**/node_modules/**',
       '**/target/**',
       'src-tauri/binaries/**',
@@ -46,7 +47,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['templates/html-home/app.js'],
+    files: ['templates/html-home/**/app.js'],
     languageOptions: { globals: { document: 'readonly', window: 'readonly' } },
   },
   {

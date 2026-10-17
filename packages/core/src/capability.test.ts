@@ -114,6 +114,7 @@ describe('Capability Registry', () => {
       { id: 9, name: 'mcp_upstream_schema_provenance' },
       { id: 10, name: 'knowledge_build_status_index' },
       { id: 11, name: 'host_task_input_snapshots' },
+      { id: 12, name: 'ai_token_usage' },
     ])
     database.close()
   })

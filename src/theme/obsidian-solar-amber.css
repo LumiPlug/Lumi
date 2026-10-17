@@ -37,8 +37,31 @@
   --lumi-shadow-floating-heavy:
     0 16px 40px var(--lumi-shadow-heavy-color), 0 6px 16px var(--lumi-shadow-heavy-color);
   --lumi-shadow-focus-heavy: 0 4px 14px color-mix(in srgb, var(--accent) 24%, transparent);
+  --lumi-choice-selected-shadow-opacity: 1;
   --lumi-icon-glow-blur-heavy: 8px;
   --lumi-icon-glow-offset-heavy: 6px;
+  --lumi-nav-marker-width: 4px;
+  --lumi-nav-marker-height: 20px;
+  --lumi-nav-marker-gap: 2px;
+  --lumi-nav-beam-length: 44px;
+  --lumi-nav-beam-height: 44px;
+  --lumi-nav-beam-fill: linear-gradient(
+    to right,
+    color-mix(
+      in srgb,
+      var(--lumi-nav-light-color) var(--lumi-nav-beam-source-strength),
+      transparent
+    ),
+    color-mix(in srgb, var(--lumi-nav-light-color) var(--lumi-nav-beam-mid-strength), transparent)
+      52%,
+    transparent
+  );
+  --lumi-nav-marker-highlight: 0 0 8px
+    color-mix(
+      in srgb,
+      var(--lumi-nav-light-color) var(--lumi-nav-marker-glow-strength),
+      transparent
+    );
   --lumi-control-height: 36px;
   --lumi-icon-size-small: 20px;
   --lumi-search-width: 240px;
@@ -60,6 +83,15 @@
   --lumi-loading-breathe: 1800ms;
   --lumi-file-tree-width: 240px;
   --lumi-text-page: 26px;
+  --lumi-text-metric: 32px;
+  --lumi-leading-metric: 40px;
+  --lumi-dashboard-metric-height: 144px;
+  --lumi-dashboard-analysis-height: 320px;
+  --lumi-dashboard-plot-height: 200px;
+  --lumi-dashboard-max-width: 1600px;
+  --lumi-data-table-height: 420px;
+  --lumi-distribution-ring-size: 88px;
+  --lumi-distribution-ring-width: 300px;
   --lumi-leading-page: 36px;
   --lumi-text-section: 18px;
   --lumi-leading-section: 27px;

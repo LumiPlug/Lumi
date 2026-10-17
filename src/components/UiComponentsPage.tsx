@@ -1,7 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
+  StackedBars,
+  MetricCard,
+  MetricPair,
+  ProviderGlyph,
+  DistributionRing,
+  DateRangeCalendar,
+  Pagination,
+  DataPanel,
+  DataText,
+  RankingList,
+  ExpandableTable,
   Badge,
   Button,
   Card,
@@ -14,6 +25,7 @@ import {
   Input,
   InputHint,
   Modal,
+  NavigationButton,
   WindowPanel,
   Segmented,
   Select,
@@ -30,8 +42,13 @@ import {
   DocumentViewer,
 } from './ui'
 import { copyText } from '../lib/clipboard'
+import { UsageSessionHeading } from './UsageSessionCard'
+import './usage.css'
 import { terminalOutputText } from '../lib/terminal-output'
-import { Copy } from 'lucide-react'
+import { ArrowLeft, CalendarDays, Copy, Home, RefreshCw, Settings, Wrench } from 'lucide-react'
+import { UsageRecordTable } from './UsageRecordCard'
+import { compactTokens } from '../lib/usage-dashboard'
+import { usageLogos } from '../assets/clients/logos'
 import { RunParameters } from './RunParameters'
 import RunConfigurationFields from './RunConfigurationFields'
 import { multilineRunField } from '../lib/tool-run'
@@ -85,6 +102,125 @@ function DemoRow({
     </section>
   )
 }
+
+function SessionNavigationPreview() {
+  const [open, setOpen] = useState(false)
+  const [range, setRange] = useState({ start: '2026-10-16', end: '2026-10-17' })
+  const [calendarOpen, setCalendarOpen] = useState(false)
+  const calendarAnchor = useRef<HTMLDivElement>(null)
+  const closeCalendar = useCallback(() => setCalendarOpen(false), [])
+  const records = ['2026-10-16', '2026-10-17']
+    .filter((day) => day >= range.start && day <= range.end)
+    .map((day) => ({
+      id: day,
+      software: 'codex' as const,
+      time: `${day}T10:00:00`,
+      model: '示例模型',
+      session: 'synthetic',
+      total: 20250,
+      input: 16200,
+      output: 4050,
+      cacheRead: 12150,
+      cacheWrite: null,
+      inputIncludesCache: true,
+      quality: 'reported' as const,
+    }))
+  const heading = useRef<HTMLHeadingElement>(null)
+  const table = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (open) heading.current?.focus({ preventScroll: true })
+  }, [open])
+  return (
+    <div className="usage-page">
+      <div ref={table} hidden={open}>
+        <ExpandableTable
+          label="导航会话表格示例"
+          rows={[{ key: 'sample', name: '示例会话', total: '40.5K' }]}
+          rowKey={(row) => row.key}
+          rowName={(row) => row.name}
+          columns={[
+            { key: 'name', label: '会话名称', render: (row) => row.name },
+            {
+              key: 'total',
+              label: '总计',
+              align: 'end',
+              render: (row) => <DataText mono>{row.total}</DataText>,
+            },
+          ]}
+          onRowOpen={() => setOpen(true)}
+        />
+      </div>
+      {open && (
+        <div className="usage-page">
+          <header className="usage-detail-header">
+            <IconButton
+              label="返回示例会话列表"
+              onClick={() => {
+                setOpen(false)
+                requestAnimationFrame(() =>
+                  table.current?.querySelector('button')?.focus({ preventScroll: true }),
+                )
+              }}
+            >
+              <ArrowLeft aria-hidden="true" />
+            </IconButton>
+            <h2 ref={heading} tabIndex={-1} className="ui-detail-heading">
+              示例会话
+            </h2>
+          </header>
+          <DataPanel
+            className="usage-records-panel usage-records-preview"
+            title={`用量记录（${records.length}条）`}
+            actions={
+              <div className="usage-log-actions">
+                <div ref={calendarAnchor}>
+                  <Segmented
+                    label="示例会话时间范围"
+                    value=""
+                    onValueChange={() => setCalendarOpen((value) => !value)}
+                    items={[
+                      {
+                        value: 'custom',
+                        accessibleLabel: `选择示例时间范围 ${range.start} – ${range.end}`,
+                        label: (
+                          <span className="ui-choice-content">
+                            <CalendarDays size={16} aria-hidden="true" />
+                            {range.start} – {range.end}
+                          </span>
+                        ),
+                      },
+                    ]}
+                  />
+                  {calendarOpen && (
+                    <DateRangeCalendar
+                      anchorRef={calendarAnchor}
+                      start={range.start}
+                      end={range.end}
+                      onClose={closeCalendar}
+                      onApply={(start, end) => {
+                        setRange({ start, end })
+                        setCalendarOpen(false)
+                      }}
+                    />
+                  )}
+                </div>
+                <Badge>
+                  总计 {compactTokens(records.reduce((sum, row) => sum + row.total, 0))} Token
+                </Badge>
+              </div>
+            }
+          >
+            <UsageRecordTable
+              records={records}
+              label="合成会话记录"
+              empty={<DataText muted>所选日期暂无合成记录。</DataText>}
+            />
+          </DataPanel>
+        </div>
+      )}
+    </div>
+  )
+}
 export default function UiComponentsPage({
   theme,
   onThemeChange,
@@ -107,6 +243,7 @@ export default function UiComponentsPage({
   useEffect(() => {
     heading.current?.focus({ preventScroll: true })
   }, [])
+  const [chartDetail, setChartDetail] = useState(false)
   const [stageOpen, setStageOpen] = useState(false)
   const [logLines, setLogLines] = useState(40)
   const [outputType, setOutputType] = useState('terminal')
@@ -126,6 +263,7 @@ export default function UiComponentsPage({
   const [knowledgeSelection, setKnowledgeSelection] = useState<string | null>('overview')
   const [panel, setPanel] = useState<Panel>('controls')
   const [choice, setChoice] = useState('all')
+  const [navigationChoice, setNavigationChoice] = useState('workbench')
   const [loading, setLoading] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const [name, setName] = useState('')
@@ -170,6 +308,13 @@ export default function UiComponentsPage({
   const [previewPath, setPreviewPath] = useState(
     '/Users/zj/Documents/projects/long-directory-name/workspaces/terminal-tools/development/services/gushan_server',
   )
+  const [sessionOpen, setSessionOpen] = useState(false)
+  const [previewUsagePage, setPreviewUsagePage] = useState(1)
+  const calendarAnchor = useRef<HTMLDivElement>(null)
+  const [calendarOpen, setCalendarOpen] = useState(false)
+  const closeCalendar = useCallback(() => setCalendarOpen(false), [])
+  const [calendarRange, setCalendarRange] = useState({ start: '2026-10-01', end: '2026-10-17' })
+  const [previewRingRevision, setPreviewRingRevision] = useState(0)
   const [checked, setChecked] = useState(false)
   const [switchOn, setSwitchOn] = useState(true)
   const [listCategory, setListCategory] = useState('all')
@@ -202,6 +347,238 @@ export default function UiComponentsPage({
           ]}
         />
       </div>
+      <DemoRow
+        title="用量仪表盘"
+        description="合成示例 · 共用统计卡、彩色排行和可展开语义表格；业务传入实际数据。"
+      >
+        <div style={{ display: 'grid', gap: 16, width: '100%' }}>
+          <MetricCard
+            label="总 Token 吞吐"
+            value="40.5K"
+            exact="40,500"
+            tone="accent"
+            highlight
+            badge={<Badge tone="success">+8.2%</Badge>}
+            footer={
+              <>
+                <DataText muted>输入 32.4K</DataText>
+                <DataText tone="protocol">输出 8.1K</DataText>
+              </>
+            }
+          />
+          <div ref={calendarAnchor}>
+            <Button onClick={() => setCalendarOpen(true)}>日期范围日历示例</Button>
+            {calendarOpen && (
+              <DateRangeCalendar
+                anchorRef={calendarAnchor}
+                start={calendarRange.start}
+                end={calendarRange.end}
+                onClose={closeCalendar}
+                onApply={(start, end) => {
+                  setCalendarRange({ start, end })
+                  setCalendarOpen(false)
+                }}
+              />
+            )}
+          </div>
+          <Card>
+            <div className="usage-toolbar">
+              {['gemini', 'copilot', 'opencode', 'amp', 'warp', 'vercel-gateway'].map((id) => (
+                <span className="ui-choice-content" key={id}>
+                  <ProviderGlyph id={id} size={18} />
+                  {id}
+                </span>
+              ))}
+            </div>
+          </Card>
+          <MetricCard label="双数值统计示例">
+            <MetricPair
+              first={{ label: '输入 Token', value: '32.4K' }}
+              second={{ label: '输出 Token', value: '8.1K' }}
+            />
+          </MetricCard>
+          <MetricCard label="设备占比示例" badge={<Badge>2</Badge>}>
+            <DistributionRing
+              key={previewRingRevision}
+              label="合成软件占比"
+              items={[
+                { key: 'a', label: '软件 A', value: 70, tone: 'accent' },
+                { key: 'b', label: '软件 B', value: 30, tone: 'protocol' },
+              ]}
+            />
+          </MetricCard>
+          <Button onClick={() => setPreviewRingRevision((value) => value + 1)}>重播圆环动效</Button>
+          <Segmented
+            appearance="enclosed"
+            label="仪表盘分组筛选示例"
+            value={choice}
+            onValueChange={setChoice}
+            items={[
+              { value: 'all', label: '全部' },
+              { value: 'terminal', label: '终端' },
+            ]}
+          />
+          <Segmented
+            appearance="chips"
+            label="仪表盘模型筛选示例"
+            value={choice}
+            onValueChange={setChoice}
+            items={[
+              { value: 'all', label: '全部模型' },
+              { value: 'terminal', label: '示例模型' },
+            ]}
+          />
+          <DataPanel title="软件排行">
+            <RankingList
+              label="软件排行示例"
+              rows={[
+                { key: 'sample', label: '示例软件', value: '40.5K', share: 0.68, tone: 'accent' },
+                { key: 'zero', label: '零数据软件', value: '0', share: 0, tone: 'protocol' },
+              ]}
+            />
+          </DataPanel>
+          <ExpandableTable
+            fixedHeight
+            label="会话表格示例"
+            rows={[{ key: 'sample', name: '示例会话', total: '40,500' }]}
+            rowKey={(row) => row.key}
+            rowName={(row) => row.name}
+            columns={[
+              { key: 'name', label: '会话名称', render: (row) => row.name },
+              {
+                key: 'tokens',
+                label: '总 Token',
+                align: 'end',
+                render: (row) => <DataText mono>{row.total}</DataText>,
+              },
+            ]}
+            renderExpanded={() => <p>合成记录 · Enter / 空格或点击行展开。</p>}
+          />
+          <Pagination
+            page={previewUsagePage}
+            total={1234}
+            pageSize={10}
+            onPageChange={setPreviewUsagePage}
+          />
+          <StackedBars
+            appearance="dashboard"
+            title="每日用量"
+            series={[{ key: 'sample', label: '示例软件', tone: 'accent' }]}
+            days={[
+              { date: '2026-10-15', values: { sample: 12000 } },
+              { date: '2026-10-16', values: { sample: 40500 } },
+            ]}
+            showHint={false}
+            onSelect={() => setChartDetail(true)}
+          />
+        </div>
+      </DemoRow>
+      <DemoRow
+        title="会话二级页面"
+        description="合成示例 · 点击行或具名箭头进入详情；支持 Enter / 空格与返回列表，沿用共用表格视觉。"
+      >
+        <SessionNavigationPreview />
+      </DemoRow>
+      <DemoRow
+        title="会话汇总展开"
+        description="合成示例 · 复用 Card 与 Button text，汇总名称和总 Token，Enter/空格或点击展开。"
+      >
+        <Card style={{ width: '100%' }}>
+          <UsageSessionHeading
+            session={{
+              key: 'example',
+              session: 'synthetic-hash',
+              sessionName: '示例会话',
+              software: 'codex',
+              latestTime: '2026-10-16T00:00:00Z',
+              total: 40500,
+              input: 32400,
+              output: 8100,
+              cacheRead: 12150,
+              cacheWrite: null,
+              count: 405,
+            }}
+            expanded={sessionOpen}
+            panelId="preview-session-records"
+            onToggle={() => setSessionOpen((value) => !value)}
+          />
+          <div id="preview-session-records" hidden={!sessionOpen}>
+            <p>合成记录内容 · 完整会话汇总不受记录分页影响。</p>
+          </div>
+        </Card>
+      </DemoRow>
+      <DemoRow
+        title="刷新图标与零用量"
+        description="合成示例 · 扫描时旋转、禁止重复提交；减少动态效果时保持静止。空日期显示 0。"
+      >
+        <IconButton
+          label="刷新示例"
+          loadingAnimation="spin"
+          loading={loading}
+          onClick={() => {
+            setLoading(true)
+            timer.current = setTimeout(() => setLoading(false), 1500)
+          }}
+        >
+          <RefreshCw aria-hidden="true" />
+        </IconButton>
+        <Segmented
+          label="带 Logo 的软件筛选示例"
+          value={choice}
+          onValueChange={setChoice}
+          items={[
+            { value: 'all', label: '全部' },
+            {
+              value: 'terminal',
+              label: (
+                <span className="ui-choice-content">
+                  <svg
+                    className="ui-choice-icon"
+                    viewBox={usageLogos.codex.viewBox}
+                    aria-hidden="true"
+                  >
+                    {usageLogos.codex.paths.map((attrs, index) => (
+                      <path key={index} {...attrs} />
+                    ))}
+                  </svg>
+                  软件示例
+                </span>
+              ),
+            },
+          ]}
+        />
+        <div style={{ width: '100%' }}>
+          <StackedBars
+            series={[{ key: 'a', label: '软件 A' }]}
+            days={[{ date: '2026-10-16', values: { a: 0 } }]}
+            onSelect={() => setChartDetail(true)}
+            showHint={false}
+          />
+        </div>
+      </DemoRow>
+      <DemoRow
+        title="日堆叠图与明细抽屉"
+        description="合成示例 · 图例切换、键盘日期筛选、共用 Modal 侧边布局。"
+      >
+        <div style={{ width: '100%' }}>
+          <StackedBars
+            series={[
+              { key: 'a', label: '软件 A' },
+              { key: 'b', label: '软件 B' },
+            ]}
+            days={[
+              { date: '2026-10-10', values: { a: 100, b: 60 } },
+              { date: '2026-10-11', values: { a: 80, b: null } },
+            ]}
+            onSelect={() => setChartDetail(true)}
+          />
+        </div>
+        {chartDetail && (
+          <Modal title="合成用量明细" placement="side" onClose={() => setChartDetail(false)}>
+            <p>仅展示元数据的侧边抽屉，沿用焦点管理、Escape 关闭和减少动态效果。</p>
+          </Modal>
+        )}
+      </DemoRow>
       <Tabs
         label="组件分类"
         value={panel}
@@ -247,7 +624,7 @@ export default function UiComponentsPage({
             </DemoRow>
             <DemoRow
               title="列表顶栏"
-              description="分类 Tab 与搜索框左对齐，保留阴影留白；窄窗口只滚动 Tab，搜索行自然换行。"
+              description="分类 Tab 在左，搜索与筛选操作在同一行最右侧；保留阴影留白，窄窗口自然换行。"
             >
               <div className="ui-list-toolbar" style={{ width: '100%' }}>
                 <div className="ui-list-toolbar-heading">
@@ -587,6 +964,24 @@ export default function UiComponentsPage({
               />
             </DemoRow>
             <DemoRow
+              title="侧栏导航"
+              description="选中项无线框，左侧竖线向右投射柔边光束；浅色模式使用琥珀图标与通透金橙灯光，点击区仍为 44px。"
+            >
+              {[
+                { value: 'workbench', label: '工作台导航示例', icon: <Home size={20} /> },
+                { value: 'tools', label: '工具导航示例', icon: <Wrench size={20} /> },
+                { value: 'settings', label: '设置导航示例', icon: <Settings size={20} /> },
+              ].map((item) => (
+                <NavigationButton
+                  key={item.value}
+                  label={item.label}
+                  icon={item.icon}
+                  current={navigationChoice === item.value}
+                  onClick={() => setNavigationChoice(item.value)}
+                />
+              ))}
+            </DemoRow>
+            <DemoRow
               title="图标操作"
               description="默认灰色轮廓；悬停或键盘聚焦显示对应颜色与完整底部光晕。"
             >
@@ -903,11 +1298,17 @@ export default function UiComponentsPage({
             </DemoRow>
             <DemoRow
               title="标签与容器"
-              description="悬停或聚焦时浮起并显示重阴影，标签色彩对应具体语义。"
+              description="浅色卡片使用独立纯白表面，输入框使用浅灰；悬停或聚焦沿用重阴影，标签色彩对应具体语义。"
             >
               <Card interactive tabIndex={0} className="ui-demo-card">
                 <strong>示例工具</strong>
-                <p>卡片内容由业务传入。</p>
+                <p>卡片与输入框底色独立，主按钮使用橙琥珀配深色文字。</p>
+                <Field label="输入框底色示例">
+                  <Input placeholder="浅灰输入区域" />
+                </Field>
+                <Button variant="primary" onClick={() => toast('主色按钮示例已触发', 'success')}>
+                  主色按钮示例
+                </Button>
                 <div className="ui-demo-badges">
                   <Badge>默认</Badge>
                   <Badge tone="accent">待审阅</Badge>

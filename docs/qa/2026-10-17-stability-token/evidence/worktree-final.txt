@@ -1,0 +1,71 @@
+## feat/ai-token-usage
+ M .gitignore
+ M docs/DEVELOPMENT_PLAN.md
+ M docs/HOMEPAGE_DEVELOPMENT_PLAN.md
+ M docs/PRODUCT_SPEC.md
+ M docs/TECHNICAL_ARCHITECTURE.md
+ M docs/UI_COMPONENTS.md
+ M docs/UI_DESIGN.md
+ M eslint.config.mjs
+ M package.json
+ M packages/core/package.json
+ M packages/core/src/capability.test.ts
+ M packages/core/src/db/migrations.ts
+ M packages/core/src/service.ts
+ M packages/core/src/workbench/errors.ts
+ M packages/core/src/workbench/template-files.ts
+ M packages/core/src/workbench/validation.ts
+ M packages/core/src/workbench/workbench.test.ts
+ M packages/home-sdk/src/index.ts
+ M packages/shared/src/index.ts
+ M pnpm-lock.yaml
+ M scripts/build-sidecars.mjs
+ M src-tauri/src/lib.rs
+ M src/App.tsx
+ M src/components/KnowledgePage.tsx
+ M src/components/UiComponentsPage.tsx
+ M src/components/WorkbenchContent.tsx
+ M src/components/knowledge.css
+ M src/components/skills.css
+ M src/components/tools.css
+ M src/components/ui/Modal.tsx
+ M src/components/ui/choice.tsx
+ M src/components/ui/controls.tsx
+ M src/components/ui/index.ts
+ M src/components/ui/ui.css
+ M src/lib/tauri.ts
+ M src/theme/obsidian-solar-amber.css
+ M src/theme/palette.css
+ M templates/html-home/knowledge/build-and-delivery.md
+ M templates/html-home/knowledge/security-and-limitations.md
+ M templates/html-home/lumi-sdk.js
+ M templates/html-home/theme.css
+ M vitest.config.ts
+?? docs/qa/
+?? packages/core/src/usage/
+?? packages/core/vendor/
+?? packages/home-sdk/src/index.test.ts
+?? packages/shared/src/usage.ts
+?? reports/
+?? scripts/audit-codeburn.mjs
+?? scripts/build-codeburn-reader.mjs
+?? scripts/build-codeburn-report.mjs
+?? scripts/codeburn-vitest.config.ts
+?? scripts/verify-codeburn.mjs
+?? src/assets/clients/
+?? src/components/UsagePage.tsx
+?? src/components/UsageRecordCard.tsx
+?? src/components/UsageSessionCard.tsx
+?? src/components/ui/DataDashboard.tsx
+?? src/components/ui/DataMetrics.tsx
+?? src/components/ui/DateRangeCalendar.tsx
+?? src/components/ui/ProviderGlyph.tsx
+?? src/components/ui/StackedBars.tsx
+?? src/components/ui/dashboard.css
+?? src/components/ui/pagination.ts
+?? src/components/usage.css
+?? src/lib/pagination.test.ts
+?? src/lib/usage-dashboard.test.ts
+?? src/lib/usage-dashboard.ts
+?? src/lib/usage.test.ts
+?? src/lib/usage.ts

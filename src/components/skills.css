@@ -22,9 +22,6 @@
   flex-direction: column;
   min-height: 0;
 }
-.skills-toolbar {
-  margin-bottom: 12px;
-}
 .skills-page input::placeholder {
   color: var(--secondary);
 }

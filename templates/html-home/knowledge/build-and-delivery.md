@@ -2,6 +2,8 @@
 
 # 静态文件交付与版本
 
+`lumiVersion` 与 `sdkVersion` 是工程创建时的发布信息，不要求与当前应用一致。Lumi 升级后，format／template／entry 与 bridge 契约相同的主页可直接加载、继续发布、导出和恢复；保留原清单与 projectId，无需为匹配应用发布号重新发布。
+
 根目录必要文件：`index.html`、`app.js`、`style.css`。`index.html` 是入口，可以加载其他同目录或子目录静态资源；使用相对 URL（`./`），不要引用开发服务器、CDN 或绝对磁盘路径。其他框架可由 AI 在其环境中开发，但交给 Lumi 的输出必须是包含这三个文件的静态目录，不要求用户安装 Node。
 
 通过 Lumi MCP 发布标准包 `manifest/files/sourceFiles`。工程导出包含 `lumi.home.json`、官方 SDK 预览文件、主题和知识库；这四者可由 Lumi 提供。更新同一主页时保持 `projectId` 不变。

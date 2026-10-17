@@ -26,6 +26,9 @@
   --panel: var(--lumi-surface-3);
   --hover: var(--lumi-surface-4);
   --input: var(--lumi-surface-2);
+  --lumi-card-bg: var(--input);
+  --lumi-card-border-hover: var(--accent);
+  --lumi-dashboard-surface: var(--bg);
   --line: var(--lumi-outline);
   --text: var(--lumi-on-canvas);
   --secondary: var(--lumi-on-surface-muted);
@@ -63,10 +66,20 @@
 }
 
 /* Theme thumbnails use the same palette regardless of the selected app theme. */
+:root,
+[data-preview-theme='dark'] {
+  --lumi-nav-icon-color: var(--lumi-primary);
+  --lumi-nav-light-color: var(--lumi-primary);
+  --lumi-nav-beam-source-strength: 44%;
+  --lumi-nav-beam-mid-strength: 18%;
+  --lumi-nav-marker-glow-strength: 50%;
+}
+
 [data-preview-theme='dark'] {
   --bg: var(--lumi-surface-1);
   --content-card: var(--lumi-canvas);
   --input: var(--lumi-surface-2);
+  --lumi-card-bg: var(--input);
   --line: var(--lumi-outline);
   --text: var(--lumi-on-canvas);
   --accent: var(--lumi-primary);
@@ -78,6 +91,7 @@
   color-scheme: light;
   --lumi-shadow-color: rgb(38 38 41 / 12%);
   --lumi-shadow-heavy-color: rgb(38 38 41 / 24%);
+  --lumi-choice-selected-shadow-opacity: 0.4;
   /* ANSI terminal palette, shared by all terminal output surfaces. */
   --lumi-terminal-0: #24292f;
   --lumi-terminal-1: #b42318;
@@ -95,19 +109,27 @@
   --lumi-terminal-13: #a475f9;
   --lumi-terminal-14: #1b7c83;
   --lumi-terminal-15: #ffffff;
-  --bg: #f0f0ee;
-  --content-card: #fff;
-  --panel: #f7f7f5;
-  --hover: #eaeae6;
-  --input: #f1f1ee;
-  --line: #ddddd7;
-  --text: #262629;
-  --secondary: #64646d;
-  --quiet: #6c6c75;
-  --accent: #875600;
-  --accent-bg: #f7ecd8;
-  --button: #edb344;
-  --button-text: #291b05;
+  --bg: #f8f9fa;
+  --content-card: #f8f9fa;
+  --panel: #fff;
+  --hover: #f4f4f6;
+  --input: #f1f3f5;
+  --lumi-card-bg: #fff;
+  --lumi-card-border-hover: #d1d5db;
+  --lumi-dashboard-surface: #fff;
+  --line: #e5e7eb;
+  --text: #0f1117;
+  --secondary: #4b5563;
+  --quiet: #6b7280;
+  --accent: #b45309;
+  --accent-bg: #fef3c7;
+  --lumi-nav-icon-color: #b87500;
+  --lumi-nav-light-color: #f59e0b;
+  --lumi-nav-beam-source-strength: 20%;
+  --lumi-nav-beam-mid-strength: 6%;
+  --lumi-nav-marker-glow-strength: 35%;
+  --button: #d97706;
+  --button-text: #0f1117;
   --lumi-tool-terminal-bg: #eee8ff;
   --lumi-tool-terminal-text: #58418d;
   --lumi-tool-http-bg: #e1effa;
@@ -133,5 +155,5 @@
   --lumi-operational: #047857;
   --lumi-protocol: #075985;
   --lumi-error: #b42318;
-  --lumi-primary-hover: #e2a631;
+  --lumi-primary-hover: #f59e0b;
 }

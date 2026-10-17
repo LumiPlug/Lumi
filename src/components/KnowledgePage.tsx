@@ -452,7 +452,11 @@ export default function KnowledgePage({
       `${item.name} ${item.description} ${item.branch}`.toLowerCase().includes(query.toLowerCase()),
     )
   return (
-    <section className="knowledge-page" hidden={!active} aria-busy={loading || undefined}>
+    <section
+      className={`knowledge-page${view ? '' : ' knowledge-page--list'}`}
+      hidden={!active}
+      aria-busy={loading || undefined}
+    >
       <h1 className="sr-only">知识库</h1>
       <Input
         type="file"

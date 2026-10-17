@@ -12,7 +12,9 @@
 
 ## SDK 与版本
 
-SDK 源码位于 `packages/home-sdk`；应用构建时用 esbuild 生成同版本的独立浏览器脚本。Lumi 在运行时提供受控的 `lumi-sdk.js`，无需信任用户工程中的同名脚本；对未主动引用 SDK 的自定义 `index.html`，资源服务自动加入引用。官方模板附带的脚本用于本地直接打开文件时的明确模拟预览。`window.lumi` 提供 ready、context、capabilities、tools、storage、theme、toast。页面与外部 MCP 共享 CapabilityRegistry，页面只可访问公开功能。版本契约由根发布版本生成：format 2、bridge 1、Lumi/SDK 同版本；不再检查 React、TypeScript 或 Vite 的开发依赖版本。
+SDK 源码位于 `packages/home-sdk`；应用构建时用 esbuild 生成随应用发布的独立浏览器脚本。Lumi 在运行时提供受控的 `lumi-sdk.js`，无需信任用户工程中的同名脚本；对未主动引用 SDK 的自定义 `index.html`，资源服务自动加入引用。官方模板附带的脚本用于本地直接打开文件时的明确模拟预览。`window.lumi` 提供 ready、context、capabilities、tools、storage、theme、toast。页面与外部 MCP 共享 CapabilityRegistry，页面只可访问公开功能。
+
+2026-10-16：应用发布版本与主页协议分离。清单中的 `lumiVersion`、`sdkVersion` 仅记录工程创建时的发布信息，不参与加载、发布、导出、历史恢复或 SDK 握手的兼容性判定，也不比较大小。实际兼容性依据 HTML 工程格式（format 2、lumi-html-home、index.html）与桥接协议（bridge 1）；SDK 握手仅校验桥接协议。应用升级自动继续加载同契约的已有主页，使用宿主当前 SDK，无需重新发布、改写工程清单或迁移项目 KV。未来破坏性协议变更应独立升级 format／bridge 并提供迁移方案，不能由应用或 SDK 发布号变化触发阻断。
 
 ## 发布与版本
 
@@ -29,3 +31,9 @@ SDK 源码位于 `packages/home-sdk`；应用构建时用 esbuild 生成同版�
 ## 验证
 
 根工程执行 `pnpm check` 与前端/Core 构建，检查生成契约与嵌入模板一致。测试三个入口文件校验、MCP 发布、SDK 受控提供、真实工具调用、版本冲突、当前契约下的历史恢复、项目数据及隔离边界。模板直接在浏览器模拟预览，在 macOS 原生 WebView 验证 SDK；其他平台按实际结果记录。
+
+## 默认效率工作台（2026-10-17）
+
+连接引导第二步提供通用办公、开发者、内容创作三个内置模板，选择后通过“应用模板”直接发布并加载，无需外部 AI 构建；保留原有 AI 定制提示词。模板沿用官方 HTML 契约和主题，应用本身不运行任何工具，发布校验 expectedVersion，历史版本可恢复。已有主页继续直接显示，不自动覆盖。
+
+三个模板共用待办、工作流绑定与运行、真实任务记录及结果展示，使用不同的场景文案和工作流。初始没有虚构数据；待办由用户录入并保存到项目 KV。工作流由用户明确绑定已授权工具，参数按真实 Schema 输入，缺少配置时提供工具页配置步骤并允许刷新。未启用、失效、运行失败、服务不可用分别展示真实状态；不预装或自动授权工具，不虚构 AI 汇报产出或效率数字。操作反馈使用宿主顶部 Toast。引导入口复用共用 ChoiceCard 和 Button，不新增视觉组件。

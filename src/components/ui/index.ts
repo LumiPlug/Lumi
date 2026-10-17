@@ -22,6 +22,7 @@ export type { InputHintControlProps } from './InputHint'
 export { Modal } from './Modal'
 export { WindowPanel } from './WindowPanel'
 import './ui.css'
+import './dashboard.css'
 import './knowledge.css'
 export { TreeView } from './TreeView'
 export type { TreeItem } from './TreeView'
@@ -35,3 +36,21 @@ export type { StageState, StageStatus } from './StageSection'
 export { LogViewer, TerminalText } from './LogViewer'
 
 export { useTableDragPreview } from './useTableDragPreview'
+
+export { StackedBars } from './StackedBars'
+export type { BarDay, BarSeries } from './StackedBars'
+export {
+  MetricCard,
+  DataPanel,
+  DashboardToolbar,
+  DataText,
+  RankingList,
+  ExpandableTable,
+} from './DataDashboard'
+export type { DataTone, DataColumn, RankingRow } from './DataDashboard'
+export { MetricPair, DistributionRing, Pagination } from './DataMetrics'
+export type { RingItem } from './DataMetrics'
+
+export { DateRangeCalendar } from './DateRangeCalendar'
+
+export { ProviderGlyph } from './ProviderGlyph'

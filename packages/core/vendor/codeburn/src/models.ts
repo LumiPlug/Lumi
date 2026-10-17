@@ -1,0 +1,2035 @@
+import { readFile, writeFile, mkdir } from 'fs/promises'
+import { join } from 'path'
+import { createHash } from 'crypto'
+
+import { getCodeburnCacheDir } from './cache-dir.js'
+import snapshotData from './data/litellm-snapshot.json' with { type: 'json' }
+import fallbackData from './data/pricing-fallback.json' with { type: 'json' }
+import { fetchWithTimeout } from './fetch-utils.js'
+
+export type ModelCosts = {
+  inputCostPerToken: number
+  outputCostPerToken: number
+  cacheWriteCostPerToken: number
+  cacheReadCostPerToken: number
+  webSearchCostPerRequest: number
+  fastMultiplier: number
+  /// True only when the pricing source carried a real cache-write rate. When
+  /// absent/false, `cacheWriteCostPerToken` is the fabricated `1.25 x input`
+  /// default, which is right for Anthropic-style pricing but would invent a
+  /// surcharge on providers that charge nothing extra to write cache. Callers
+  /// that decide WHICH bucket to put tokens in (rather than what to multiply
+  /// them by) must consult this before routing tokens to the cache-write
+  /// bucket. Optional so an incomplete literal defaults to the safe answer.
+  cacheWriteCostIsExplicit?: boolean
+  /// The vendor's long-context tier (LiteLLM `*_above_<n>k_tokens`), applied
+  /// when a request's prompt tokens (input + cached input) reach the
+  /// threshold. Each rate the source published for the tier replaces its base
+  /// rate; a slot the source omitted keeps the base. Optional: absent on
+  /// models without a published tier and on tuples predating the extension.
+  longContextTier?: LongContextTier
+  /// The Flex service tier's rates (LiteLLM `<rate>_flex`), priced instead of
+  /// these when a call runs under Flex. Absent: Flex bills at standard.
+  flex?: ModelCosts
+}
+
+/** Long-context pricing tier, e.g. OpenAI's above-272k or Anthropic's
+ *  above-200k rates. `thresholdTokens` is parsed from the source key suffix
+ *  (272k → 272_000) because LiteLLM carries no numeric threshold field. */
+export type LongContextTier = {
+  thresholdTokens: number
+  inputCostPerToken: number
+  outputCostPerToken: number
+  cacheWriteCostPerToken?: number
+  cacheReadCostPerToken?: number
+  /// Replaces the base fastMultiplier above the threshold; absent inherits it.
+  fastMultiplier?: number
+}
+
+/// Providers whose reported `reasoningTokens` are a SUBSET of `outputTokens`
+/// rather than a separate bucket to add on top. OpenAI bills reasoning as part
+/// of output (every codex `token_count` event satisfies input + output ==
+/// total), and Anthropic folds thinking into output the same way, so summing
+/// the two double-counts both the cost and the displayed output tokens. Copilot
+/// is the same case: its per-request token_details_json prices input/cache/output
+/// and nothing else, and its store-row/shutdown calls carry reasoningTokens
+/// beside an output count that already includes them, so adding reasoning on
+/// top bills it twice.
+/// DSH TokenUsage includes reasoning in output too; see the pinned contract:
+/// https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/docs/subsystems/llm-streaming.md#tokenusage
+const REASONING_INCLUDED_IN_OUTPUT = new Set(['claude', 'codex', 'copilot', 'dsh'])
+
+/// Output tokens to bill and display for one call. Single source of truth so
+/// the pricing sites and the display sums can never disagree about whether a
+/// provider's reasoning tokens are already inside its output count (#1075).
+export function billableOutputTokens(provider: string, outputTokens: number, reasoningTokens: number): number {
+  return REASONING_INCLUDED_IN_OUTPUT.has(provider) ? outputTokens : outputTokens + reasoningTokens
+}
+
+type PriceOverrideRates = {
+  input: number
+  output: number
+  cacheRead?: number
+  cacheCreation?: number
+}
+
+type LiteLLMEntry = {
+  input_cost_per_token?: number
+  output_cost_per_token?: number
+  cache_creation_input_token_cost?: number
+  cache_read_input_token_cost?: number
+  provider_specific_entry?: { fast?: number }
+}
+
+// [input, output, cacheWrite, cacheRead, fastMultiplier, longContextTier?, flex?].
+// The trailing fast multiplier is carried straight from LiteLLM's
+// provider_specific_entry.fast so new models pick it up automatically — no
+// hand-maintained per-model table. The optional sixth slot carries the
+// vendor's long-context tier; older bundles without it parse unchanged. The
+// optional seventh is the Flex tier's own tuple, present only where published.
+type SnapshotTier = { threshold: number, input: number, output: number, cacheWrite: number | null, cacheRead: number | null, fast?: number }
+type SnapshotEntry = [number, number, number | null, number | null, (number | null)?, (SnapshotTier | null)?, (SnapshotEntry | null)?]
+
+const LITELLM_URL = 'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json'
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000
+// Bump whenever a ModelCosts field changes pricing behavior (cacheWriteCostIsExplicit
+// from #1075/#1078; longContextTier from #1076). A cache written under an older/missing
+// version is treated as a miss instead of read verbatim, so a stale on-disk file can't
+// reintroduce a killed bug for up to CACHE_TTL_MS after an upgrade.
+// Also folded into getPricingGenerationKey() below: a resident/snapshot-caching
+// consumer needs the same "pricing behavior changed" signal this already gives
+// the on-disk LiteLLM cache, not just the on-disk cache itself.
+// 4: calculateCost bills an implicit cache-write rate as input for non-Anthropic models.
+// 5: longContextTier rides ModelCosts, so a cached costs object is tier-aware (#1076).
+// 6: fastMultiplier is now derived from LiteLLM's `<rate>_priority` keys when the
+// source publishes no `provider_specific_entry.fast` (#1616), so a cached costs
+// object can carry a multiplier the pre-fix fetch left at 1.
+// 7: ModelCosts carries the Flex tier's rates (`flex`), read from `<rate>_flex`.
+// 8: a bare id takes the maker's row over a reseller's, and a reseller's priced
+// row over a reseller's $0 one, so a cached map can still hold azure_ai's rate under `grok-4.6`.
+export const CACHE_SCHEMA_VERSION = 8
+const WEB_SEARCH_COST = 0.01
+const ONE_HOUR_CACHE_WRITE_MULTIPLIER_FROM_FIVE_MINUTE_RATE = 1.6
+
+// Explicit USD/token prices that must override LiteLLM/cache data. Cursor
+// publishes house-model rates in the models table at cursor.com/docs/models
+// (provider "Cursor", USD per 1M tokens): composer-2/2.5: $0.50 input, $2.50
+// output, $0.20 cache read; composer-1.5: $3.50/$17.50/$0.35; composer-1:
+// $1.25/$10/$0.125. Cursor publishes no separate cache-write rate for these,
+// so cache write uses the input rate.
+// deepseek-v3.2: DeepSeek's last published price was $0.28 miss / $0.028 hit /
+// $0.42 output; LiteLLM's deepseek/deepseek-v3.2 row says $0.40 output while its
+// own deepseek-chat row says $0.42. Drop once upstream corrects it.
+// swe-2: Cognition's list price at docs.devin.ai/desktop/models, $3 input, $15
+// output, $0.30 cache read per 1M, no cache-write rate. Plan promotions (free on
+// self-serve until 15 Oct 2026, 75% off for enterprise until 31 Dec 2026) are
+// left out, as they depend on the plan.
+const BUILTIN_PRICE_OVERRIDES: Record<string, SnapshotEntry> = {
+  'deepseek-v3.2': [0.28e-6, 0.42e-6, null, 0.028e-6],
+  'swe-2': [3e-6, 15e-6, null, 0.3e-6],
+  'composer-2.5': [0.5e-6, 2.5e-6, 0.5e-6, 0.2e-6],
+  'composer-2': [0.5e-6, 2.5e-6, 0.5e-6, 0.2e-6],
+  'composer-1.5': [3.5e-6, 17.5e-6, 3.5e-6, 0.35e-6],
+  'composer-1': [1.25e-6, 10e-6, 1.25e-6, 0.125e-6],
+  // Moonshot's published rate (platform.kimi.ai/docs/pricing/chat): $1.90 miss,
+  // $0.38 hit, $8.00 output. LiteLLM only carries a reseller row for it.
+  'kimi-k2.7-code-highspeed': [1.9e-6, 8e-6, null, 0.38e-6],
+}
+
+// Assemble a ModelCosts, applying the cache-cost heuristics (write = 1.25x
+// input, read = 0.1x input) when a source omits them. Shared by the bundled
+// tuple path (tupleToCosts) and the live LiteLLM path (parseLiteLLMEntry) so the
+// multipliers live in exactly one place.
+function buildCosts(
+  input: number,
+  output: number,
+  cacheWrite: number | null | undefined,
+  cacheRead: number | null | undefined,
+  fast: number | null | undefined,
+  tier?: SnapshotTier | null,
+  flex?: SnapshotEntry | null,
+): ModelCosts {
+  return {
+    inputCostPerToken: input,
+    outputCostPerToken: output,
+    cacheWriteCostPerToken: cacheWrite ?? input * 1.25,
+    cacheReadCostPerToken: cacheRead ?? input * 0.1,
+    webSearchCostPerRequest: WEB_SEARCH_COST,
+    fastMultiplier: fast ?? 1,
+    cacheWriteCostIsExplicit: cacheWrite !== null && cacheWrite !== undefined,
+    ...(tier ? { longContextTier: {
+      thresholdTokens: tier.threshold,
+      inputCostPerToken: tier.input,
+      outputCostPerToken: tier.output,
+      ...(tier.cacheWrite !== null ? { cacheWriteCostPerToken: tier.cacheWrite } : {}),
+      ...(tier.cacheRead !== null ? { cacheReadCostPerToken: tier.cacheRead } : {}),
+      ...(tier.fast !== undefined ? { fastMultiplier: tier.fast } : {}),
+    } } : {}),
+    ...(flex ? { flex: tupleToCosts(flex) } : {}),
+  }
+}
+// For grok-4.6, prompt tokens mean input tokens plus cached input tokens for a
+// request. At 200k prompt tokens, xAI prices every priced bucket at this high
+// tier rather than applying a marginal rate. Cache creation stays unset because
+// xAI publishes no separate cache-write rate.
+const GROK_4_6_PROMPT_TOKEN_THRESHOLD = 200_000
+const GROK_4_6_HIGH_PROMPT_COSTS = buildCosts(4e-6, 12e-6, null, 1e-6, null)
+
+// Providers verified to pass the vendor's long-context surcharge through to
+// the bill. The mechanism is data-driven (any model's tier rides its bundled
+// or live rates), but APPLYING it is evidence-based: codex bills the OpenAI
+// above-272k rate directly (#1076, measured on a real corpus), while a real
+// Copilot session on gpt-5.6-terra with ~6M-token prompts billed at the base
+// rate (tests/parser.test.ts "(c4) attributed cost tracks recomputed cost") —
+// applying the tier there fabricates spend, the exact class #1075 warned
+// about. Adding a provider here requires that kind of billing evidence AND
+// threading its provider through every calculateCost site that prices it (the
+// codex sites, the Claude journal paths and the parser.ts central recompute
+// pass it; the copilot residual path does not, so a newly added provider whose
+// calls flow through it would silently stay tierless).
+// antigravity has no per-token bill of its own; its cost is the Gemini API
+// equivalent, and the Gemini API bills the above-200k tier per request.
+// claude: Anthropic's pricing page bills the published long-context tiers per
+// request (Haiku 5.5 over 100k prompt tokens, Sonnet 4.5 over 200k).
+export const TIERED_PRICING_PROVIDERS: ReadonlySet<string> = new Set(['codex', 'antigravity', 'claude'])
+
+// Swap in the vendor's high tier when a request's prompt crosses the published
+// threshold. A user-set priceOverride wins over any tier: the override row
+// is rebuilt without one, exact or aliased. The generic branch serves the
+// models of TIERED_PRICING_PROVIDERS whose rates
+// carry a longContextTier (OpenAI's above-272k family, Anthropic's above-200k);
+// grok-4.6 predates the data plumbing and stays hardcoded. Each tier rate the
+// source published replaces its base rate; omitted slots keep the base.
+export function tieredCostsFor(model: string, baseCosts: ModelCosts, promptTokens: number, provider?: string): ModelCosts {
+  if (exactPriceOverrideFor(model)) return baseCosts
+  if (resolveCanonicalModelId(model) === 'grok-4.6' && promptTokens >= GROK_4_6_PROMPT_TOKEN_THRESHOLD) {
+    return GROK_4_6_HIGH_PROMPT_COSTS
+  }
+  const tier = provider !== undefined && TIERED_PRICING_PROVIDERS.has(provider)
+    ? baseCosts.longContextTier
+    : undefined
+  if (tier && promptTokens > tier.thresholdTokens) {
+    return {
+      ...baseCosts,
+      inputCostPerToken: tier.inputCostPerToken,
+      outputCostPerToken: tier.outputCostPerToken,
+      ...(tier.cacheWriteCostPerToken !== undefined ? { cacheWriteCostPerToken: tier.cacheWriteCostPerToken } : {}),
+      ...(tier.cacheReadCostPerToken !== undefined ? { cacheReadCostPerToken: tier.cacheReadCostPerToken } : {}),
+      ...(tier.fastMultiplier !== undefined ? { fastMultiplier: tier.fastMultiplier } : {}),
+    }
+  }
+  return baseCosts
+}
+
+
+function tupleToCosts(raw: SnapshotEntry): ModelCosts {
+  const [input, output, cacheWrite, cacheRead, fast, tier, flex] = raw
+  return buildCosts(input, output, cacheWrite, cacheRead, fast, tier, flex)
+}
+
+function applyBuiltinPriceOverrides(pricing: Map<string, ModelCosts>): Map<string, ModelCosts> {
+  for (const [name, raw] of Object.entries(BUILTIN_PRICE_OVERRIDES)) {
+    pricing.set(name, tupleToCosts(raw))
+  }
+  return pricing
+}
+
+function loadSnapshot(): Map<string, ModelCosts> {
+  const map = new Map<string, ModelCosts>()
+  for (const [name, raw] of Object.entries(snapshotData as unknown as Record<string, SnapshotEntry>)) {
+    map.set(name, tupleToCosts(raw))
+  }
+  return map
+}
+
+// Gap-fill pricing from models.dev / OpenRouter, keyed lowercase. Consulted ONLY
+// as the last-resort fallback in getModelCosts (never for exact/canonical/prefix
+// matches), so a reseller variant name can't shadow a real canonical entry.
+const fallbackCosts: Map<string, ModelCosts> = (() => {
+  const map = new Map<string, ModelCosts>()
+  for (const [name, raw] of Object.entries(fallbackData as unknown as Record<string, SnapshotEntry>)) {
+    const lk = name.toLowerCase()
+    if (!map.has(lk)) map.set(lk, tupleToCosts(raw))
+  }
+  return map
+})()
+
+let pricingCache: Map<string, ModelCosts> = applyBuiltinPriceOverrides(loadSnapshot())
+let sortedPricingKeys: string[] | null = null
+let lowercasePricingIndex: Map<string, ModelCosts> | null = null
+
+function getSortedPricingKeys(): string[] {
+  if (sortedPricingKeys === null) {
+    sortedPricingKeys = Array.from(pricingCache.keys()).sort((a, b) => b.length - a.length)
+  }
+  return sortedPricingKeys
+}
+
+// Case-insensitive index, built lazily. Lets a session model like `MiniMax-M3`
+// resolve to a gap-filled OpenRouter key like `minimax-m3` (lowercase slug).
+// First key wins on a lowercase collision so it stays deterministic.
+//
+// Zero-priced entries are excluded: LiteLLM ships `[0,0]` stubs (e.g.
+// `GigaChat-2-Max`) for models it lists but has no price for. Indexing those
+// would let a case-mismatched query (`gigachat-2-max`) resolve to a silent $0
+// instead of returning null, which suppresses the unknown-model warning and
+// hides real spend. A case-EXACT query still finds the stub via the normal
+// pipeline; only the fuzzy case-insensitive path skips them.
+function getLowercasePricingIndex(): Map<string, ModelCosts> {
+  if (lowercasePricingIndex === null) {
+    lowercasePricingIndex = new Map()
+    const priced = (c: ModelCosts) => c.inputCostPerToken > 0 || c.outputCostPerToken > 0
+    // The live pricing data wins on any lowercase collision; the gap-fill only
+    // fills names that resolve to nothing through the normal pipeline.
+    for (const [key, costs] of pricingCache) {
+      const lk = key.toLowerCase()
+      if (priced(costs) && !lowercasePricingIndex.has(lk)) lowercasePricingIndex.set(lk, costs)
+    }
+    for (const [lk, costs] of fallbackCosts) {
+      if (priced(costs) && !lowercasePricingIndex.has(lk)) lowercasePricingIndex.set(lk, costs)
+    }
+  }
+  return lowercasePricingIndex
+}
+
+function getCachePath(): string {
+  return join(getCodeburnCacheDir(), 'litellm-pricing.json')
+}
+
+/// Clamp a per-token rate to a sane non-negative value. Defense in depth
+/// against a tampered LiteLLM JSON shipping a negative `input_cost_per_token`,
+/// which would otherwise produce negative costs that subtract from totals.
+/// We use Number.isFinite to also reject NaN/Infinity, and cap at $1/token
+/// (well above the most expensive frontier model) so a stray decimal-place
+/// shift in the upstream JSON can't wildly inflate spend numbers either.
+function safePerTokenRate(n: number | undefined): number | null {
+  if (n === undefined || !Number.isFinite(n) || n < 0) return null
+  if (n > 1) return 1
+  return n
+}
+
+// Plain context-length tiers only; mirrors scripts/bundle-litellm.mjs
+// TIER_KEY_RE (service-tier `_priority`/`_flex` variants and the 1-hour
+// combination are not context thresholds). The live path needs its own copy
+// because the bundler is a standalone .mjs script.
+const TIER_KEY_RE = /^(input_cost_per_token|output_cost_per_token|cache_read_input_token_cost|cache_creation_input_token_cost)_above_(\d+)k_tokens$/
+
+// OpenAI bills its priority processing tier through explicit `<rate>_priority`
+// keys sat beside the standard ones (input/output/cache-read/cache-write, plus
+// the `_above_<n>k_tokens_priority` variants for gpt-5.6's long-context tier).
+// Codex's Fast speed setting runs on that tier (#1616), so those keys are where
+// its multiplier comes from — LiteLLM publishes none as a
+// `provider_specific_entry.fast` for OpenAI models. Derived, never invented:
+// only a ratio the source publishes for EVERY bucket it prices is used, so a
+// model with no priority keys (gpt-5-codex, gpt-5.1-codex) or one whose ratios
+// disagree between buckets (azure/gpt-5.5: 2.5x base, 2x above 272k) stays at
+// 1x. Where the tier publishes priority rates they join the same agreement
+// check, so the one multiplier prices both regimes (gpt-5.6). Where it publishes
+// none (gpt-5.4, gpt-5.5) OpenAI quotes no Fast long-context price, so the tier
+// carries fast 1 and stays at its standard rates rather than a guessed product.
+// `provider_specific_entry.fast` (Anthropic's own multiplier) always wins where
+// the source ships one and is left to cover the tier as before.
+const PRIORITY_KEY_SUFFIX = '_priority'
+// Generous bound: the largest ratio any vendor actually publishes is 2.5x, so
+// anything past this is a corrupted or hostile upstream row, not a price.
+const MAX_DERIVED_FAST_MULTIPLIER = 100
+
+function priorityMultiplierOf(entry: LiteLLMEntry): number | null {
+  const record = entry as Record<string, unknown>
+  const ratios: number[] = []
+  let inputRatio: number | undefined
+  let outputRatio: number | undefined
+  for (const [key, value] of Object.entries(record)) {
+    if (!key.endsWith(PRIORITY_KEY_SUFFIX)) continue
+    const base = record[key.slice(0, -PRIORITY_KEY_SUFFIX.length)]
+    if (typeof value !== 'number' || typeof base !== 'number') continue
+    if (!Number.isFinite(value) || !Number.isFinite(base) || value <= 0 || base <= 0) continue
+    const ratio = value / base
+    if (key === 'input_cost_per_token_priority') inputRatio = ratio
+    else if (key === 'output_cost_per_token_priority') outputRatio = ratio
+    ratios.push(ratio)
+  }
+  // No priority input AND output rate means there is no priority price to
+  // scale the bill by, whatever stray priority keys the row carries.
+  if (inputRatio === undefined || outputRatio === undefined) return null
+  // "Within rounding": published ratios agree exactly in the JSON but can pick
+  // up a few ulps in the division (2.5 vs 2.4999999999999996), so compare
+  // relatively rather than for bitwise equality.
+  const agreed = ratios.every(r => Math.abs(r - inputRatio!) <= 1e-9 * Math.max(r, inputRatio!))
+  // Rounded to 4 decimals so division noise (1.7999999999999998) never ships.
+  return agreed && inputRatio <= MAX_DERIVED_FAST_MULTIPLIER ? Math.round(inputRatio * 1e4) / 1e4 : null
+}
+
+function tierOfLiteLLMEntry(entry: LiteLLMEntry): SnapshotTier | null {
+  // Rates are read ONLY from the largest threshold a model carries, mirroring
+  // scripts/bundle-litellm.mjs tierOf, so a two-tier entry can never mix a
+  // smaller tier's rates under the bigger threshold.
+  const byThreshold = new Map<number, Partial<Record<string, number>>>()
+  for (const [key, value] of Object.entries(entry)) {
+    const match = TIER_KEY_RE.exec(key)
+    if (!match || typeof value !== 'number' || !Number.isFinite(value) || value < 0) continue
+    const tokens = Number(match[2]) * 1000
+    const rates = byThreshold.get(tokens) ?? {}
+    rates[match[1]] = value
+    byThreshold.set(tokens, rates)
+  }
+  if (byThreshold.size === 0) return null
+  const threshold = Math.max(...byThreshold.keys())
+  const rates = byThreshold.get(threshold)!
+  if (rates.input_cost_per_token === undefined || rates.output_cost_per_token === undefined) return null
+  return {
+    threshold,
+    input: rates.input_cost_per_token,
+    output: rates.output_cost_per_token,
+    cacheWrite: rates.cache_creation_input_token_cost ?? null,
+    cacheRead: rates.cache_read_input_token_cost ?? null,
+  }
+}
+
+// OpenAI's Flex processing tier (Codex service_tier "flex") ships as explicit
+// `<rate>_flex` keys, `_above_<n>k_tokens_flex` for the long-context tier.
+// Read as rates, not one ratio: gpt-5.4's flex cache read is $0.13/M, not half
+// of $0.25/M, so a priority-style agreement check would drop it. Without both
+// input and output flex rates the row has no Flex price and Flex bills at
+// standard; any other bucket without a flex rate keeps its standard rate.
+// Mirrored in scripts/bundle-litellm.mjs flexOf.
+const FLEX_KEY_SUFFIX = '_flex'
+
+function flexOf(entry: LiteLLMEntry, cacheWrite: number | null, cacheRead: number | null, tier: SnapshotTier | null): SnapshotEntry | null {
+  const record = entry as Record<string, unknown>
+  const rate = (key: string) => {
+    const value = record[key + FLEX_KEY_SUFFIX]
+    return typeof value === 'number' ? safePerTokenRate(value) : null
+  }
+  const input = rate('input_cost_per_token')
+  const output = rate('output_cost_per_token')
+  if (input === null || output === null) return null
+  const above = (key: string) => `${key}_above_${tier!.threshold / 1000}k_tokens`
+  return [input, output, rate('cache_creation_input_token_cost') ?? cacheWrite, rate('cache_read_input_token_cost') ?? cacheRead, null, tier ? {
+    threshold: tier.threshold,
+    input: rate(above('input_cost_per_token')) ?? tier.input,
+    output: rate(above('output_cost_per_token')) ?? tier.output,
+    cacheWrite: rate(above('cache_creation_input_token_cost')) ?? tier.cacheWrite,
+    cacheRead: rate(above('cache_read_input_token_cost')) ?? tier.cacheRead,
+  } : null]
+}
+
+export function parseLiteLLMEntry(entry: LiteLLMEntry): ModelCosts | null {
+  // The live LiteLLM map is remote JSON; a null (or non-object) value for a
+  // model would make the field reads below throw and abort the whole pricing
+  // load. Treat it as unparseable, like any other bad entry.
+  if (!entry || typeof entry !== 'object') return null
+  const inputCost = safePerTokenRate(entry.input_cost_per_token)
+  const outputCost = safePerTokenRate(entry.output_cost_per_token)
+  if (inputCost === null || outputCost === null) return null
+  const explicitFast = entry.provider_specific_entry?.fast
+  const priorityFast = explicitFast == null ? priorityMultiplierOf(entry) : null
+  const tier = tierOfLiteLLMEntry(entry)
+  if (tier && priorityFast !== null && !Object.keys(entry).some(k => k.endsWith(`_above_${tier.threshold / 1000}k_tokens${PRIORITY_KEY_SUFFIX}`))) {
+    tier.fast = 1
+  }
+  const cacheWrite = safePerTokenRate(entry.cache_creation_input_token_cost)
+  const cacheRead = safePerTokenRate(entry.cache_read_input_token_cost)
+  return buildCosts(
+    inputCost,
+    outputCost,
+    cacheWrite,
+    cacheRead,
+    explicitFast ?? priorityFast,
+    tier,
+    flexOf(entry, cacheWrite, cacheRead, tier),
+  )
+}
+
+// Timestamp of whichever live LiteLLM data (freshly fetched or read back from
+// the on-disk cache) is currently loaded into pricingCache; null when nothing
+// live is loaded and pricing is purely the bundled snapshot (offline/first
+// run, CODEBURN_PRICING_SNAPSHOT_ONLY, or a failed fetch with no cache hit).
+// Read by getPricingGenerationKey() so a consumer that persists rendered
+// costs across process invocations (the menubar's status snapshot) can tell
+// "the live pricing data actually changed" apart from "nothing changed" —
+// this module has no other way to signal that across a fresh CLI process.
+let livePricingTimestamp: number | null = null
+
+const MAKER_PREFIXES: ReadonlySet<string> = new Set([
+  'xai', 'mistral', 'cohere', 'anthropic', 'openai', 'gemini', 'deepseek', 'moonshot',
+  'zai', 'minimax', 'ai21', 'perplexity', 'dashscope', 'meta_llama', 'xiaomi_mimo',
+])
+// Two segments only: `perplexity/openai/gpt-5.6-sol` is Perplexity reselling.
+const isMakerRow = (name: string) => name.split('/').length === 2 && MAKER_PREFIXES.has(name.split('/')[0]!)
+const isFreeRow = (c: ModelCosts) => c.inputCostPerToken === 0 && c.outputCostPerToken === 0
+
+async function fetchAndCachePricing(): Promise<Map<string, ModelCosts>> {
+  // Bounded: runs on every CLI invocation (the menubar shells out and blocks on
+  // it). Without a timeout a half-open network after wake-from-sleep makes
+  // fetch() hang forever, wedging the menubar's loading spinner. On timeout the
+  // caller's catch falls back to the bundled price snapshot.
+  const response = await fetchWithTimeout(LITELLM_URL)
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  const data = await response.json() as Record<string, LiteLLMEntry>
+  const pricing = new Map<string, ModelCosts>()
+
+  const parsed: [string, ModelCosts][] = []
+  for (const [name, entry] of Object.entries(data)) {
+    const costs = parseLiteLLMEntry(entry)
+    if (costs) parsed.push([name, costs])
+  }
+  // Also index by stripped name so lookups work without provider prefix:
+  // 'anthropic/claude-opus-4-6' is also queryable as 'claude-opus-4-6'. A
+  // direct entry of that name always wins; otherwise the maker's own row beats
+  // a reseller's whatever the JSON order, even at $0, and among resellers a
+  // $0/$0 row yields to any priced one. Mirrors scripts/bundle-litellm.mjs.
+  const bareClaims = new Map<string, ModelCosts>()
+  const makerClaimed = new Set<string>()
+  for (const [name, costs] of [...parsed.filter(([n]) => isMakerRow(n)), ...parsed.filter(([n]) => !isMakerRow(n))]) {
+    const stripped = name.replace(/^[^/]+\//, '')
+    if (stripped === name) continue
+    const prev = bareClaims.get(stripped)
+    if (!prev || (!makerClaimed.has(stripped) && isFreeRow(prev) && !isFreeRow(costs))) bareClaims.set(stripped, costs)
+    if (isMakerRow(name)) makerClaimed.add(stripped)
+  }
+  for (const [name, costs] of parsed) {
+    pricing.set(name, costs)
+    const stripped = name.replace(/^[^/]+\//, '')
+    if (stripped !== name && !pricing.has(stripped)) pricing.set(stripped, bareClaims.get(stripped)!)
+  }
+
+  const timestamp = Date.now()
+  await mkdir(getCodeburnCacheDir(), { recursive: true })
+  await writeFile(getCachePath(), JSON.stringify({
+    version: CACHE_SCHEMA_VERSION,
+    timestamp,
+    data: Object.fromEntries(pricing),
+  }))
+  livePricingTimestamp = timestamp
+
+  return pricing
+}
+
+async function loadCachedPricing(): Promise<Map<string, ModelCosts> | null> {
+  try {
+    const raw = await readFile(getCachePath(), 'utf-8')
+    const cached = JSON.parse(raw) as { version?: number; timestamp: number; data: Record<string, ModelCosts> }
+    if (cached.version !== CACHE_SCHEMA_VERSION) return null
+    if (Date.now() - cached.timestamp > CACHE_TTL_MS) return null
+    livePricingTimestamp = cached.timestamp
+    return new Map(Object.entries(cached.data))
+  } catch {
+    return null
+  }
+}
+
+function mergeSnapshotFallbacks(pricing: Map<string, ModelCosts>): Map<string, ModelCosts> {
+  for (const [name, costs] of loadSnapshot()) {
+    if (!pricing.has(name)) pricing.set(name, costs)
+  }
+  return applyBuiltinPriceOverrides(pricing)
+}
+
+function setPricingCache(pricing: Map<string, ModelCosts>): void {
+  pricingCache = pricing
+  sortedPricingKeys = null
+  lowercasePricingIndex = null
+  knownNamespaces = null
+  shortNameMemo.clear()
+}
+
+export async function loadPricing(): Promise<void> {
+  const cached = await loadCachedPricing()
+  if (cached) {
+    setPricingCache(mergeSnapshotFallbacks(cached))
+    return
+  }
+
+  // Test-only escape hatch, set for the whole suite in
+  // tests/setup/env-isolation.ts: skip the live LiteLLM fetch and price purely
+  // off the bundled snapshot, so an upstream reprice can't turn tests red.
+  if (process.env['CODEBURN_PRICING_SNAPSHOT_ONLY']) {
+    livePricingTimestamp = null
+    setPricingCache(mergeSnapshotFallbacks(new Map()))
+    return
+  }
+
+  try {
+    setPricingCache(mergeSnapshotFallbacks(await fetchAndCachePricing()))
+  } catch {
+    // snapshot already loaded at init; nothing more to do
+    livePricingTimestamp = null
+  }
+}
+
+// Content digest of the two bundled pricing files, computed once and memoized
+// (they're static imports; nothing in-process can change them). Changes only
+// when `scripts/bundle-litellm.mjs` regenerates litellm-snapshot.json /
+// pricing-fallback.json and that regeneration ships in a new codeburn build —
+// exactly the "bundled data" staleness class getPricingGenerationKey exists
+// to catch, distinct from the live cache's own timestamp.
+let bundledPricingDigest: string | null = null
+function getBundledPricingDigest(): string {
+  if (bundledPricingDigest === null) {
+    bundledPricingDigest = createHash('sha256')
+      .update(JSON.stringify(snapshotData))
+      .update(JSON.stringify(fallbackData))
+      .digest('hex')
+  }
+  return bundledPricingDigest
+}
+
+/// Stable signature of everything that can silently change a session's
+/// RENDERED cost with no session file ever changing: the live LiteLLM cache's
+/// freshness (a repricing fetch, or its absence), the bundled snapshot's own
+/// content (a repriced model shipped in a new build), and this module's
+/// pricing-behavior version (CACHE_SCHEMA_VERSION). A caller that persists a
+/// fully-rendered payload across process invocations (the menubar's status
+/// snapshot) must fold this into its own cache key the same way it already
+/// folds the four *ConfigHash getters above — those cover user-editable
+/// pricing CONFIG, this covers upstream/bundled pricing DATA and code version,
+/// a different staleness gap with no other invalidation path of its own.
+export function getPricingGenerationKey(): string {
+  return `${CACHE_SCHEMA_VERSION}:${livePricingTimestamp ?? 'bundled'}:${getBundledPricingDigest()}`
+}
+
+// Known model name variants that providers emit but LiteLLM/fallback don't index under.
+// OMP emits 'anthropic--claude-4.6-opus' (double-dash, dot version, tier-last).
+// getCanonicalName strips a KNOWN vendor/router prefix first unless the
+// full cleaned id itself is an alias (orcarouter/fusion). Post-strip forms
+// still cover every other entry here.
+const BUILTIN_ALIASES: Record<string, string> = {
+  'anthropic--claude-4.6-opus':    'claude-opus-4-6',
+  'anthropic--claude-4.6-sonnet':  'claude-sonnet-4-6',
+  'anthropic--claude-4.5-opus':    'claude-opus-4-5',
+  'anthropic--claude-4.5-sonnet':  'claude-sonnet-4-5',
+  'anthropic--claude-4.5-haiku':   'claude-haiku-4-5',
+  // #1093: copilot session-store.db writes 'claude-haiku-4.5' (tier-first, dot)
+  'claude-haiku-4.5':             'claude-haiku-4-5',
+  // Copilot's own spellings of the pre-2026 Claude SKUs (VS Code chat sessions, session-store.db)
+  'claude-3.5-sonnet':             'claude-3-5-sonnet',
+  'claude-3.7-sonnet':             'claude-3-7-sonnet',
+  'claude-3.7-sonnet-thought':     'claude-3-7-sonnet',
+  'claude-opus-4.1':               'claude-opus-4-1',
+  'claude-sonnet-4.6':             'claude-sonnet-4-6',
+  'claude-sonnet-4.5':             'claude-sonnet-4-5',
+  'claude-opus-4.7':               'claude-opus-4-7',
+  'claude-opus-4.6':               'claude-opus-4-6',
+  'claude-opus-4.5':               'claude-opus-4-5',
+  'cursor-auto':                    'claude-sonnet-4-5',
+  'cursor-agent-auto':             'claude-sonnet-4-5',
+  'copilot-auto':                  'claude-sonnet-4-5',
+  'copilot-openai-auto':           'gpt-5.3-codex',
+  'copilot-anthropic-auto':        'claude-sonnet-4-5',
+  'openai-codex:gpt-5.5':          'gpt-5.5',
+  'ibm-bob-auto':                  'claude-sonnet-4-5',
+  'kiro-auto':                     'claude-sonnet-4-5',
+  'quickdesk-auto':                'claude-sonnet-4-5',
+  'cline-auto':                    'claude-sonnet-4-5',
+  'openclaw-auto':                 'claude-sonnet-4-5',
+  'warp-auto-efficient':           'gpt-5.3-codex',
+  'warp-auto-powerful':            'claude-opus-4-6',
+  // `codex-auto-review` is a server-routed alias: rollouts record it in
+  // turn_context.model and nothing on disk names the real model. OpenAI moved
+  // auto review from GPT-5.4 to GPT-5.6 Luna on 30 Jul 2026 (announcement:
+  // "major price drop for 5.6 Terra and Luna"). This row is the forward
+  // default; pricingModelAt prices calls before 2026-07-30T00:00Z as gpt-5.4.
+  // A rollout that records the real model (API-key auth writes gpt-5.6-luna)
+  // is priced as recorded. Display stays on autoModelNames.
+  'codex-auto-review':             'gpt-5.6-luna',
+  // Luna Reserve: the quota Codex falls back to once ordinary usage runs out
+  // (openai/codex#42372, LUNA_RESERVE_MODEL in codex-rs/tui/src/model_catalog.rs).
+  // The backend picks the real model and rollouts don't record it. GPT-5.6 Luna
+  // was the client fallback until 22 Sep 2026 (then GPT-6 Luna, half the
+  // price), so this is an upper-bound estimate and the codex parser marks it so.
+  'gpt-reserve':                   'gpt-5.6-luna',
+  // Short spelling of the only 5.3 Spark model (openai/codex uses it as a
+  // config model id in codex-rs/app-server/tests/suite/v2/config_rpc.rs).
+  'gpt-5.3-spark':                 'gpt-5.3-codex-spark',
+  'grok-build':                    'grok-build-0.1',
+  // Grok Bot's desktop app serves opaque `sand-*` aliases and records no model
+  // id at all, so there is nothing truthful to price it by. It is xAI's own
+  // product, so it prices at xAI's published grok-4.6 rate ($2.00/M in,
+  // $6.00/M out, $0.50/M cached). Every grokbot call is costIsEstimated.
+  'grokbot-auto':                  'grok-4.6',
+  // The same Grok Bot work as Cursor's usage export names it, per bot kind.
+  'grok-bot-automation':           'grok-4.6',
+  'grok-bot-cua':                  'grok-4.6',
+  'grok-bot-default':              'grok-4.6',
+  // Cursor-hosted Grok 4.6 as Cursor's usage export names it: the same model,
+  // so it takes grok-4.6's 200k-prompt tier like the local Cursor rows do.
+  'grok-4.6-high':                 'grok-4.6',
+  'grok-4.6-high-fast':            'grok-4.6',
+  'cursor-grok-4.6-high':          'grok-4.6',
+  'cursor-grok-4.6-high-fast':     'grok-4.6',
+  'GPT-5.3 Codex (low reasoning)': 'gpt-5.3-codex',
+  'GPT-5.3 Codex (medium reasoning)': 'gpt-5.3-codex',
+  'GPT-5.3 Codex (high reasoning)': 'gpt-5.3-codex',
+  'GPT-5.3 Codex (extra high reasoning)': 'gpt-5.3-codex',
+  'Claude Sonnet 4.6':             'claude-sonnet-4-6',
+  'Claude Sonnet 4.5':             'claude-sonnet-4-5',
+  'Claude Haiku 4.5':              'claude-haiku-4-5',
+  'Claude Opus 4.6':               'claude-opus-4-6',
+  'claude-4-6-sonnet-high':        'claude-sonnet-4-6',
+  'claude-4-6-sonnet-low':         'claude-sonnet-4-6',
+  'claude-4-6-sonnet-medium':      'claude-sonnet-4-6',
+  'claude-4-6-sonnet-high-fast':   'claude-sonnet-4-6',
+  'claude-4-7-opus-xhigh':         'claude-opus-4-7',
+  'claude-4-7-opus-xhigh-fast':    'claude-opus-4-7',
+  'qwen-auto':                     'claude-sonnet-4-5',
+  // OrcaRouter fusion routes. Provenance: live OrcaRouter completion `model`
+  // field, 2026-08 (community #1058 / house #1118). Re-verify if the gateway
+  // rotates targets. `orcarouter/auto` is intentionally unaliased: the smart
+  // route currently lands on a Qwen/Llama flash model, so a Sonnet alias
+  // would overprice ~3–30×. Fail closed until a live probe pins that target.
+  'orcarouter/fusion':             'openai/gpt-oss-120b',
+  'orcarouter/fusion-flash':       'openai/gpt-oss-120b',
+  'orcarouter/fusion-mini':        'openai/gpt-oss-120b',
+  'kimi-auto':                     'kimi-k2-thinking',
+  // `kimi-for-coding` is Kimi Code's moving alias; `kimi-code` is kimi-cli's
+  // spelling of the same SKU. pricingModelAt prices older calls by the model
+  // the alias served then. K2.8 Preview (11 Sep 2026 on) has no Open Platform
+  // price, so it stays on K2.7 Code's.
+  'kimi-code':                     'kimi-k2.7-code',
+  'kimi-for-coding':               'kimi-k2.7-code',
+  // HighSpeed has been K2.7 Code HighSpeed since it launched on 9 Jul 2026.
+  'kimi-for-coding-highspeed':     'kimi-k2.7-code-highspeed',
+  // Kimi Code wires report the bare `k3` id in llm.request.model; without an
+  // alias those calls priced at $0 and the provider looked absent in the UI.
+  'k3':                            'kimi-k3',
+  // Kimi desktop/IDE embedded runtime serves `k3-agent` / `k2d6-agent`.
+  'k3-agent':                      'kimi-k3',
+  'k2d6-agent':                    'kimi-k2p6',
+  'mimo-v2-flash':                 'xiaomi/mimo-v2-flash',
+  // Hermes / Xiaomi token-plan sessions store the bare id. LiteLLM's row is
+  // namespaced. Same class as mimo-v2-flash above — do not invent a rate.
+  'mimo-v2.5-pro':                 'xiaomi/mimo-v2.5-pro',
+  'mimo-v2.5':                     'xiaomi/mimo-v2.5',
+  'kat-coder-pro-v1':              'kwaipilot/kat-coder-pro',
+  // Cursor emits dot-version tier-last names plus tier/reasoning suffixes
+  // that LiteLLM does not index (`-high`, `-low`, `-medium`, `-thinking`,
+  // `-high-thinking`, `-fast-mode`). Missing aliases here surface as $0 in
+  // the dashboard for users on non-Auto models (issue #159). Sources: the
+  // display map at `src/providers/cursor.ts:modelDisplayNames`, Cursor's
+  // public model docs at https://cursor.com/docs/models, and forum bug
+  // reports that quote literal slugs (e.g. forum.cursor.com/t/154933).
+  'claude-4-sonnet':                'claude-sonnet-4',
+  'claude-4-sonnet-1m':             'claude-sonnet-4',
+  'claude-4-sonnet-thinking':       'claude-sonnet-4',
+  'claude-4.5-sonnet':              'claude-sonnet-4-5',
+  'claude-4.5-sonnet-thinking':     'claude-sonnet-4-5',
+  'claude-4.6-sonnet':              'claude-sonnet-4-6',
+  'claude-4.6-sonnet-high':         'claude-sonnet-4-6',
+  'claude-4.6-sonnet-low':          'claude-sonnet-4-6',
+  'claude-4.6-sonnet-thinking':     'claude-sonnet-4-6',
+  'claude-4.6-sonnet-high-thinking':'claude-sonnet-4-6',
+  'claude-4-opus':                  'claude-opus-4',
+  'claude-4.5-opus':                'claude-opus-4-5',
+  'claude-4.5-opus-high':           'claude-opus-4-5',
+  'claude-4.5-opus-low':            'claude-opus-4-5',
+  'claude-4.5-opus-medium':         'claude-opus-4-5',
+  'claude-4.5-opus-high-thinking':  'claude-opus-4-5',
+  'claude-4.6-opus':                'claude-opus-4-6',
+  'claude-4.6-opus-fast-mode':      'claude-opus-4-6',
+  'claude-4.6-opus-high':           'claude-opus-4-6',
+  'claude-4.6-opus-low':            'claude-opus-4-6',
+  'claude-4.6-opus-medium':         'claude-opus-4-6',
+  'claude-4.6-opus-high-thinking':  'claude-opus-4-6',
+  'claude-4.7-opus':                'claude-opus-4-7',
+  // Dash form (NOT dot) seen in forum.cursor.com/t/158597.
+  'claude-opus-4-7-thinking-high':  'claude-opus-4-7',
+  'claude-4.5-haiku':               'claude-haiku-4-5',
+  'claude-4.6-haiku':               'claude-haiku-4-5',
+  // Cursor house composer models use Cursor-published rates in
+  // BUILTIN_PRICE_OVERRIDES; keep them out of this alias map so they do not
+  // inherit Claude Sonnet proxy pricing.
+  // Cursor's "fast" routing variant of GPT-5 is the same model behind a
+  // lower-latency endpoint; price as base GPT-5 until LiteLLM tracks it.
+  'gpt-5-fast':                     'gpt-5',
+  'gpt-4.1':                        'gpt-4.1',
+  'gpt-5.2-low':                    'gpt-5',
+  'gpt-5.1-codex-high':             'gpt-5.3-codex',
+  // Antigravity Gemini model IDs resolve to preview-priced entries.
+  'gemini-3.1-pro':                 'gemini-3.1-pro-preview',
+  'gemini-3-flash':                 'gemini-3-flash-preview',
+  'gemini-3.1-pro-high':            'gemini-3.1-pro-preview',
+  'gemini-3.1-pro-low':             'gemini-3.1-pro-preview',
+  'gemini-3-flash-agent':           'gemini-3-flash-preview',
+  'gemini-3.5-flash-high':          'gemini-3.5-flash',
+  'gemini-3.5-flash-medium':        'gemini-3.5-flash',
+  'gemini-3.5-flash-low':           'gemini-3.5-flash',
+  'Gemini 3.5 Flash (High)':        'gemini-3.5-flash',
+  'Gemini 3.5 Flash (Medium)':      'gemini-3.5-flash',
+  'Gemini 3.5 Flash (Low)':         'gemini-3.5-flash',
+  'gemini-3-pro':                   'gemini-3-pro-preview',
+  'gemini-3.1-flash-image':         'gemini-3.1-flash-image-preview',
+  'gemini-3.1-flash-lite':          'gemini-3.1-flash-lite-preview',
+  // ZCode reports GLM-5.2/5.3 capitalized; Hermes/Cline use lowercase. The
+  // snapshot's bare `glm-5.2`/`glm-5.3` rows carry the LIST rate ($1.4/$4.4);
+  // z.ai's own `z-ai/glm-5.2`/`z-ai/glm-5.3` rows are the discounted rate we
+  // actually pay. Point every spelling at the z-ai rows.
+  'glm-5.2':                        'z-ai/glm-5.2',
+  'GLM-5.2':                        'z-ai/glm-5.2',
+  'glm-5.3':                        'z-ai/glm-5.3',
+  'GLM-5.3':                        'z-ai/glm-5.3',
+}
+
+let userAliases: Record<string, string> = {}
+let userPriceOverrides: Map<string, ModelCosts> = new Map()
+let userPriceOverridesConfig: Record<string, PriceOverrideRates> = {}
+let sortedPriceOverrideKeys: string[] | null = null
+let lowercasePriceOverrideIndex: Map<string, ModelCosts> | null = null
+
+// Called once during CLI startup after config is loaded.
+// User aliases take precedence over built-ins.
+export function setModelAliases(aliases: Record<string, string>): void {
+  userAliases = aliases
+  shortNameMemo.clear()
+}
+
+function priceOverrideRatePerToken(usdPerMillion: number | undefined): number | null {
+  if (typeof usdPerMillion !== 'number') return null
+  return safePerTokenRate(usdPerMillion / 1_000_000)
+}
+
+// Called once during CLI startup after config is loaded.
+// Config/CLI rates are USD per 1,000,000 tokens; ModelCosts stores USD/token.
+export function setPriceOverrides(overrides: Record<string, PriceOverrideRates>): void {
+  const next = new Map<string, ModelCosts>()
+  const nextConfig: Record<string, PriceOverrideRates> = {}
+  for (const [model, rates] of Object.entries(overrides)) {
+    if (!model || !rates || typeof rates !== 'object') continue
+    nextConfig[model] = { ...rates }
+    const input = priceOverrideRatePerToken(rates.input)
+    const output = priceOverrideRatePerToken(rates.output)
+    if (input === null || output === null) continue
+    next.set(model, buildCosts(
+      input,
+      output,
+      priceOverrideRatePerToken(rates.cacheCreation),
+      priceOverrideRatePerToken(rates.cacheRead),
+      undefined,
+    ))
+  }
+  userPriceOverrides = next
+  userPriceOverridesConfig = nextConfig
+  sortedPriceOverrideKeys = null
+  lowercasePriceOverrideIndex = null
+}
+
+function getSortedPriceOverrideKeys(): string[] {
+  if (sortedPriceOverrideKeys === null) {
+    sortedPriceOverrideKeys = Array.from(userPriceOverrides.keys()).sort((a, b) => b.length - a.length)
+  }
+  return sortedPriceOverrideKeys
+}
+
+function getLowercasePriceOverrideIndex(): Map<string, ModelCosts> {
+  if (lowercasePriceOverrideIndex === null) {
+    lowercasePriceOverrideIndex = new Map()
+    for (const [key, costs] of userPriceOverrides) {
+      const lk = key.toLowerCase()
+      if (!lowercasePriceOverrideIndex.has(lk)) lowercasePriceOverrideIndex.set(lk, costs)
+    }
+  }
+  return lowercasePriceOverrideIndex
+}
+
+function getPriceOverrideExact(...keys: string[]): ModelCosts | null {
+  for (const key of keys) {
+    const costs = userPriceOverrides.get(key)
+    if (costs) return costs
+  }
+  return null
+}
+
+function getPriceOverridePrefix(canonical: string): ModelCosts | null {
+  for (const key of getSortedPriceOverrideKeys()) {
+    if (canonical.startsWith(key + '-') || canonical === key) {
+      return userPriceOverrides.get(key)!
+    }
+  }
+  return null
+}
+
+function getPriceOverrideCaseInsensitive(canonical: string, withPrefix: string): ModelCosts | null {
+  const lowerIndex = getLowercasePriceOverrideIndex()
+  return lowerIndex.get(canonical.toLowerCase()) ?? lowerIndex.get(withPrefix.toLowerCase()) ?? null
+}
+
+// Local-model savings config. Kept separate from userAliases: a `modelAliases`
+// entry rewrites a model's identity for actual cost; a `localModelSavings`
+// entry keeps the model cost at $0 and reports the *avoided* spend against a
+// paid baseline. Set during preAction from `config.localModelSavings`.
+let userLocalModelSavings: Record<string, string> = {}
+
+export function setLocalModelSavings(mappings: Record<string, string>): void {
+  userLocalModelSavings = { ...mappings }
+}
+
+export function getLocalSavingsBaseline(rawModel: string): string | undefined {
+  if (!rawModel || typeof rawModel !== 'string') return undefined
+  // Defensive: bracket-accessing user-controlled keys on a plain object
+  // exposes the prototype chain (`__proto__` would resolve to Object.prototype).
+  // Use Object.hasOwn so a hostile JSONL model name cannot piggyback into
+  // Object.prototype either through the alias map or here.
+  if (!Object.hasOwn(userLocalModelSavings, rawModel)) return undefined
+  return userLocalModelSavings[rawModel]
+}
+
+/// Compute the hypothetical baseline cost for a local call. The baseline
+/// model is priced through the normal `calculateCost` pipeline (so it can
+/// be aliased / canonicalized). Returns `null` when the source model has
+/// no savings mapping, the baseline is unknown to the pricing snapshot, or
+/// any input is unusable — callers should treat null as "no savings
+/// recorded for this call" rather than a hard error.
+export function calculateLocalModelSavings(
+  rawModel: string,
+  inputTokens: number,
+  outputTokens: number,
+  cacheCreationTokens: number,
+  cacheReadTokens: number,
+  webSearchRequests: number,
+  speed: 'standard' | 'fast' | 'flex' = 'standard',
+  oneHourCacheCreationTokens = 0,
+): { savingsUSD: number; baselineModel: string } | null {
+  const baseline = getLocalSavingsBaseline(rawModel)
+  if (!baseline) return null
+  if (!getModelCosts(baseline)) return null
+  const savingsUSD = calculateCost(
+    baseline,
+    inputTokens,
+    outputTokens,
+    cacheCreationTokens,
+    cacheReadTokens,
+    webSearchRequests,
+    speed,
+    oneHourCacheCreationTokens,
+  )
+  return { savingsUSD, baselineModel: baseline }
+}
+
+/// Stable hash of the current savings config so the daily cache can detect
+/// "user changed their baseline mapping" and rebuild instead of presenting
+/// stale saved-spend numbers. Two configs with the same key→baseline pairs
+/// in any order collapse to the same hash.
+export function getLocalModelSavingsConfigHash(): string {
+  const keys = Object.keys(userLocalModelSavings).sort()
+  if (keys.length === 0) return ''
+  const parts = keys.map(k => `${k}\u0001${userLocalModelSavings[k]}`)
+  return parts.join('\u0002')
+}
+
+// Subscription / flat-rate product SKUs. $0 is the correct cost; aliasing
+// them onto a per-token row fabricates spend (#968). Distinct from
+// model-savings (counterfactual local baseline) and from a zero-rate
+// price-override (user-declared free). Built-in families plus a user hatch.
+let userFlatRateModels = new Set<string>()
+let userFlatRateLeaves = new Set<string>()
+let userFlatRateRemoved = new Set<string>()
+let userFlatRateRemovedLeaves = new Set<string>()
+
+function flatRateLeaf(model: string): string {
+  const trimmed = model.trim().replace(/@.*$/, '').replace(/-\d{8}$/, '')
+  const leaf = trimmed.includes('/') ? trimmed.slice(trimmed.lastIndexOf('/') + 1) : trimmed
+  return leaf.toLowerCase()
+}
+
+function fillFlatRateSet(
+  models: Iterable<string>,
+): { ids: Set<string>; leaves: Set<string> } {
+  const ids = new Set<string>()
+  const leaves = new Set<string>()
+  for (const model of models) {
+    if (!model || typeof model !== 'string') continue
+    ids.add(model)
+    const leaf = flatRateLeaf(model)
+    if (leaf) leaves.add(leaf)
+  }
+  return { ids, leaves }
+}
+
+export function setFlatRateModels(models: Iterable<string>): void {
+  const filled = fillFlatRateSet(models)
+  userFlatRateModels = filled.ids
+  userFlatRateLeaves = filled.leaves
+}
+
+export function setFlatRateRemoved(models: Iterable<string>): void {
+  const filled = fillFlatRateSet(models)
+  userFlatRateRemoved = filled.ids
+  userFlatRateRemovedLeaves = filled.leaves
+}
+
+export function getFlatRateModelsConfigHash(): string {
+  const added = [...userFlatRateModels].sort().join('\u0002')
+  const removed = [...userFlatRateRemoved].sort().join('\u0002')
+  if (!removed) return added
+  return `${added}\u0003${removed}`
+}
+
+export function getFlatRateModels(): string[] {
+  return [...userFlatRateModels]
+}
+
+export function getFlatRateRemoved(): string[] {
+  return [...userFlatRateRemoved]
+}
+
+export function isSameFlatRateModel(a: string, b: string): boolean {
+  if (!a || !b) return false
+  if (a === b) return true
+  const leaf = flatRateLeaf(a)
+  return leaf.length > 0 && leaf === flatRateLeaf(b)
+}
+
+function isUserFlatRateModel(model: string): boolean {
+  if (userFlatRateModels.has(model)) return true
+  const leaf = flatRateLeaf(model)
+  return leaf.length > 0 && userFlatRateLeaves.has(leaf)
+}
+
+function isFlatRateRemoved(model: string): boolean {
+  if (userFlatRateRemoved.has(model)) return true
+  const leaf = flatRateLeaf(model)
+  return leaf.length > 0 && userFlatRateRemovedLeaves.has(leaf)
+}
+
+/// Product SKUs billed as a subscription, not missing LiteLLM rows.
+/// Match raw ids and path-prefixed ids (`cline-pass/auto-genius`). Display
+/// names from getShortModelName are matched only when the aggregation key
+/// is not the raw leaf (Warp Auto *, Grok Composer *).
+export function isBuiltInFlatRateModel(model: string): boolean {
+  const leaf = flatRateLeaf(model)
+  // Warp's product SKU is the bare id `auto`. Kiro rewrites its own `auto`
+  // to `kiro-auto` before pricing, so this leaf does not swallow Kiro.
+  if (
+    leaf === 'auto'
+    || leaf === 'auto-genius'
+  ) return true
+  if (leaf.startsWith('grok-composer-')) return true
+  if (leaf.startsWith('warp-auto-')) return true
+  const display = model.trim()
+  if (/^grok composer\b/i.test(display)) return true
+  if (/^warp auto\b/i.test(display)) return true
+  return false
+}
+
+export function isFlatRateModel(model: string): boolean {
+  if (!model) return false
+  if (isFlatRateRemoved(model)) return false
+  return isUserFlatRateModel(model) || isBuiltInFlatRateModel(model)
+}
+
+/// Shared unpriced-warning copy. Never tell the user to alias unconditionally:
+/// mapping a subscription SKU onto a priced row invents spend. Optional `model`
+/// interpolates the sanitized id so the verbose calculateCost path names the
+/// same two hatches.
+export function unpricedModelHint(model = '<model>'): string {
+  const safe = model.replace(/[\x00-\x1F\x7F-\x9F]/g, '?').slice(0, 200)
+  return `If a model is billed per token, map it with: codeburn model-alias "${safe}" <known-model>. If $0 is correct (subscription / flat-rate): codeburn model-flat-rate "${safe}".`
+}
+
+/// Stable hash of the model-alias map, for the same staleness class as the
+/// hashes below: a resident process (codeburn serve) must not serve memoized
+/// parse results priced under aliases the user has since changed.
+export function getModelAliasesConfigHash(): string {
+  const keys = Object.keys(userAliases).sort()
+  if (keys.length === 0) return ''
+  return keys.map(k => `${k}\u0001${userAliases[k]}`).join('\u0002')
+}
+
+export function getPriceOverridesConfigHash(): string {
+  // The builtin overrides participate so editing BUILTIN_PRICE_OVERRIDES in a
+  // release invalidates cached daily costs the same way a user override does.
+  const builtin = `builtin:${JSON.stringify(BUILTIN_PRICE_OVERRIDES)}`
+  const keys = Object.keys(userPriceOverridesConfig).sort()
+  if (keys.length === 0) return builtin
+  const parts = keys.map(k => {
+    const rates = userPriceOverridesConfig[k]
+    return [
+      k,
+      rates.input,
+      rates.output,
+      rates.cacheRead ?? '',
+      rates.cacheCreation ?? '',
+    ].join('\u0001')
+  })
+  return [builtin, ...parts].join('\u0002')
+}
+
+// Absolute directory prefixes whose sessions are routed through a
+// subscription-backed proxy (config `proxyPaths`). Stored already-normalized so
+// the per-project match is a cheap compare. Set during preAction. See
+// CodeburnConfig.proxyPaths for the product rationale.
+let userProxyPaths: string[] = []
+
+/// Normalize a path for prefix comparison: backslashes -> forward slashes
+/// (Windows configs / cwds), strip leading AND trailing slashes, fold case on
+/// case-insensitive filesystems. Leading slashes are stripped because provider
+/// project paths arrive in two forms — Claude keeps the absolute "/Users/x"
+/// while Codex (sanitizeProject) and the unsanitizePath fallback drop the
+/// leading slash to "Users/x". Folding both to a slashless form (mirroring
+/// crossProviderKey) makes matching agnostic to which provider produced the
+/// path, so the same directory is flagged whether or not a Claude session
+/// happens to co-exist there. Case is folded only on macOS/Windows; on Linux
+/// "/home/Me" and "/home/me" are different dirs, so folding would risk
+/// crediting unrelated spend. A path that normalizes to empty (e.g. "/" or "")
+/// is dropped by callers so it can never match everything. Exported so the CLI
+/// dedupes with the same rule.
+export function normalizeProxyPath(p: string): string {
+  const s = p.trim().replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '')
+  return (process.platform === 'darwin' || process.platform === 'win32') ? s.toLowerCase() : s
+}
+
+export function setProxyPaths(paths: string[]): void {
+  userProxyPaths = (Array.isArray(paths) ? paths : [])
+    .filter((p): p is string => typeof p === 'string')
+    .map(normalizeProxyPath)
+    .filter(p => p !== '')
+}
+
+/// True when `cwd` is at or under a configured proxy path. Prefix match is
+/// anchored to a path-segment boundary so "/a/proj" matches "/a/proj" and
+/// "/a/proj/sub" but NOT "/a/project-x". Empty/undefined cwd or empty config
+/// never matches (so a misconfig can't silently zero unrelated spend).
+export function isProxiedPath(cwd: string | undefined | null): boolean {
+  if (!cwd || typeof cwd !== 'string') return false
+  if (userProxyPaths.length === 0) return false
+  const c = normalizeProxyPath(cwd)
+  if (c === '') return false
+  return userProxyPaths.some(p => c === p || c.startsWith(p + '/'))
+}
+
+/// Stable hash of the active proxy-path config. Project-level proxy attribution
+/// is computed live from this set and then cached in the in-memory session
+/// cache, so the cache key must vary with it — otherwise a long-lived process
+/// (menubar) that re-reads config could serve attribution from a stale set.
+export function getProxyPathsConfigHash(): string {
+  if (userProxyPaths.length === 0) return ''
+  return [...userProxyPaths].sort().join('')
+}
+
+function resolveAlias(model: string): string {
+  if (Object.hasOwn(userAliases, model)) return userAliases[model]!
+  if (Object.hasOwn(BUILTIN_ALIASES, model)) return BUILTIN_ALIASES[model]!
+  const lowercase = model.toLowerCase()
+  if (lowercase !== model && Object.hasOwn(BUILTIN_ALIASES, lowercase)) return BUILTIN_ALIASES[lowercase]!
+  return model
+}
+function getCanonicalName(model: string): string {
+  const cleaned = model
+    .replace(/@.*$/, '')
+    .replace(/-\d{8}$/, '')
+    .replace(/\[[^\]]*\]$/, '')
+  // Full-id aliases (orcarouter/fusion) must stay visible so resolveAlias can
+  // see them. Stripping first would leave a leaf (`fusion`) with no mapping.
+  // Nested wrappers without an alias still peel as before.
+  if (Object.hasOwn(userAliases, cleaned) || Object.hasOwn(BUILTIN_ALIASES, cleaned)) {
+    return cleaned
+  }
+  const lowercase = cleaned.toLowerCase()
+  if (lowercase !== cleaned && Object.hasOwn(BUILTIN_ALIASES, lowercase)) {
+    return cleaned
+  }
+  return stripKnownFirstNamespace(cleaned)
+}
+
+/// Alias-resolved identity for report merge. Display names stay cosmetic —
+/// prefix matches in SHORT_NAMES must not fold distinct SKUs into one row.
+/// Path-form ids (`accounts/fireworks/models/<slug>`, `cline-pass/<slug>`)
+/// peel to the leaf so they share a bucket with the bare slug.
+export function resolveCanonicalModelId(model: string): string {
+  const viaUser = Object.hasOwn(userAliases, model) ? userAliases[model]! : model
+  const aliased = resolveAlias(getCanonicalName(viaUser))
+  if (!aliased.includes('/')) return aliased
+  const leaf = aliased.slice(aliased.lastIndexOf('/') + 1)
+  if (!leaf) return aliased
+  return resolveAlias(getCanonicalName(leaf))
+}
+
+// Namespaces the pricing catalog itself uses, plus the ones below. An unknown
+// `provider/model` must stay unpriced — do not treat `/` as authority. Derived
+// rather than hand-listed so a vendor LiteLLM already knows (`x-ai/`, `qwen/`,
+// `nousresearch/`, …) is never dropped by a stale list.
+const EXTRA_NAMESPACES = [
+  // Routing wrappers (see ROUTER_PREFIXES); no catalog lists them. `cliproxy/`
+  // is codex-cliproxy-gateway's default route prefix over CLIProxyAPI.
+  'cp', 'cline-pass', 'cline-free', 'cmd', 'antigravity', 'orcarouter', 'cliproxy',
+  // LiteLLM route prefixes that never appear as a key prefix.
+  'litellm_proxy', 'openai_like',
+  // Vendor spellings the catalog indexes under another name: `zhipu` is `z-ai`,
+  // `mimo` is `xiaomi` (BUILTIN_ALIASES maps the bare MiMo ids to `xiaomi/`),
+  // and `kimi/` is a client-side prefix (Codex records `kimi/k3[1m]`).
+  // `zcode/` is CLIProxyAPI's provider spelling for the Z.ai coding plans; the
+  // bare `glm-*` leaf already prices via its own catalog row, which carries an explicit zero cache-write cost.
+  'zhipu', 'mimo', 'kimi', 'zcode',
+]
+
+// Local runners. Their catalog rows are $0 stubs, so an unlisted local tag must
+// not strip down to a priced cloud row and invent spend (#968).
+const LOCAL_NAMESPACES = ['ollama']
+
+let knownNamespaces: Set<string> | null = null
+
+function getKnownNamespaces(): Set<string> {
+  if (knownNamespaces) return knownNamespaces
+  const set = new Set(EXTRA_NAMESPACES)
+  for (const keys of [pricingCache.keys(), fallbackCosts.keys()]) {
+    for (const key of keys) {
+      const idx = key.indexOf('/')
+      if (idx > 0) set.add(key.slice(0, idx).toLowerCase())
+    }
+  }
+  for (const local of LOCAL_NAMESPACES) set.delete(local)
+  knownNamespaces = set
+  return set
+}
+
+function stripKnownFirstNamespace(model: string): string {
+  const idx = model.indexOf('/')
+  if (idx <= 0) return model
+  const head = model.slice(0, idx).toLowerCase()
+  if (getKnownNamespaces().has(head)) return model.slice(idx + 1)
+  return model
+}
+
+// Routing wrappers (OmniRoute, Cline Pass, cmd/, …) are not model ids.
+// Peel them so any plan/gateway spelling of the same model shares one price.
+// OrcaRouter is a gateway that routes to many vendors. Its catalog exposes
+// route ids (`orcarouter/auto`, `orcarouter/fusion`, …) and plain vendor ids
+// (`deepseek/deepseek-v4-pro`); a route id can also spell a nested upstream
+// (`orcarouter/deepseek/deepseek-v4-pro`), and the completion response's
+// `model` field reports the upstream id that actually ran. Peeling the prefix
+// lets every routed spelling price at the upstream row.
+const ROUTER_PREFIXES = [
+  /^omniroute:/i,
+  /^cp\//i,
+  /^cline-pass\//i,
+  /^cline-free\//i,
+  /^cmd\//i,
+  /^antigravity\//i,
+  /^orcarouter\//i,
+  // codex-cliproxy-gateway keeps Codex's own OAuth routing native and forwards
+  // only `cliproxy/*` ids to CLIProxyAPI, so a routed session records
+  // `cliproxy/<id>` — and `<id>` can itself be a provider path
+  // (`cliproxy/zcode/glm-5.3-flash`). Peeling the wrapper lets the one
+  // known-namespace strip in getCanonicalName reach the priced leaf.
+  /^cliproxy\//i,
+  // `xiaomi/` is NOT peeled: it is the vendor namespace LiteLLM prices under,
+  // and BUILTIN_ALIASES maps the bare MiMo ids INTO it. Peeling would pull the
+  // opposite way. It stays a known namespace via the catalog-derived set.
+]
+
+function routedModelCandidates(model: string): string[] {
+  const ids: string[] = []
+  const seen = new Set<string>()
+  const push = (value: string) => {
+    if (!value || seen.has(value)) return
+    seen.add(value)
+    ids.push(value)
+  }
+  push(model)
+  let current = model
+  let peeled = true
+  while (peeled) {
+    peeled = false
+    for (const prefix of ROUTER_PREFIXES) {
+      const next = current.replace(prefix, '')
+      if (next && next !== current) {
+        current = next
+        push(current)
+        peeled = true
+      }
+    }
+  }
+  // One known-vendor strip only (anthropic/foo → foo). Unknown
+  // provider/model trees stay intact and therefore unpriced.
+  push(getCanonicalName(current))
+  return ids
+}
+
+function stripKnownPricingVariantSuffix(model: string): string | null {
+  const withoutColonSuffix = model.replace(/:(thinking|cloud)$/i, '')
+  if (withoutColonSuffix !== model) return withoutColonSuffix
+
+  const withoutTeeSuffix = model.replace(/-TEE$/i, '')
+  if (withoutTeeSuffix !== model) return withoutTeeSuffix
+
+  return null
+}
+
+const AUTO_REVIEW_LUNA_FROM = Date.parse('2026-07-30T00:00:00Z')
+// kimi-cli labelled the alias "powered by kimi-k2.5" from 27 Jan 2026 (1.2) and
+// dropped that on 13 Apr 2026 (#1860) as K2.6 rolled out; Kimi Code's What's
+// New dates K2.7 Code to 12 Jun 2026. What it served before K2.5 is unsourced,
+// so those calls keep the K2 Thinking rate they always had.
+const KIMI_CODING_K2_5_FROM = Date.parse('2026-01-27T00:00:00Z')
+const KIMI_CODING_K2_6_FROM = Date.parse('2026-04-13T00:00:00Z')
+const KIMI_CODING_K2_7_FROM = Date.parse('2026-06-12T00:00:00Z')
+const KIMI_CODING_K2_8_FROM = Date.parse('2026-09-11T00:00:00Z')
+
+/// The model a call is priced by. Only `codex-auto-review` and the Kimi Code
+/// alias depend on the call's date (see BUILTIN_ALIASES); a user alias for
+/// them still wins, and a missing or unparseable timestamp keeps the forward
+/// default.
+export function pricingModelAt(model: string, timestamp: string | undefined): string {
+  const id = model.toLowerCase()
+  if (id !== 'codex-auto-review' && id !== 'kimi-for-coding' && id !== 'kimi-code') return model
+  if (Object.hasOwn(userAliases, model) || userPriceOverrides.has(model)) return model
+  const at = Date.parse(timestamp ?? '')
+  if (id === 'codex-auto-review') return at < AUTO_REVIEW_LUNA_FROM ? 'gpt-5.4' : model
+  if (at < KIMI_CODING_K2_5_FROM) return 'kimi-k2-thinking'
+  if (at < KIMI_CODING_K2_6_FROM) return 'kimi-k2.5'
+  return at < KIMI_CODING_K2_7_FROM ? 'kimi-k2.6' : model
+}
+
+/// True when pricingModelAt stands in for a model with no published rate:
+/// Kimi Code's alias served K2.8 Preview from 11 Sep 2026, priced as K2.7 Code.
+/// A missing or unparseable timestamp gets the forward default, so it counts.
+export function isStandInPricedAt(model: string, timestamp: string | undefined): boolean {
+  const id = model.toLowerCase()
+  if (id !== 'kimi-for-coding' && id !== 'kimi-code') return false
+  if (Object.hasOwn(userAliases, model) || userPriceOverrides.has(model)) return false
+  const at = Date.parse(timestamp ?? '')
+  return !(at < KIMI_CODING_K2_8_FROM)
+}
+
+export function getModelCosts(model: string): ModelCosts | null {
+  // Try with provider prefix preserved (azure/gpt-5.4, openrouter/anthropic/claude-opus-4.6)
+  const withPrefix = model.replace(/@.*$/, '').replace(/-\d{8}$/, '')
+  const canonicalName = getCanonicalName(model)
+  const canonical = resolveAlias(canonicalName)
+
+  const override = getPriceOverrideExact(model, withPrefix, canonicalName, canonical)
+  if (override) return override
+
+  // An explicit alias for a bare (un-prefixed) model name is authoritative: it
+  // must win over a coincidental stripped reseller key of the same name. LiteLLM
+  // ships `snowflake/claude-4-opus` ($5), which the bundler strips to a bare
+  // `claude-4-opus` key; without this, that would shadow the curated alias
+  // `claude-4-opus -> claude-opus-4` ($15 official Anthropic price).
+  if (canonical !== canonicalName && withPrefix === canonicalName && pricingCache.has(canonical)) {
+    return pricingCache.get(canonical)!
+  }
+
+  if (pricingCache.has(withPrefix)) return pricingCache.get(withPrefix)!
+
+  if (pricingCache.has(canonical)) return pricingCache.get(canonical)!
+
+  for (const candidate of routedModelCandidates(model)) {
+    const aliased = resolveAlias(candidate)
+    // A user's declared price for the bare id must win over the catalog row a
+    // routed spelling of it would otherwise hit.
+    const candidateOverride = getPriceOverrideExact(candidate, aliased)
+    if (candidateOverride) return candidateOverride
+    if (pricingCache.has(aliased)) return pricingCache.get(aliased)!
+    if (pricingCache.has(candidate)) return pricingCache.get(candidate)!
+  }
+
+  const prefixOverride = getPriceOverridePrefix(canonical)
+  if (prefixOverride) return prefixOverride
+
+  // Iterate keys longest-first so a model id like `gpt-5-mini` matches the
+  // `gpt-5-mini` entry rather than collapsing to the shorter `gpt-5` entry
+  // due to dictionary insertion order.
+  for (const key of getSortedPricingKeys()) {
+    if (canonical.startsWith(key + '-') || canonical === key) {
+      return pricingCache.get(key)!
+    }
+  }
+
+  const caseInsensitiveOverride = getPriceOverrideCaseInsensitive(canonical, withPrefix)
+  if (caseInsensitiveOverride) return caseInsensitiveOverride
+
+  // Case-insensitive fallback: gap-filled keys from OpenRouter are lowercase
+  // slugs (e.g. `minimax-m3`), but sessions report `MiniMax-M3`. Only consulted
+  // after the exact/canonical/prefix attempts, so it never changes a match that
+  // already resolved above.
+  const lowerIndex = getLowercasePricingIndex()
+  const byCanonical = lowerIndex.get(canonical.toLowerCase())
+  if (byCanonical) return byCanonical
+  const byPrefix = lowerIndex.get(withPrefix.toLowerCase())
+  if (byPrefix) return byPrefix
+
+  const withPrefixVariant = stripKnownPricingVariantSuffix(withPrefix)
+  if (withPrefixVariant && withPrefixVariant !== withPrefix) {
+    const variantCosts = getModelCosts(withPrefixVariant)
+    if (variantCosts) return variantCosts
+  }
+
+  const canonicalVariant = stripKnownPricingVariantSuffix(canonical)
+  if (canonicalVariant && canonicalVariant !== canonical && canonicalVariant !== withPrefixVariant) {
+    const variantCosts = getModelCosts(canonicalVariant)
+    if (variantCosts) return variantCosts
+  }
+
+  return null
+}
+
+// Warn at most once per unknown model name per process. Without this, a model
+// missing from the pricing snapshot would silently price at $0 for every
+// session that used it, hiding real spend until the user noticed.
+const warnedUnknownModels = new Set<string>()
+
+/// Heuristic for "this looks like a local model that will never be in LiteLLM's
+/// pricing JSON". We suppress the unknown-model warning for these because the
+/// "update codeburn" advice can't help — local Ollama models, llama.cpp tags,
+/// LM Studio loads, etc. are billed locally and don't have public pricing.
+/// Users still get $0 in cost reports for them (correct — local inference is
+/// effectively free); the warning was just noise.
+function looksLikeLocalModel(name: string): boolean {
+  // Bedrock foundation-model ids end in a `-[v]<major>:<minor>` version
+  // (`anthropic.claude-haiku-4-5-20251001-v1:0`, `openai.gpt-oss-120b-1:0`).
+  // That colon is a version, not an Ollama tag: such a model is metered, and
+  // one with no price must reach the unpriced list rather than be treated as
+  // free local inference.
+  if (/-v?\d+:\d+$/.test(name)) return false
+  // Bedrock provisioned-model / custom-model ARNs carry colons from the ARN
+  // structure (arn:aws:bedrock:<region>:<account>:provisioned-model/<id>), but
+  // they are metered Bedrock, not local: an unpriced one must reach the
+  // unpriced list rather than be hidden as free local inference.
+  if (/^arn:aws:bedrock:/i.test(name)) return false
+  // Ollama and LM Studio tags include `:tag` (e.g. qwen3.6:35b-a3b-bf16).
+  if (name.includes(':') && !name.startsWith('http')) return true
+  // GGUF / quantized fingerprints commonly seen in local inference.
+  if (/[-_](q[2-8](_[a-z0-9]+)?|bf16|fp16|gguf|f16|f32)$/i.test(name)) return true
+  return false
+}
+
+export interface UnpricedModelUsage {
+  model: string
+  calls: number
+  tokens: number
+}
+
+function hasBillableRate(costs: ModelCosts): boolean {
+  return costs.inputCostPerToken > 0
+    || costs.outputCostPerToken > 0
+    || costs.cacheWriteCostPerToken > 0
+    || costs.cacheReadCostPerToken > 0
+}
+
+// Exact-override lookup with the same key derivation getModelCosts uses. Lets
+// the unpriced detector distinguish "explicitly declared free by the user" (a
+// zero-rate override) from a zero-rate LiteLLM stub, which means "listed but
+// unknown price" and must still be flagged. Only the EXACT override form is
+// consulted: getModelCosts checks it before any table hit, so when one exists
+// it is provably what priced the model. Prefix and case-insensitive overrides
+// resolve AFTER table hits and so cannot prove the $0 was intentional; a
+// zero-rate stub shadowed by one still gets flagged (the honest direction).
+function exactPriceOverrideFor(model: string): ModelCosts | null {
+  const withPrefix = model.replace(/@.*$/, '').replace(/-\d{8}$/, '')
+  const canonicalName = getCanonicalName(model)
+  const canonical = resolveAlias(canonicalName)
+  return getPriceOverrideExact(model, withPrefix, canonicalName, canonical)
+}
+
+// Render-time unpriced detection (#638): flag aggregated model rows that carry
+// usage but $0 cost AND whose pricing lookup yields no billable rate right
+// now. Cost is computed at parse time and cached, so a parse-time registry
+// would miss cached sessions; a render-time check covers both and heals the
+// moment pricing data, an alias, or a price override arrives.
+//
+// Rows with cost > 0 are never flagged: aggregation keys rows by DISPLAY name
+// (parser.ts keys modelBreakdown via getShortModelName), which the pricing
+// lookup misses, so a priced model like "Opus 4.8" would otherwise false-flag.
+// $0 display-name rows ARE flagged even when the raw id would price today:
+// those tokens really did enter the report at $0 (a provider priced a
+// transformed name, or the session was cached before its model's pricing
+// landed). Conservative by design: a display key merging priced and unpriced
+// raw ids carries cost > 0 and is not flagged. Local-looking models and
+// models with a local-savings mapping are excluded because $0 is their
+// correct cost, as are zero-rate USER overrides (explicitly declared free).
+/// Models whose $0 cost is CORRECT rather than a pricing gap, mirroring the
+/// exclusions findUnpricedModels applies: local-looking models, models mapped
+/// to a local-savings baseline, subscription / flat-rate product SKUs, and
+/// models an exact zero-rate user override declares free. Used to keep their
+/// calls out of the pricing-coverage denominator — otherwise a 95%-ollama
+/// user reads high coverage while every genuinely cost-bearing call is unpriced.
+export function isExpectedFreeModel(model: string): boolean {
+  if (looksLikeLocalModel(model)) return true
+  if (getLocalSavingsBaseline(model)) return true
+  const costs = getModelCosts(model)
+  // A builtin/user alias can still attach a billable rate to a subscription
+  // SKU (warp-auto-* today). Those calls are priced, so they stay in the
+  // coverage denominator. Only the $0 / no-rate case is expected-free.
+  if (isFlatRateModel(model) && (!costs || !hasBillableRate(costs))) return true
+  if (costs && !hasBillableRate(costs) && exactPriceOverrideFor(model)) return true
+  return false
+}
+
+/// The cost a tool recorded for a call CodeBurn prices at $0, unless $0 is the
+/// declared price (local, local-savings, flat-rate, zero-rate override).
+export function recordedCostFallback(model: string, costUSD: number, recorded: number | undefined): number | undefined {
+  return costUSD === 0 && typeof recorded === 'number' && recorded > 0 && !isExpectedFreeModel(model) ? recorded : undefined
+}
+
+export function findUnpricedModels(
+  rows: Iterable<{ model: string; calls: number; cost: number; tokens?: number }>,
+): UnpricedModelUsage[] {
+  const out: UnpricedModelUsage[] = []
+  for (const row of rows) {
+    const { model } = row
+    const tokens = row.tokens ?? 0
+    if (!model || model === '<synthetic>') continue
+    if (row.calls <= 0 && tokens <= 0) continue
+    if (row.cost > 0) continue
+    if (looksLikeLocalModel(model)) continue
+    if (getLocalSavingsBaseline(model)) continue
+    if (isFlatRateModel(model)) continue
+    const costs = getModelCosts(model)
+    if (costs && hasBillableRate(costs)) continue
+    if (costs && exactPriceOverrideFor(model)) continue
+    out.push({ model, calls: row.calls, tokens })
+  }
+  return out.sort((a, b) => (b.tokens - a.tokens) || (b.calls - a.calls)
+    || (a.model < b.model ? -1 : a.model > b.model ? 1 : 0))
+}
+
+function shouldWarnAboutUnknownModel(name: string): boolean {
+  if (!name || name === '<synthetic>') return false
+  if (warnedUnknownModels.has(name)) return false
+  // Suppress for local/quantized models — the "update codeburn" hint is
+  // actively misleading there. Users who need cost visibility for local
+  // inference can still set an alias via `codeburn model-alias`.
+  if (looksLikeLocalModel(name)) return false
+  if (isFlatRateModel(name)) return false
+  // The warning fired on every CLI invocation (including the default
+  // dashboard) which made first launches look broken — three "no pricing
+  // data" lines greet a user before the dashboard even draws. Now opt-in
+  // via --verbose. The unknown model still costs $0 in reports; users who
+  // suspect missing models run `codeburn --verbose` to see the list.
+  if (process.env['CODEBURN_VERBOSE'] !== '1') return false
+  return true
+}
+
+/** Render provider-supplied model IDs without terminal control characters. */
+export function sanitizeModelForDisplay(model: string): string {
+  return model.replace(/[\x00-\x1F\x7F-\x9F]/g, '?').slice(0, 200)
+}
+
+/// The fabricated 1.25x-input write rate only holds for Anthropic models. Any
+/// other model without a published write rate bills those tokens as plain
+/// input, the same rule codex.ts applies when it routes them.
+export function cacheWriteCostPerToken(model: string, costs: ModelCosts): number {
+  if (costs.cacheWriteCostIsExplicit || /claude|anthropic/i.test(model)) return costs.cacheWriteCostPerToken
+  return costs.inputCostPerToken
+}
+
+export function calculateCost(
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+  cacheCreationTokens: number,
+  cacheReadTokens: number,
+  webSearchRequests: number,
+  speed: 'standard' | 'fast' | 'flex' = 'standard',
+  oneHourCacheCreationTokens = 0,
+  provider?: string,
+): number {
+  const costs = getModelCosts(model)
+  if (!costs) {
+    if (shouldWarnAboutUnknownModel(model)) {
+      warnedUnknownModels.add(model)
+      // Strip control characters and cap length: model names come from JSONL
+      // payloads written by external tools, so a hostile or corrupt file
+      // could embed terminal escape sequences here.
+      const safeName = sanitizeModelForDisplay(model)
+      process.stderr.write(
+        `codeburn: no pricing data for model "${safeName}" — costs for this model will show $0. ` +
+        `${unpricedModelHint(safeName)} Or track local-model savings with: codeburn model-savings "${safeName}" <baseline-model>, or update with: npx codeburn@latest.\n`,
+      )
+    }
+    return 0
+  }
+
+  const safe = (n: number) => (Number.isFinite(n) && n > 0 ? n : 0)
+  const safeOneHourCacheCreation = safe(oneHourCacheCreationTokens)
+  const safeCacheCreation = Math.max(safe(cacheCreationTokens), safeOneHourCacheCreation)
+  const safeFiveMinuteCacheCreation = Math.max(0, safeCacheCreation - safeOneHourCacheCreation)
+  const promptTokens = safe(inputTokens) + safe(cacheReadTokens) + safeCacheCreation
+  const tieredCosts = tieredCostsFor(model, speed === 'flex' ? costs.flex ?? costs : costs, promptTokens, provider)
+  const multiplier = speed === 'fast' ? tieredCosts.fastMultiplier : 1
+
+  // Clamp negative inputs to 0. A corrupt JSONL that emits a negative token
+  // count would otherwise produce a negative cost that silently subtracts
+  // from real spend in aggregate totals. NaN is also handled here; the
+  // arithmetic below short-circuits to 0 when any operand is non-finite.
+  const cacheWriteRate = cacheWriteCostPerToken(model, tieredCosts)
+  return multiplier * (
+    safe(inputTokens) * tieredCosts.inputCostPerToken +
+    safe(outputTokens) * tieredCosts.outputCostPerToken +
+    safeFiveMinuteCacheCreation * cacheWriteRate +
+    safeOneHourCacheCreation * cacheWriteRate * ONE_HOUR_CACHE_WRITE_MULTIPLIER_FROM_FIVE_MINUTE_RATE +
+    safe(cacheReadTokens) * tieredCosts.cacheReadCostPerToken +
+    safe(webSearchRequests) * tieredCosts.webSearchCostPerRequest
+  )
+}
+
+const autoModelNames: Record<string, string> = {
+  'glm-5.2': 'GLM-5.2',
+  'GLM-5.2': 'GLM-5.2',
+  'glm-5.3': 'GLM-5.3',
+  'GLM-5.3': 'GLM-5.3',
+  'cursor-auto': 'Cursor (auto)',
+  'cursor-agent-auto': 'Cursor (auto)',
+  'copilot-auto': 'Copilot (auto)',
+  'copilot-openai-auto': 'Copilot (OpenAI)',
+  'copilot-anthropic-auto': 'Copilot (Anthropic)',
+  'ibm-bob-auto': 'IBM Bob (auto)',
+  'kiro-auto': 'Kiro (auto)',
+  'quickdesk-auto': 'Quick Desktop (auto)',
+  'grokbot-auto': 'Grok Bot (auto)',
+  'grok-bot-automation': 'Grok Bot (automation)',
+  'grok-bot-cua': 'Grok Bot (computer use)',
+  'grok-bot-default': 'Grok Bot (default)',
+  'grok-4.6-high': 'Grok 4.6 (high)',
+  'grok-4.6-high-fast': 'Grok 4.6 (high, fast)',
+  'cline-auto': 'Cline (auto)',
+  'openclaw-auto': 'OpenClaw (auto)',
+  'qwen-auto': 'Qwen (auto)',
+  'kimi-auto': 'Kimi (auto)',
+  'kimi-for-coding': 'Kimi for Coding',
+  'kimi-for-coding-highspeed': 'Kimi for Coding HighSpeed',
+  'codex-auto-review': 'Codex Auto Review',
+  'gpt-reserve': 'Luna Reserve',
+}
+
+const SHORT_NAMES: Record<string, string> = {
+  // Modern claude-<family>-<major>-<minor> ids are derived in deriveClaudeShortName.
+  // Only the legacy 3.x ids (family-last) need explicit mapping.
+  'claude-3-7-sonnet': 'Sonnet 3.7',
+  'claude-3-5-sonnet': 'Sonnet 3.5',
+  'claude-3-5-haiku': 'Haiku 3.5',
+  'gpt-4o-mini': 'GPT-4o Mini',
+  'gpt-4o': 'GPT-4o',
+  'gpt-4.1-nano': 'GPT-4.1 Nano',
+  'gpt-4.1-mini': 'GPT-4.1 Mini',
+  'gpt-4.1': 'GPT-4.1',
+  'codex-auto-review': 'Codex Auto Review',
+  'gpt-5.5-pro': 'GPT-5.5 Pro',
+  'gpt-5.5': 'GPT-5.5',
+  'gpt-5.4-pro': 'GPT-5.4 Pro',
+  'gpt-5.4-nano': 'GPT-5.4 Nano',
+  'gpt-5.4-mini': 'GPT-5.4 Mini',
+  'gpt-5.4': 'GPT-5.4',
+  'gpt-5.3-codex-spark': 'GPT-5.3 Codex Spark',
+  'gpt-5.3-codex': 'GPT-5.3 Codex',
+  'gpt-5.3': 'GPT-5.3',
+  'gpt-5.2-pro': 'GPT-5.2 Pro',
+  'gpt-5.2-low': 'GPT-5.2 Low',
+  'gpt-5.2': 'GPT-5.2',
+  'gpt-5.1-codex-mini': 'GPT-5.1 Codex Mini',
+  'gpt-5.1-codex': 'GPT-5.1 Codex',
+  'gpt-5.1': 'GPT-5.1',
+  'gpt-5-pro': 'GPT-5 Pro',
+  'gpt-5-nano': 'GPT-5 Nano',
+  'gpt-5-mini': 'GPT-5 Mini',
+  'gpt-5': 'GPT-5',
+  'gemini-3.8-flash': 'Gemini 3.8 Flash',
+  'gemini-3.5-flash': 'Gemini 3.5 Flash',
+  'gemini-3.1-pro-preview': 'Gemini 3.1 Pro',
+  'gemini-3-flash-preview': 'Gemini 3 Flash',
+  'gemini-2.5-pro': 'Gemini 2.5 Pro',
+  'gemini-2.5-flash': 'Gemini 2.5 Flash',
+  'kimi-k2-thinking-turbo': 'Kimi K2 Thinking Turbo',
+  'kimi-k2-thinking': 'Kimi K2 Thinking',
+  'kimi-k3': 'Kimi K3',
+  'kimi-k2p6': 'Kimi K2.6',
+  'kimi-thinking-preview': 'Kimi Thinking',
+  'kimi-k2.6': 'Kimi K2.6',
+  'kimi-k2.5': 'Kimi K2.5',
+  'kimi-k2p5': 'Kimi K2.5',
+  'kimi-k2-instruct': 'Kimi K2 Instruct',
+  'kimi-k2-0905': 'Kimi K2',
+  'kimi-k2': 'Kimi K2',
+  'kimi-latest': 'Kimi Latest',
+  'moonshot-v1': 'Moonshot v1',
+  'deepseek-v4-pro': 'DeepSeek v4 Pro',
+  'deepseek-v4-flash': 'DeepSeek v4 Flash',
+  'deepseek-coder-max': 'DeepSeek Coder Max',
+  'deepseek-coder': 'DeepSeek Coder',
+  'deepseek-r1': 'DeepSeek R1',
+  'o4-mini': 'o4-mini',
+  'o3': 'o3',
+  'MiniMax-M2.7-highspeed': 'MiniMax M2.7 Highspeed',
+  'MiniMax-M2.7': 'MiniMax M2.7',
+  // Grok (xAI) and GLM ids that otherwise surface raw or as a pricing key in
+  // reports. grok-build and GLM-5.2 price via sibling aliases, so
+  // getShortModelName resolves to the pricing key before this lookup; map each
+  // back to the real model name. grok-composer has no alias, it just lacked an
+  // entry.
+  'glm-5p1': 'GLM-5.2',                               // ZCode/Hermes run GLM-5.2 (priced as the GLM-5.1 sibling)
+  'grok-build-0.1': 'Grok Build',                     // Grok Build prices through the 0.1 sibling
+  'grok-composer-2.5-fast': 'Grok Composer 2.5 Fast',
+  // Fireworks-hosted fleet models arrive as `accounts/fireworks/models/<slug>`;
+  // getShortModelName's path fallback strips to the bare slug and re-resolves it
+  // through this table. Display-only — getModelCosts prices off the full path,
+  // so these entries do not move any dollar amounts. (deepseek-v4-pro/-flash
+  // already have entries above and resolve the same way.)
+  'glm-5p2': 'GLM-5.2',
+  'qwen3p7-plus': 'Qwen 3.7 Plus',
+  'kimi-k2p7-code': 'Kimi K2.7 Code',
+  // Ids that price correctly but had no display entry, so reports showed the
+  // raw slug. All display-only. The GPT-5.6 variants are listed individually
+  // rather than as a bare `gpt-5.6`: a base entry would swallow every future
+  // `gpt-5.6-*` via the prefix match and hide the variant, which is exactly
+  // what getShortModelName's version-boundary rule is there to prevent.
+  'gpt-5.6-sol': 'GPT-5.6 Sol',
+  'gpt-5.6-terra': 'GPT-5.6 Terra',
+  'gpt-5.6-luna': 'GPT-5.6 Luna',
+  // The Grok Build harness reports the model it runs (`grok-4.5`), so this is
+  // the model's own name; `grok-build*` ids still resolve to "Grok Build".
+  'grok-4.5': 'Grok 4.5',
+  // The harness also reports a `-build` variant of that model. It is a distinct
+  // id and reports bucket by id, so without its own entry the prefix match gave
+  // it the same name as `grok-4.5` and the report showed two identical rows.
+  'grok-4.5-build': 'Grok 4.5 (build)',
+  // ClinePass routes models as `cline-pass/<slug>`; getShortModelName's path
+  // fallback strips the prefix and re-resolves the bare slug through this
+  // table, the same way it handles `accounts/fireworks/models/<slug>`.
+  'qwen3.7-max': 'Qwen 3.7 Max',
+  'mimo-v2.5-pro': 'MiMo v2.5 Pro',
+  'mimo-v2.5': 'MiMo v2.5',
+  'mimo-v2-flash': 'MiMo v2 Flash',
+  // Both spellings occur in the wild: OpenRouter gap-filled keys are lowercase
+  // slugs while sessions report the capitalized name (see the case-insensitive
+  // pricing index above). SHORT_NAMES matching is case-sensitive, so map both.
+  'minimax-m3': 'MiniMax M3',
+  'MiniMax-M3': 'MiniMax M3',
+}
+
+// Sorted longest-first so more-specific prefixes match before shorter ones.
+// Without this, `gpt-5-mini` could resolve to "GPT-5" (the entry for `gpt-5`)
+// if it happened to be iterated before `gpt-5-mini`, hiding a distinct model
+// behind the wrong display name and pricing tier.
+const SORTED_SHORT_NAMES: [string, string][] = Object.entries(SHORT_NAMES)
+  .sort((a, b) => b[0].length - a[0].length)
+
+// Anthropic's id scheme is `claude-<family>-<major>[-<minor>]`, so every new
+// version is derivable — no hand-maintained entry per release. (Legacy 3.x ids
+// put the family last, e.g. `claude-3-5-sonnet`, and stay in SHORT_NAMES.)
+// Some doors write the minor with a dot instead of a dash (GitHub Copilot's
+// session store: `claude-opus-4.8`), so both spellings derive the same name
+// (#1530); the dotted aliases in BUILTIN_ALIASES below predate this and stay
+// only because pricing also resolves through them.
+const CLAUDE_FAMILY: Record<string, string> = {
+  opus: 'Opus',
+  sonnet: 'Sonnet',
+  haiku: 'Haiku',
+  fable: 'Fable',
+  mythos: 'Mythos',
+}
+function deriveClaudeShortName(canonical: string): string | undefined {
+  const m = canonical.match(/^claude-(opus|sonnet|haiku|fable|mythos)-(\d+)(?:[-.](\d+))?/)
+  if (!m) return undefined
+  const [, family, major, minor] = m
+  return `${CLAUDE_FAMILY[family]} ${major}${minor ? `.${minor}` : ''}`
+}
+
+// OpenAI's id scheme is `gpt-<version>[-<variant>]` with a numeric version and
+// lowercase variant segments, so it derives the same way Anthropic's does — a
+// new release needs no hand-maintained entry (#1530). Consulted only after
+// SHORT_NAMES misses, so curated labels (GPT-5 Pro, GPT-5.1 Codex Mini, the
+// individually listed GPT-5.6 variants) keep winning. Guarded to the modern
+// dotted-version scheme (`gpt-5.7-terra`): bare-major ids are the legacy
+// date-packaged shape (`gpt-4-1106-preview`) and stay raw, and purely numeric
+// segments (1106, 0125, 20261105) are packaging, not the model's name.
+const GPT_DERIVED_ID = /^gpt-(\d+\.\d+(?:\.\d+)*)(?:-([a-z0-9][a-z0-9-]*))?$/
+function deriveGptShortName(id: string): string | undefined {
+  const m = id.match(GPT_DERIVED_ID)
+  if (!m) return undefined
+  const [, version, variant] = m
+  const segments = (variant ?? '')
+    .split('-')
+    .filter(seg => seg !== '' && !/^\d+$/.test(seg))
+    .map(seg => seg.charAt(0).toUpperCase() + seg.slice(1))
+  return ['GPT-' + version, ...segments].join(' ')
+}
+
+function lookupShortName(id: string): string | undefined {
+  const claude = deriveClaudeShortName(id)
+  if (claude) return claude
+  for (const [key, name] of SORTED_SHORT_NAMES) {
+    if (id === key || id.startsWith(key + '-')) return name
+  }
+  return deriveGptShortName(id)
+}
+
+/// Segment-boundary key match for provider display tables: `key` must be the
+/// whole id or a whole dash-segment of it, never mid-number or mid-version —
+/// so `gpt-5` cannot capture `gpt-5.5` or `gpt-5.6-luna`, exactly as the
+/// global table's `id === key || id.startsWith(key + '-')` cannot (#1530).
+/// Providers match their local tables with this so one model id resolves to
+/// one display name on every provider. A one- or two-digit dash segment is a
+/// minor version (`claude-sonnet-4-6`), not a suffix; dates are longer.
+export function modelKeyMatches(model: string, key: string): boolean {
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(?<![\\w.-])${escaped}(?=$|-(?!\\d{1,2}(?:$|[-.])))`).test(model)
+}
+
+// Reports re-derive the display name of every cached call; the answer depends
+// only on the aliases and the pricing namespaces, which clear it when they change.
+const shortNameMemo = new Map<string, string>()
+const SHORT_NAME_MEMO_MAX = 10_000
+
+// Public API stays unary so Array.map/forEach cannot feed index as cycle state.
+export function getShortModelName(model: string): string {
+  let name = shortNameMemo.get(model)
+  if (name === undefined) {
+    name = shortModelName(model, new Set())
+    if (shortNameMemo.size >= SHORT_NAME_MEMO_MAX) shortNameMemo.clear()
+    shortNameMemo.set(model, name)
+  }
+  return name
+}
+
+// --- Billing routes ---------------------------------------------------------
+//
+// The same model can be billed through more than one door: Claude through
+// Anthropic's API or through AWS Bedrock, Codex through OpenAI or a reseller.
+// Reports key model rows by display name, so without a route the Bedrock and
+// the direct spend of one model merge into a single row and "how much metered
+// API usage am I incurring on top of my subscriptions?" has no answer.
+//
+// A route has two possible sources, feeding one field on the call:
+//   * the model id, when the door renames the model (Bedrock writes
+//     `anthropic.claude-…-v1:0` where a direct call writes `claude-…`);
+//   * the provider's own endpoint column, when it does not (Hermes records
+//     `billing_provider = bedrock` next to the plain vendor id).
+// Pricing never consults the route: it runs on the raw id, and LiteLLM already
+// carries the routed rows. The route only decides which row the cost lands on.
+
+/// Who pays for a call: a metered API account bills per call, a subscription
+/// has already paid for it. Exactly these two — a call whose evidence names
+/// neither carries no mode at all rather than being guessed into one.
+export type BillingMode = 'metered' | 'subscription'
+
+export type ModelRoute = {
+  /// Stable key, safe for filters and JSON (`bedrock`).
+  id: string
+  /// Suffix appended to the display name: "Fable 5.1 (Bedrock)".
+  label: string
+  /// How this door bills when the call itself says nothing: every registered
+  /// door is a metered API account. A call's own recorded basis still wins
+  /// (see `callBillingMode`) — this is the default, not an override.
+  billing: BillingMode
+}
+
+type RouteEntry = ModelRoute & {
+  /// Spellings a provider's endpoint column uses for this door, lowercased.
+  providerFields: readonly string[]
+}
+
+// Doors other than the vendor's own API. The direct door has no entry: the
+// unsuffixed row IS the direct row. Subscription doors (a ChatGPT plan, a
+// Claude Max plan) are not routes either — they do not change which row a
+// model lands on. Only doors with real sessions on disk are listed, the same
+// rule the id shapes follow.
+const ROUTES: readonly RouteEntry[] = [
+  { id: 'bedrock', label: 'Bedrock', billing: 'metered', providerFields: ['bedrock', 'amazon-bedrock'] },
+  { id: 'openrouter', label: 'OpenRouter', billing: 'metered', providerFields: ['openrouter'] },
+  { id: 'vertex', label: 'Vertex', billing: 'metered', providerFields: ['google-vertex', 'google-vertex-anthropic'] },
+]
+
+const ROUTES_BY_ID = new Map(ROUTES.map(route => [route.id, route]))
+const ROUTES_BY_FIELD = new Map(ROUTES.flatMap(route => route.providerFields.map(field => [field, route] as const)))
+
+// Bedrock foundation-model ids: `<vendor>.<model>[-v<major>:<minor>]`, with an
+// optional cross-region inference-profile prefix (`us.`, `eu.`, `global.`).
+// Only the two vendors with coding transcripts on disk are recognised; a
+// dotted id from any other first segment (`gpt-4.1-mini`, `glm-4.7`,
+// `deepseek.v3.2`) is left alone. The version suffix is the one #1463 exempts
+// from the local-tag rule.
+const BEDROCK_ID = /^(?:(us|eu|apac|global|jp|au|us-gov)\.)?(anthropic|openai)\.([a-z0-9][a-z0-9.-]*?)(?:-v\d+:\d+)?$/i
+
+export type RoutedModel = ModelRoute & {
+  /// The vendor's own id for the model, with the door's wrapping removed:
+  /// `anthropic.claude-haiku-4-5-20251001-v1:0` → `claude-haiku-4-5-20251001`.
+  /// What the same model is called through the direct door, so its short
+  /// name is the same one the direct row uses.
+  baseModel: string
+  /// The door's own SKU variant, when the id names one: Bedrock's cross-region
+  /// inference-profile prefix (`us`, `eu`, `global`, …). A profile is priced
+  /// above the single-region id, so it is a distinct SKU and keeps its own
+  /// row (#1053) — the label reads "Haiku 4.5 (Bedrock us)". Undefined for
+  /// the bare id.
+  variant?: string
+}
+
+/// The billing door a model id names, or undefined for a plain vendor id.
+/// Pure: no catalog lookup, safe on the parse path.
+export function getModelRoute(model: string): RoutedModel | undefined {
+  const bedrock = BEDROCK_ID.exec(model)
+  if (bedrock) {
+    const variant = bedrock[1]?.toLowerCase()
+    return { ...ROUTES_BY_ID.get('bedrock')!, baseModel: bedrock[3]!, ...(variant ? { variant } : {}) }
+  }
+  return undefined
+}
+
+/// The route a provider's endpoint field names (`billing_provider` in Hermes,
+/// `providerID` in OpenCode), or undefined when the value is the direct door or
+/// unknown. Direct doors (`anthropic`, `openai`, `google`, …) deliberately
+/// have no route: the unsuffixed row IS the direct row.
+export function routeFromProviderField(value: string | null | undefined): ModelRoute | undefined {
+  if (!value) return undefined
+  const normalized = value.trim().toLowerCase()
+  // Only the literal values exist in usage-bearing OpenCode/OpenRouter sessions.
+  // Keep Hermes' shipped `bedrock` case/whitespace normalization, but do not
+  // invent aliases for the provider spellings OpenCode records.
+  if (normalized !== 'bedrock' && value !== normalized) return undefined
+  return ROUTES_BY_FIELD.get(normalized)
+}
+
+/// Route by stable id, for consumers that persisted the id (cached calls).
+export function getRouteById(id: string | null | undefined): ModelRoute | undefined {
+  return id ? ROUTES_BY_ID.get(id) : undefined
+}
+
+/// Every registered route id, for a CLI that validates a `--route` value
+/// before it parses anything.
+export function registeredRouteIds(): string[] {
+  return ROUTES.map(route => route.id)
+}
+
+/// The door a call actually went through: the route the provider recorded
+/// when it recorded one, else the one the model id names, else null for the
+/// direct door. Null also covers a persisted id no route registers, so an
+/// unrecognised value degrades to direct rather than to a phantom door.
+export function effectiveRouteId(model: string, route?: string | null): string | null {
+  return getRouteById(route)?.id ?? getModelRoute(model)?.id ?? null
+}
+
+/// A billing mode from a persisted or user-supplied value, or undefined when
+/// it is neither mode. The single gate every validator and conversion uses,
+/// so `metered|subscription` cannot drift between the CLI, the cache and the
+/// providers.
+export function parseBillingMode(value: string | null | undefined): BillingMode | undefined {
+  return value === 'metered' || value === 'subscription' ? value : undefined
+}
+
+/// Who billed a call, from the call's own evidence. A mode the provider
+/// observed (Hermes' resolved cost basis: `included` is subscription-covered,
+/// `actual` is a recorded invoice amount) is a fact and wins outright. Only
+/// when the call states no fact does an effective registered route supply its
+/// default. A direct call whose cost is estimated or calculated stays
+/// unknown: an estimate says nothing about which account was charged.
+export function callBillingMode(call: { model: string; route?: string | null; billing?: string | null }): BillingMode | undefined {
+  const observed = parseBillingMode(call.billing)
+  if (observed) return observed
+  const route = effectiveRouteId(call.model, call.route)
+  return route ? ROUTES_BY_ID.get(route)!.billing : undefined
+}
+
+/// The parenthetical a routed row carries after its short name — "(Bedrock)",
+/// "(Bedrock us)" — or an empty string for the direct door.
+/// `route` is the call's persisted route id when the provider supplied one;
+/// otherwise the id shape decides. Exported so a provider-first label
+/// (models-report) can append exactly what modelRowKey appends.
+export function routeSuffix(model: string, route?: string | null): string {
+  const shaped = getModelRoute(model)
+  const resolved = getRouteById(route) ?? shaped
+  if (!resolved) return ''
+  const variant = shaped?.variant
+  return `(${resolved.label}${variant ? ` ${variant}` : ''})`
+}
+
+/// The key every report keys a model row on. One SKU through one door is one
+/// row: `"Haiku 4.5"` for the direct call, `"Haiku 4.5 (Bedrock)"` for the
+/// single-region Bedrock id, `"Haiku 4.5 (Bedrock us)"` for the cross-region
+/// profile that prices above it. Without a route this is exactly
+/// `getShortModelName`, so ids that name no door keep their existing rows.
+/// Idempotent: a key fed back in (an adopted pre-v33 daily row) returns itself.
+export function modelRowKey(model: string, route?: string | null): string {
+  // A user alias on the full id is a deliberate remap and wins over any door.
+  if (Object.hasOwn(userAliases, model)) return getShortModelName(model)
+  const suffix = routeSuffix(model, route)
+  if (!suffix) return getShortModelName(model)
+  const name = getShortModelName(getModelRoute(model)?.baseModel ?? model)
+  return `${name} ${suffix}`
+}
+
+/// Provider-first display name. Local labels win (Cursor estimated suffixes,
+/// provider tables that intentionally override the global map). If the provider
+/// echoed the raw id, it missed — fall back to the global resolver instead of
+/// showing `gpt-5.6-sol` / `accounts/fireworks/models/kimi-k2p6`.
+export function fallbackRawModelDisplayName(localLabel: string, rawModel: string): string {
+  return localLabel === rawModel ? getShortModelName(rawModel) : localLabel
+}
+
+function shortModelName(model: string, seen: Set<string>): string {
+  if (autoModelNames[model]) return autoModelNames[model]
+  if (seen.has(model)) {
+    const leaf = model.includes('/') ? model.slice(model.lastIndexOf('/') + 1) : model
+    return lookupShortName(leaf) ?? leaf
+  }
+  seen.add(model)
+
+  // User aliases win over built-in display names. A remap of gpt-4o must
+  // show the target, not "GPT-4o".
+  if (Object.hasOwn(userAliases, model)) {
+    return shortModelName(userAliases[model]!, seen)
+  }
+
+  const stripped = getCanonicalName(model)
+  // Before aliasing: `glm-5.3` prices via the `glm-5p2` sibling, so resolving
+  // first would label a namespaced GLM-5.3 as "GLM-5.2".
+  if (autoModelNames[stripped]) return autoModelNames[stripped]
+  if (stripped !== model) {
+    if (Object.hasOwn(userAliases, stripped)) {
+      return shortModelName(userAliases[stripped]!, seen)
+    }
+    const knownStripped = lookupShortName(stripped)
+    if (knownStripped && !Object.hasOwn(BUILTIN_ALIASES, stripped) && !Object.hasOwn(BUILTIN_ALIASES, stripped.toLowerCase())) {
+      return knownStripped
+    }
+  }
+
+  const canonical = resolveAlias(stripped)
+  const known = lookupShortName(canonical)
+  if (known) return known
+
+  if (canonical.includes('/')) {
+    const segment = canonical.slice(canonical.lastIndexOf('/') + 1)
+    if (!segment || seen.has(segment) || segment === stripped) {
+      return lookupShortName(segment) ?? segment
+    }
+    return shortModelName(segment, seen)
+  }
+  return lookupShortName(canonical) ?? canonical
+}
+
+// Pricing is process-global state assembled at CLI startup from the cached
+// LiteLLM snapshot plus user config. A parse worker thread starts with none of
+// it, and re-running loadPricing() there would mean N more disk reads (or, on a
+// cold pricing cache, N network fetches). Ship the resolved state across
+// instead, so every thread prices a call exactly as the main thread would.
+export type PricingSnapshot = {
+  pricing: Map<string, ModelCosts>
+  aliases: Record<string, string>
+  priceOverrides: Record<string, PriceOverrideRates>
+  localModelSavings: Record<string, string>
+  flatRateModels?: string[]
+  flatRateModelsRemoved?: string[]
+}
+
+export function snapshotPricingState(): PricingSnapshot {
+  return {
+    pricing: pricingCache,
+    aliases: userAliases,
+    priceOverrides: userPriceOverridesConfig,
+    localModelSavings: userLocalModelSavings,
+    flatRateModels: getFlatRateModels(),
+    flatRateModelsRemoved: getFlatRateRemoved(),
+  }
+}
+
+export function restorePricingState(snapshot: PricingSnapshot): void {
+  pricingCache = snapshot.pricing
+  sortedPricingKeys = null
+  lowercasePricingIndex = null
+  knownNamespaces = null
+  setModelAliases(snapshot.aliases)
+  setPriceOverrides(snapshot.priceOverrides)
+  setLocalModelSavings(snapshot.localModelSavings)
+  setFlatRateModels(snapshot.flatRateModels ?? [])
+  setFlatRateRemoved(snapshot.flatRateModelsRemoved ?? [])
+}

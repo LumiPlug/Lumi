@@ -1,0 +1,577 @@
+[
+  {
+    "provider": "claude",
+    "displayName": "Claude",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "claude-config-dirs.test.ts",
+      "claude-cowork-ledger-readonly.test.ts",
+      "claude-cowork-ledger.test.ts"
+    ],
+    "providerFixtureAssertions": 42,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "cline",
+    "displayName": "Cline",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "cline-cli.test.ts",
+      "cline.test.ts"
+    ],
+    "providerFixtureAssertions": 44,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "cline-cli",
+    "displayName": "Cline CLI",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "cline-cli.test.ts"
+    ],
+    "providerFixtureAssertions": 35,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "codewhale",
+    "displayName": "CodeWhale",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "codewhale.test.ts"
+    ],
+    "providerFixtureAssertions": 8,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "codebuff",
+    "displayName": "Codebuff",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "codebuff.test.ts"
+    ],
+    "providerFixtureAssertions": 21,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "codex",
+    "displayName": "Codex",
+    "network": false,
+    "realThisRound": "numeric_projection_pass",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "codex-resume.test.ts",
+      "codex.test.ts"
+    ],
+    "providerFixtureAssertions": 86,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "copilot",
+    "displayName": "Copilot",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "copilot-skills.test.ts",
+      "copilot.test.ts"
+    ],
+    "providerFixtureAssertions": 164,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "devin",
+    "displayName": "Devin",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "devin-sessions-db.test.ts",
+      "devin.test.ts"
+    ],
+    "providerFixtureAssertions": 26,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "droid",
+    "displayName": "Droid",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "droid.test.ts"
+    ],
+    "providerFixtureAssertions": 8,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "dsh",
+    "displayName": "DeepSeek Harness",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "dsh.test.ts"
+    ],
+    "providerFixtureAssertions": 86,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "gemini",
+    "displayName": "Gemini",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "gemini.test.ts"
+    ],
+    "providerFixtureAssertions": 5,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "hermes",
+    "displayName": "Hermes Agent",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "hermes-ledger.test.ts",
+      "hermes.test.ts"
+    ],
+    "providerFixtureAssertions": 44,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "ibm-bob",
+    "displayName": "IBM Bob",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "ibm-bob.test.ts"
+    ],
+    "providerFixtureAssertions": 7,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "kilo-code",
+    "displayName": "KiloCode",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "kilo-code.test.ts"
+    ],
+    "providerFixtureAssertions": 3,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "kiro",
+    "displayName": "Kiro",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "kiro.test.ts"
+    ],
+    "providerFixtureAssertions": 60,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "kimi",
+    "displayName": "Kimi",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "kimi.test.ts"
+    ],
+    "providerFixtureAssertions": 5,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "kimicode",
+    "displayName": "Kimi Code",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "kimicode.test.ts"
+    ],
+    "providerFixtureAssertions": 12,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "lingtai-tui",
+    "displayName": "LingTai TUI",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "lingtai-tui.test.ts"
+    ],
+    "providerFixtureAssertions": 6,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "mistral-vibe",
+    "displayName": "Mistral Vibe",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "mistral-vibe-unified.test.ts",
+      "mistral-vibe.test.ts"
+    ],
+    "providerFixtureAssertions": 24,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "mux",
+    "displayName": "Mux",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "mux.test.ts"
+    ],
+    "providerFixtureAssertions": 21,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "openclaw",
+    "displayName": "OpenClaw",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "openclaw.test.ts"
+    ],
+    "providerFixtureAssertions": 28,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "openclaude",
+    "displayName": "OpenClaude",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "openclaude.test.ts"
+    ],
+    "providerFixtureAssertions": 18,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "open-design",
+    "displayName": "Open Design",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "open-design.test.ts"
+    ],
+    "providerFixtureAssertions": 7,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "pi",
+    "displayName": "Pi",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "pi.test.ts"
+    ],
+    "providerFixtureAssertions": 30,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "omp",
+    "displayName": "OMP",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "omp.test.ts"
+    ],
+    "providerFixtureAssertions": 16,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "qwen",
+    "displayName": "Qwen",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [],
+    "providerFixtureAssertions": 0,
+    "fixtureEvidence": "Lumi_qwen_transcript_parse_dedup_cache_privacy_pass",
+    "nativeClient": "not_run",
+    "lumiFixtureSuite": "packages/core/src/usage/acceptance.test.ts",
+    "limitations": [
+      "synthetic source only; nonzero cache branch not separately exercised"
+    ]
+  },
+  {
+    "provider": "quickdesk",
+    "displayName": "Quick Desktop",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "quickdesk.test.ts"
+    ],
+    "providerFixtureAssertions": 11,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "zerostack",
+    "displayName": "Zerostack",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "zerostack.test.ts"
+    ],
+    "providerFixtureAssertions": 10,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "grok",
+    "displayName": "Grok Build",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "grok.test.ts"
+    ],
+    "providerFixtureAssertions": 27,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "grokbot",
+    "displayName": "Grok Bot",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "grokbot.test.ts"
+    ],
+    "providerFixtureAssertions": 14,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "amp",
+    "displayName": "Amp",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "amp.test.ts"
+    ],
+    "providerFixtureAssertions": 18,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "command-code",
+    "displayName": "Command Code",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "command-code.test.ts"
+    ],
+    "providerFixtureAssertions": 7,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "antigravity",
+    "displayName": "Antigravity",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "antigravity.test.ts"
+    ],
+    "providerFixtureAssertions": 57,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "forge",
+    "displayName": "Forge",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "forge.test.ts"
+    ],
+    "providerFixtureAssertions": 9,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "goose",
+    "displayName": "Goose",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "goose-sync-privacy.test.ts"
+    ],
+    "providerFixtureAssertions": 1,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "cursor",
+    "displayName": "Cursor",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "cursor-agent.test.ts",
+      "cursor-bubble-dedup.test.ts",
+      "cursor-large-db-cap.test.ts",
+      "cursor-real-tokens.test.ts",
+      "cursor-workspace-breakdown.test.ts",
+      "cursor.test.ts"
+    ],
+    "providerFixtureAssertions": 71,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "opencode",
+    "displayName": "OpenCode",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "opencode-file.test.ts",
+      "opencode.test.ts"
+    ],
+    "providerFixtureAssertions": 74,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "cursor-agent",
+    "displayName": "Cursor Agent",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "cursor-agent.test.ts"
+    ],
+    "providerFixtureAssertions": 28,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "crush",
+    "displayName": "Crush",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "crush.test.ts"
+    ],
+    "providerFixtureAssertions": 12,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "warp",
+    "displayName": "Warp",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "warp.test.ts"
+    ],
+    "providerFixtureAssertions": 7,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "vercel-gateway",
+    "displayName": "Vercel AI Gateway",
+    "network": true,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "vercel-gateway.test.ts"
+    ],
+    "providerFixtureAssertions": 6,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "zcode",
+    "displayName": "ZCode",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "zcode.test.ts"
+    ],
+    "providerFixtureAssertions": 7,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  },
+  {
+    "provider": "zed",
+    "displayName": "Zed",
+    "network": false,
+    "realThisRound": "not_run_no_sample_selected",
+    "normalization": "pass",
+    "providerFixtureSuites": [
+      "zed.test.ts"
+    ],
+    "providerFixtureAssertions": 8,
+    "fixtureEvidence": "provider_suite_pass",
+    "nativeClient": "not_run"
+  }
+]

@@ -1,0 +1,217 @@
+[
+  {
+    "name": "claude",
+    "displayName": "Claude",
+    "network": false
+  },
+  {
+    "name": "cline",
+    "displayName": "Cline",
+    "network": false
+  },
+  {
+    "name": "cline-cli",
+    "displayName": "Cline CLI",
+    "network": false
+  },
+  {
+    "name": "codewhale",
+    "displayName": "CodeWhale",
+    "network": false
+  },
+  {
+    "name": "codebuff",
+    "displayName": "Codebuff",
+    "network": false
+  },
+  {
+    "name": "codex",
+    "displayName": "Codex",
+    "network": false
+  },
+  {
+    "name": "copilot",
+    "displayName": "Copilot",
+    "network": false
+  },
+  {
+    "name": "devin",
+    "displayName": "Devin",
+    "network": false
+  },
+  {
+    "name": "droid",
+    "displayName": "Droid",
+    "network": false
+  },
+  {
+    "name": "dsh",
+    "displayName": "DeepSeek Harness",
+    "network": false
+  },
+  {
+    "name": "gemini",
+    "displayName": "Gemini",
+    "network": false
+  },
+  {
+    "name": "hermes",
+    "displayName": "Hermes Agent",
+    "network": false
+  },
+  {
+    "name": "ibm-bob",
+    "displayName": "IBM Bob",
+    "network": false
+  },
+  {
+    "name": "kilo-code",
+    "displayName": "KiloCode",
+    "network": false
+  },
+  {
+    "name": "kiro",
+    "displayName": "Kiro",
+    "network": false
+  },
+  {
+    "name": "kimi",
+    "displayName": "Kimi",
+    "network": false
+  },
+  {
+    "name": "kimicode",
+    "displayName": "Kimi Code",
+    "network": false
+  },
+  {
+    "name": "lingtai-tui",
+    "displayName": "LingTai TUI",
+    "network": false
+  },
+  {
+    "name": "mistral-vibe",
+    "displayName": "Mistral Vibe",
+    "network": false
+  },
+  {
+    "name": "mux",
+    "displayName": "Mux",
+    "network": false
+  },
+  {
+    "name": "openclaw",
+    "displayName": "OpenClaw",
+    "network": false
+  },
+  {
+    "name": "openclaude",
+    "displayName": "OpenClaude",
+    "network": false
+  },
+  {
+    "name": "open-design",
+    "displayName": "Open Design",
+    "network": false
+  },
+  {
+    "name": "pi",
+    "displayName": "Pi",
+    "network": false
+  },
+  {
+    "name": "omp",
+    "displayName": "OMP",
+    "network": false
+  },
+  {
+    "name": "qwen",
+    "displayName": "Qwen",
+    "network": false
+  },
+  {
+    "name": "quickdesk",
+    "displayName": "Quick Desktop",
+    "network": false
+  },
+  {
+    "name": "zerostack",
+    "displayName": "Zerostack",
+    "network": false
+  },
+  {
+    "name": "grok",
+    "displayName": "Grok Build",
+    "network": false
+  },
+  {
+    "name": "grokbot",
+    "displayName": "Grok Bot",
+    "network": false
+  },
+  {
+    "name": "amp",
+    "displayName": "Amp",
+    "network": false
+  },
+  {
+    "name": "command-code",
+    "displayName": "Command Code",
+    "network": false
+  },
+  {
+    "name": "antigravity",
+    "displayName": "Antigravity",
+    "network": false
+  },
+  {
+    "name": "forge",
+    "displayName": "Forge",
+    "network": false
+  },
+  {
+    "name": "goose",
+    "displayName": "Goose",
+    "network": false
+  },
+  {
+    "name": "cursor",
+    "displayName": "Cursor",
+    "network": false
+  },
+  {
+    "name": "opencode",
+    "displayName": "OpenCode",
+    "network": false
+  },
+  {
+    "name": "cursor-agent",
+    "displayName": "Cursor Agent",
+    "network": false
+  },
+  {
+    "name": "crush",
+    "displayName": "Crush",
+    "network": false
+  },
+  {
+    "name": "warp",
+    "displayName": "Warp",
+    "network": false
+  },
+  {
+    "name": "vercel-gateway",
+    "displayName": "Vercel AI Gateway",
+    "network": true
+  },
+  {
+    "name": "zcode",
+    "displayName": "ZCode",
+    "network": false
+  },
+  {
+    "name": "zed",
+    "displayName": "Zed",
+    "network": false
+  }
+]

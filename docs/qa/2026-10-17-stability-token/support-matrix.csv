@@ -1,0 +1,44 @@
+provider,displayName,network,realThisRound,normalization,providerFixtureAssertions,fixtureEvidence,providerFixtureSuites,nativeClient
+claude,Claude,False,not_run_no_sample_selected,pass,42,provider_suite_pass,claude-config-dirs.test.ts;claude-cowork-ledger-readonly.test.ts;claude-cowork-ledger.test.ts,not_run
+cline,Cline,False,not_run_no_sample_selected,pass,44,provider_suite_pass,cline-cli.test.ts;cline.test.ts,not_run
+cline-cli,Cline CLI,False,not_run_no_sample_selected,pass,35,provider_suite_pass,cline-cli.test.ts,not_run
+codewhale,CodeWhale,False,not_run_no_sample_selected,pass,8,provider_suite_pass,codewhale.test.ts,not_run
+codebuff,Codebuff,False,not_run_no_sample_selected,pass,21,provider_suite_pass,codebuff.test.ts,not_run
+codex,Codex,False,numeric_projection_pass,pass,86,provider_suite_pass,codex-resume.test.ts;codex.test.ts,not_run
+copilot,Copilot,False,not_run_no_sample_selected,pass,164,provider_suite_pass,copilot-skills.test.ts;copilot.test.ts,not_run
+devin,Devin,False,not_run_no_sample_selected,pass,26,provider_suite_pass,devin-sessions-db.test.ts;devin.test.ts,not_run
+droid,Droid,False,not_run_no_sample_selected,pass,8,provider_suite_pass,droid.test.ts,not_run
+dsh,DeepSeek Harness,False,not_run_no_sample_selected,pass,86,provider_suite_pass,dsh.test.ts,not_run
+gemini,Gemini,False,not_run_no_sample_selected,pass,5,provider_suite_pass,gemini.test.ts,not_run
+hermes,Hermes Agent,False,not_run_no_sample_selected,pass,44,provider_suite_pass,hermes-ledger.test.ts;hermes.test.ts,not_run
+ibm-bob,IBM Bob,False,not_run_no_sample_selected,pass,7,provider_suite_pass,ibm-bob.test.ts,not_run
+kilo-code,KiloCode,False,not_run_no_sample_selected,pass,3,provider_suite_pass,kilo-code.test.ts,not_run
+kiro,Kiro,False,not_run_no_sample_selected,pass,60,provider_suite_pass,kiro.test.ts,not_run
+kimi,Kimi,False,not_run_no_sample_selected,pass,5,provider_suite_pass,kimi.test.ts,not_run
+kimicode,Kimi Code,False,not_run_no_sample_selected,pass,12,provider_suite_pass,kimicode.test.ts,not_run
+lingtai-tui,LingTai TUI,False,not_run_no_sample_selected,pass,6,provider_suite_pass,lingtai-tui.test.ts,not_run
+mistral-vibe,Mistral Vibe,False,not_run_no_sample_selected,pass,24,provider_suite_pass,mistral-vibe-unified.test.ts;mistral-vibe.test.ts,not_run
+mux,Mux,False,not_run_no_sample_selected,pass,21,provider_suite_pass,mux.test.ts,not_run
+openclaw,OpenClaw,False,not_run_no_sample_selected,pass,28,provider_suite_pass,openclaw.test.ts,not_run
+openclaude,OpenClaude,False,not_run_no_sample_selected,pass,18,provider_suite_pass,openclaude.test.ts,not_run
+open-design,Open Design,False,not_run_no_sample_selected,pass,7,provider_suite_pass,open-design.test.ts,not_run
+pi,Pi,False,not_run_no_sample_selected,pass,30,provider_suite_pass,pi.test.ts,not_run
+omp,OMP,False,not_run_no_sample_selected,pass,16,provider_suite_pass,omp.test.ts,not_run
+qwen,Qwen,False,not_run_no_sample_selected,pass,0,Lumi_qwen_transcript_parse_dedup_cache_privacy_pass,,not_run
+quickdesk,Quick Desktop,False,not_run_no_sample_selected,pass,11,provider_suite_pass,quickdesk.test.ts,not_run
+zerostack,Zerostack,False,not_run_no_sample_selected,pass,10,provider_suite_pass,zerostack.test.ts,not_run
+grok,Grok Build,False,not_run_no_sample_selected,pass,27,provider_suite_pass,grok.test.ts,not_run
+grokbot,Grok Bot,False,not_run_no_sample_selected,pass,14,provider_suite_pass,grokbot.test.ts,not_run
+amp,Amp,False,not_run_no_sample_selected,pass,18,provider_suite_pass,amp.test.ts,not_run
+command-code,Command Code,False,not_run_no_sample_selected,pass,7,provider_suite_pass,command-code.test.ts,not_run
+antigravity,Antigravity,False,not_run_no_sample_selected,pass,57,provider_suite_pass,antigravity.test.ts,not_run
+forge,Forge,False,not_run_no_sample_selected,pass,9,provider_suite_pass,forge.test.ts,not_run
+goose,Goose,False,not_run_no_sample_selected,pass,1,provider_suite_pass,goose-sync-privacy.test.ts,not_run
+cursor,Cursor,False,not_run_no_sample_selected,pass,71,provider_suite_pass,cursor-agent.test.ts;cursor-bubble-dedup.test.ts;cursor-large-db-cap.test.ts;cursor-real-tokens.test.ts;cursor-workspace-breakdown.test.ts;cursor.test.ts,not_run
+opencode,OpenCode,False,not_run_no_sample_selected,pass,74,provider_suite_pass,opencode-file.test.ts;opencode.test.ts,not_run
+cursor-agent,Cursor Agent,False,not_run_no_sample_selected,pass,28,provider_suite_pass,cursor-agent.test.ts,not_run
+crush,Crush,False,not_run_no_sample_selected,pass,12,provider_suite_pass,crush.test.ts,not_run
+warp,Warp,False,not_run_no_sample_selected,pass,7,provider_suite_pass,warp.test.ts,not_run
+vercel-gateway,Vercel AI Gateway,True,not_run_no_sample_selected,pass,6,provider_suite_pass,vercel-gateway.test.ts,not_run
+zcode,ZCode,False,not_run_no_sample_selected,pass,7,provider_suite_pass,zcode.test.ts,not_run
+zed,Zed,False,not_run_no_sample_selected,pass,8,provider_suite_pass,zed.test.ts,not_run

@@ -48,5 +48,9 @@ export function useWorkbenchDocument(connection: McpConnectionInfo | null, activ
       stop()
     }
   }, [active, ready, connection?.endpoint, connection?.sessionToken, refresh])
-  return { view, loadError, ready, refresh }
+  const accept = (next: WorkbenchView) => {
+    setView((current) => (!current || next.version >= current.version ? next : current))
+    setLoadError(false)
+  }
+  return { view, loadError, ready, refresh, accept }
 }

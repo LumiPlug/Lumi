@@ -10,6 +10,17 @@ interface Migration {
 
 const MIGRATIONS: Migration[] = [
   {
+    id: 12,
+    name: 'ai_token_usage',
+    sql: `
+    CREATE TABLE usage_records (id TEXT PRIMARY KEY,software TEXT NOT NULL,time TEXT NOT NULL,model TEXT,data TEXT NOT NULL);
+    CREATE INDEX usage_records_time ON usage_records(time,software,model);
+    CREATE TABLE usage_files (id TEXT PRIMARY KEY,data TEXT NOT NULL);
+    CREATE TABLE usage_lineage (id TEXT PRIMARY KEY,parent TEXT,started TEXT);
+    CREATE TABLE usage_state (key TEXT PRIMARY KEY,value TEXT NOT NULL);
+  `,
+  },
+  {
     id: 11,
     name: 'host_task_input_snapshots',
     sql: `CREATE TABLE tool_task_inputs (task_id TEXT PRIMARY KEY REFERENCES tool_tasks(id) ON DELETE CASCADE, snapshot_json TEXT NOT NULL);`,

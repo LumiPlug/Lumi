@@ -1,0 +1,12 @@
+{
+  "app-identity.json": "8c25e4a87b439d053c7d4cfc474f3fed8aec41830a9fb42de0f15d6c8cdca000",
+  "check.log": "3b93e3c14b3340b7ae49529211202c24b42c6628c94d608fa7041a18000776a8",
+  "macos-build.log": "83023bfcc71b8deb2f66e868e758c14711f011c68a9e906d6788b3dd52120dd4",
+  "privacy-after.log": "e02c14e36e36e27fc5ede7c91e3a1c7fc8efa9abe1ee41ec74f1fccccc5696cc",
+  "privacy-before.log": "b38ff2c4f494be632b13c45f242da1e2dece5c9fc041573391741e22791e0b15",
+  "real-codex.json": "87075d66f0f32a0e97b1c0c0e21781c78fadabb49013901f90074c75048b06f8",
+  "rust-tests.log": "2453d2ef8e963a8a08e26f86c7891deb6965811a5ea89d0230edf76e7cc0c865",
+  "sidecars.log": "a087a0b9381a42bcae4a0d809d6c2834e448963d280133cac454da9399124f2b",
+  "signature.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "worktree-final.txt": "ccf1b084f84b5cc754386a8ea7e7be7058b69b111c2ef716f7a40cd51fcb7948"
+}

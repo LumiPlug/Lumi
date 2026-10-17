@@ -65,6 +65,7 @@ export function IconButton({
   children,
   className = '',
   loading = false,
+  loadingAnimation = 'none',
   disabled,
   ...props
 }: Omit<ButtonProps, 'icon' | 'variant' | 'aria-label'> & {
@@ -72,6 +73,7 @@ export function IconButton({
   tone?: 'neutral' | 'accent' | 'success' | 'danger'
   iconSize?: 'default' | 'small'
   glow?: boolean
+  loadingAnimation?: 'none' | 'spin'
 }) {
   return (
     <Button
@@ -81,7 +83,7 @@ export function IconButton({
       aria-busy={loading || props['aria-busy']}
       disabled={disabled || loading}
       aria-label={loading ? `${label}，处理中` : label}
-      className={`ui-icon-button${iconSize === 'small' ? ' ui-icon-button--small' : ''} ui-tone--${tone}${glow ? ' ui-icon-button--glow' : ''} ${className}`}
+      className={`ui-icon-button${iconSize === 'small' ? ' ui-icon-button--small' : ''}${loading && loadingAnimation === 'spin' ? ' ui-icon-button--spinning' : ''} ui-tone--${tone}${glow ? ' ui-icon-button--glow' : ''} ${className}`}
     >
       {children}
       {glow && (
@@ -281,7 +283,9 @@ export function NavigationButton({
       aria-label={label}
       aria-current={current ? 'page' : undefined}
     >
-      {icon}
+      <span className="nav-icon" aria-hidden="true">
+        {icon}
+      </span>
       <span className="nav-tooltip" aria-hidden="true">
         {label}
       </span>

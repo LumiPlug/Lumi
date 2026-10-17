@@ -430,6 +430,7 @@ impl CoreSupervisor {
                 | "/app/mcp/token"
                 | "/app/workbench"
                 | "/app/workbench/publish"
+                | "/app/workbench/apply-template"
                 | "/app/workbench/restore"
                 | "/app/workbench/versions"
                 | "/app/workbench/export"
@@ -442,6 +443,7 @@ impl CoreSupervisor {
                 | "/app/skills/directory"
                 | "/app/skills/file"
                 | "/app/knowledge"
+                | "/app/usage"
         ) && !path.starts_with("/app/capabilities/")
         {
             return Err("core_path_not_allowed".to_string());
@@ -469,16 +471,16 @@ impl CoreSupervisor {
         let mut stream = TcpStream::connect((LOOPBACK_HOST, port))
             .map_err(|_| "core_connection_failed".to_string())?;
         stream
-            .set_read_timeout(Some(Duration::from_secs(
-                if path.starts_with("/app/skills")
-                    || path == "/app/tools"
-                    || path == "/app/knowledge"
-                {
-                    30
-                } else {
-                    2
-                },
-            )))
+            .set_read_timeout(Some(Duration::from_secs(if path == "/app/usage" {
+                180
+            } else if path.starts_with("/app/skills")
+                || path == "/app/tools"
+                || path == "/app/knowledge"
+            {
+                30
+            } else {
+                2
+            })))
             .map_err(|_| "core_connection_failed".to_string())?;
         stream
             .write_all(request.as_bytes())
@@ -622,6 +624,21 @@ fn get_workbench(
 }
 
 #[tauri::command]
+fn apply_workbench_template(
+    supervisor: State<'_, Arc<CoreSupervisor>>,
+    host_nonce: String,
+    expected_version: u64,
+    template: String,
+) -> Result<Value, String> {
+    supervisor.authorize(&host_nonce)?;
+    supervisor.call_core(
+        "POST",
+        "/app/workbench/apply-template",
+        Some(json!({"expectedVersion": expected_version, "template": template})),
+    )
+}
+
+#[tauri::command]
 fn publish_workbench(
     supervisor: State<'_, Arc<CoreSupervisor>>,
     host_nonce: String,
@@ -751,6 +768,30 @@ async fn skills_request(
 }
 
 #[tauri::command]
+async fn usage_request(
+    window: tauri::WebviewWindow,
+    supervisor: State<'_, Arc<CoreSupervisor>>,
+    host_nonce: String,
+    action: String,
+    payload: Option<Value>,
+) -> Result<Value, String> {
+    supervisor.authorize(&host_nonce)?;
+    if window.label() != "main" {
+        return Err("usage_host_required".to_string());
+    }
+    let core = Arc::clone(supervisor.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        core.call_core(
+            "POST",
+            "/app/usage",
+            Some(json!({"action": action, "payload": payload})),
+        )
+    })
+    .await
+    .map_err(|_| "usage_request_failed".to_string())?
+}
+
+#[tauri::command]
 async fn knowledge_request(
     window: tauri::WebviewWindow,
     supervisor: State<'_, Arc<CoreSupervisor>>,
@@ -810,6 +851,47 @@ async fn export_knowledge(
     file.write(&bytes)
         .await
         .map_err(|_| "knowledge_export_failed")?;
+    Ok(Some(file.path().to_string_lossy().into_owned()))
+}
+
+#[tauri::command]
+async fn export_usage_csv(
+    window: tauri::WebviewWindow,
+    supervisor: State<'_, Arc<CoreSupervisor>>,
+    host_nonce: String,
+    payload: Option<Value>,
+) -> Result<Option<String>, String> {
+    supervisor.authorize(&host_nonce)?;
+    if window.label() != "main" {
+        return Err("usage_host_required".into());
+    }
+    let core = Arc::clone(supervisor.inner());
+    let export = tauri::async_runtime::spawn_blocking(move || {
+        core.call_core(
+            "POST",
+            "/app/usage",
+            Some(json!({"action": "export", "payload": payload})),
+        )
+    })
+    .await
+    .map_err(|_| "usage_export_failed")??;
+    let csv = export
+        .get("csv")
+        .and_then(Value::as_str)
+        .ok_or("usage_export_failed")?;
+    let Some(file) = rfd::AsyncFileDialog::new()
+        .set_parent(&window)
+        .set_title("导出 AI 用量")
+        .set_file_name("lumi-ai-usage.csv")
+        .add_filter("CSV 表格", &["csv"])
+        .save_file()
+        .await
+    else {
+        return Ok(None);
+    };
+    file.write(csv.as_bytes())
+        .await
+        .map_err(|_| "usage_export_failed")?;
     Ok(Some(file.path().to_string_lossy().into_owned()))
 }
 
@@ -1042,6 +1124,7 @@ pub fn run() {
                 refresh_mcp_token,
                 check_mcp_connection,
                 get_workbench,
+                apply_workbench_template,
                 publish_workbench,
                 restore_workbench_version,
                 list_workbench_versions,
@@ -1050,6 +1133,8 @@ pub fn run() {
                 copy_text,
                 skills_request,
                 knowledge_request,
+                usage_request,
+                export_usage_csv,
                 export_knowledge,
                 open_skill_source,
                 open_skill_link,

@@ -1,0 +1,21 @@
+{
+  "type": "real_codex_numeric_projection",
+  "sampleEvents": 4,
+  "sourceRead": "normal_read_no_escalation",
+  "counterReference": "independent last_token_usage; exclusive input = input-cached-cacheWrite; output already includes reasoning",
+  "checks": {
+    "inputOutputCache": true,
+    "repeatScan": true,
+    "incrementalAppend": true,
+    "duplicateAppend": true,
+    "restartDedupe": true,
+    "summaryDetailCsv": true,
+    "dailyHourly": true,
+    "pause": true,
+    "pauseSurvivesRestart": true,
+    "resume": true,
+    "closeStopsCollection": true,
+    "bodyNotCopied": true
+  },
+  "actualCountersCommitted": false
+}

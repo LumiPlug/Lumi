@@ -19,6 +19,9 @@
 .knowledge-page[hidden] {
   display: none;
 }
+.knowledge-page--list {
+  gap: 0;
+}
 .kb-detail-header,
 .kb-build-status {
   display: flex;

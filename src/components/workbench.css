@@ -6,6 +6,9 @@
   margin: auto;
   padding: 40px 0;
 }
+.workbench-prompt-types.workbench-default-presets {
+  grid-template-columns: minmax(0, 1fr);
+}
 
 .workbench-header {
   margin-bottom: 40px;

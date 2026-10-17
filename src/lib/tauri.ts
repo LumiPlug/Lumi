@@ -17,6 +17,7 @@ import type {
   McpPortSettings,
   UiCoreStatus,
   WorkbenchView,
+  WorkbenchPresetId,
   SkillInventory,
   SkillDirectory,
   SkillFilePreview,
@@ -57,6 +58,12 @@ export function checkMcpConnection(): Promise<McpConnectionCheck> {
 }
 export function getWorkbench(): Promise<WorkbenchView> {
   return hostInvoke('get_workbench')
+}
+export function applyWorkbenchTemplate(
+  template: WorkbenchPresetId,
+  expectedVersion: number,
+): Promise<WorkbenchView> {
+  return hostInvoke('apply_workbench_template', { template, expectedVersion })
 }
 export function workbenchRpc(request: HomeRpcRequest): Promise<HomeRpcResponse> {
   return hostInvoke('workbench_rpc', request)
@@ -104,4 +111,14 @@ export function setMcpPort(port: number): Promise<McpPortSettings> {
 
 export function refreshMcpToken(): Promise<McpConnectionInfo> {
   return hostInvoke('refresh_mcp_token')
+}
+
+export function usageRequest<T>(
+  action: 'query' | 'sessions' | 'scan' | 'pause',
+  payload: Record<string, unknown> = {},
+): Promise<T> {
+  return hostInvoke<T>('usage_request', { action, payload })
+}
+export function exportUsageCsv(payload: Record<string, unknown>): Promise<string | null> {
+  return hostInvoke('export_usage_csv', { payload })
 }

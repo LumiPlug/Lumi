@@ -1,0 +1,92 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: MPL-2.0 -->
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>个人效率工作台</title>
+    <link rel="stylesheet" href="./theme.css" />
+    <link rel="stylesheet" href="./style.css" />
+    <script defer src="./lumi-sdk.js"></script>
+    <script defer src="./preset.js"></script>
+    <script defer src="./app.js"></script>
+  </head>
+  <body>
+    <main>
+      <header class="page-header">
+        <div>
+          <h1 id="page-title">个人工作台</h1>
+          <p id="introduction"></p>
+        </div>
+        <button id="refresh" type="button" disabled>刷新工具与记录</button>
+      </header>
+      <p id="connection-state" role="status">正在连接 Lumi…</p>
+      <div class="workspace-grid">
+        <section class="priorities" aria-labelledby="todo-title">
+          <div class="section-heading">
+            <h2 id="todo-title">今日重点</h2>
+            <span id="todo-count"></span>
+          </div>
+          <form id="todo-form" novalidate>
+            <label for="todo-input">下一件要做的事</label>
+            <div class="input-row">
+              <input id="todo-input" maxlength="160" aria-describedby="todo-help" disabled />
+              <button id="add-todo" type="button" disabled>添加</button>
+            </div>
+            <p id="todo-help" class="help">由你记录，保存在当前工作台。最多 60 项。</p>
+          </form>
+          <ul id="todo-list" class="todo-list"></ul>
+        </section>
+        <section class="workflows" aria-labelledby="workflow-title">
+          <h2 id="workflow-title">常用工作流</h2>
+          <div
+            id="workflow-choices"
+            class="workflow-choices"
+            role="group"
+            aria-label="选择工作流"
+          ></div>
+          <h3 id="selected-title"></h3>
+          <p id="selected-description"></p>
+          <form id="run-form" novalidate>
+            <label for="tool-select">关联工具</label>
+            <select id="tool-select" aria-describedby="tool-help" disabled>
+              <option value="">连接后读取可用工具</option>
+            </select>
+            <p id="tool-help" class="help">
+              只列出已授权的工具操作。选择后保存关联，点击运行才会执行。
+            </p>
+            <details id="setup-guide">
+              <summary>如何配置工作流工具</summary>
+              <ol>
+                <li>打开 Lumi 左侧「工具」，添加或导入需要的 Terminal、HTTP 或 MCP 工具。</li>
+                <li>填写工具配置，检查操作与参数，然后审阅并启用。</li>
+                <li>回到工作台点击「刷新工具与记录」，为此工作流选择工具。</li>
+              </ol>
+              <p>也可以让已连接的 AI 帮你创建工具草稿，再由你在「工具」中审阅启用。</p>
+            </details>
+            <p id="tool-description" class="help"></p>
+            <div id="parameters"></div>
+            <div class="run-actions">
+              <button id="run" type="button" class="primary" disabled>运行工作流</button>
+            </div>
+          </form>
+        </section>
+      </div>
+      <section class="history" aria-labelledby="history-title">
+        <div class="section-heading">
+          <h2 id="history-title">最近运行</h2>
+          <span class="help">来自 Lumi 的真实任务记录</span>
+        </div>
+        <p id="history-state" class="help" role="status">连接后读取运行记录。</p>
+        <div class="history-grid">
+          <ul id="task-list" class="task-list" aria-label="运行记录"></ul>
+          <div class="output">
+            <h3 id="result-title">运行结果</h3>
+            <pre id="result" tabindex="0" aria-labelledby="result-title">
+选择一条运行记录查看结果。</pre>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

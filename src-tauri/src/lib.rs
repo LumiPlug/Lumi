@@ -9,7 +9,7 @@ mod run_windows;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -100,6 +100,7 @@ pub struct CoreSupervisor {
     host_nonce: String,
     host_token: String,
     window_open_lock: Mutex<()>,
+    main_hidden_at: Mutex<Option<Instant>>,
 }
 
 impl CoreSupervisor {
@@ -116,6 +117,7 @@ impl CoreSupervisor {
             host_nonce: Uuid::new_v4().to_string(),
             host_token: format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple()),
             window_open_lock: Mutex::new(()),
+            main_hidden_at: Mutex::new(None),
             state: Mutex::new(SupervisorState {
                 status: UiCoreStatus {
                     state: "disconnected".to_string(),
@@ -428,6 +430,7 @@ impl CoreSupervisor {
                 | "/app/mcp/token"
                 | "/app/workbench"
                 | "/app/workbench/publish"
+                | "/app/workbench/apply-template"
                 | "/app/workbench/restore"
                 | "/app/workbench/versions"
                 | "/app/workbench/export"
@@ -440,6 +443,7 @@ impl CoreSupervisor {
                 | "/app/skills/directory"
                 | "/app/skills/file"
                 | "/app/knowledge"
+                | "/app/usage"
         ) && !path.starts_with("/app/capabilities/")
         {
             return Err("core_path_not_allowed".to_string());
@@ -467,16 +471,16 @@ impl CoreSupervisor {
         let mut stream = TcpStream::connect((LOOPBACK_HOST, port))
             .map_err(|_| "core_connection_failed".to_string())?;
         stream
-            .set_read_timeout(Some(Duration::from_secs(
-                if path.starts_with("/app/skills")
-                    || path == "/app/tools"
-                    || path == "/app/knowledge"
-                {
-                    30
-                } else {
-                    2
-                },
-            )))
+            .set_read_timeout(Some(Duration::from_secs(if path == "/app/usage" {
+                180
+            } else if path.starts_with("/app/skills")
+                || path == "/app/tools"
+                || path == "/app/knowledge"
+            {
+                30
+            } else {
+                2
+            })))
             .map_err(|_| "core_connection_failed".to_string())?;
         stream
             .write_all(request.as_bytes())
@@ -620,6 +624,21 @@ fn get_workbench(
 }
 
 #[tauri::command]
+fn apply_workbench_template(
+    supervisor: State<'_, Arc<CoreSupervisor>>,
+    host_nonce: String,
+    expected_version: u64,
+    template: String,
+) -> Result<Value, String> {
+    supervisor.authorize(&host_nonce)?;
+    supervisor.call_core(
+        "POST",
+        "/app/workbench/apply-template",
+        Some(json!({"expectedVersion": expected_version, "template": template})),
+    )
+}
+
+#[tauri::command]
 fn publish_workbench(
     supervisor: State<'_, Arc<CoreSupervisor>>,
     host_nonce: String,
@@ -749,6 +768,30 @@ async fn skills_request(
 }
 
 #[tauri::command]
+async fn usage_request(
+    window: tauri::WebviewWindow,
+    supervisor: State<'_, Arc<CoreSupervisor>>,
+    host_nonce: String,
+    action: String,
+    payload: Option<Value>,
+) -> Result<Value, String> {
+    supervisor.authorize(&host_nonce)?;
+    if window.label() != "main" {
+        return Err("usage_host_required".to_string());
+    }
+    let core = Arc::clone(supervisor.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        core.call_core(
+            "POST",
+            "/app/usage",
+            Some(json!({"action": action, "payload": payload})),
+        )
+    })
+    .await
+    .map_err(|_| "usage_request_failed".to_string())?
+}
+
+#[tauri::command]
 async fn knowledge_request(
     window: tauri::WebviewWindow,
     supervisor: State<'_, Arc<CoreSupervisor>>,
@@ -770,6 +813,86 @@ async fn knowledge_request(
     })
     .await
     .map_err(|_| "knowledge_request_failed".to_string())?
+}
+
+#[tauri::command]
+async fn export_knowledge(
+    window: tauri::WebviewWindow,
+    supervisor: State<'_, Arc<CoreSupervisor>>,
+    host_nonce: String,
+    kb_id: String,
+    file_name: String,
+) -> Result<Option<String>, String> {
+    supervisor.authorize(&host_nonce)?;
+    if window.label() != "main" {
+        return Err("knowledge_host_required".into());
+    }
+    let core = Arc::clone(supervisor.inner());
+    let bundle = tauri::async_runtime::spawn_blocking(move || {
+        core.call_core(
+            "POST",
+            "/app/knowledge",
+            Some(json!({"action": "export", "payload": {"kbId": kb_id}})),
+        )
+    })
+    .await
+    .map_err(|_| "knowledge_export_failed")??;
+    let Some(file) = rfd::AsyncFileDialog::new()
+        .set_parent(&window)
+        .set_title("导出知识库")
+        .set_file_name(&file_name)
+        .add_filter("Lumi 知识库", &["json"])
+        .save_file()
+        .await
+    else {
+        return Ok(None);
+    };
+    let bytes = serde_json::to_vec_pretty(&bundle).map_err(|_| "knowledge_export_failed")?;
+    file.write(&bytes)
+        .await
+        .map_err(|_| "knowledge_export_failed")?;
+    Ok(Some(file.path().to_string_lossy().into_owned()))
+}
+
+#[tauri::command]
+async fn export_usage_csv(
+    window: tauri::WebviewWindow,
+    supervisor: State<'_, Arc<CoreSupervisor>>,
+    host_nonce: String,
+    payload: Option<Value>,
+) -> Result<Option<String>, String> {
+    supervisor.authorize(&host_nonce)?;
+    if window.label() != "main" {
+        return Err("usage_host_required".into());
+    }
+    let core = Arc::clone(supervisor.inner());
+    let export = tauri::async_runtime::spawn_blocking(move || {
+        core.call_core(
+            "POST",
+            "/app/usage",
+            Some(json!({"action": "export", "payload": payload})),
+        )
+    })
+    .await
+    .map_err(|_| "usage_export_failed")??;
+    let csv = export
+        .get("csv")
+        .and_then(Value::as_str)
+        .ok_or("usage_export_failed")?;
+    let Some(file) = rfd::AsyncFileDialog::new()
+        .set_parent(&window)
+        .set_title("导出 AI 用量")
+        .set_file_name("lumi-ai-usage.csv")
+        .add_filter("CSV 表格", &["csv"])
+        .save_file()
+        .await
+    else {
+        return Ok(None);
+    };
+    file.write(csv.as_bytes())
+        .await
+        .map_err(|_| "usage_export_failed")?;
+    Ok(Some(file.path().to_string_lossy().into_owned()))
 }
 
 #[tauri::command]
@@ -855,6 +978,83 @@ fn create_capability_draft(
     serde_json::from_value(capability).map_err(|_| "core_invalid_response".to_string())
 }
 
+fn show_main_window(app: &AppHandle) -> Result<(), String> {
+    let supervisor = app.state::<Arc<CoreSupervisor>>();
+    let _opening = supervisor
+        .window_open_lock
+        .lock()
+        .map_err(|_| "main_window_failed")?;
+    *supervisor
+        .main_hidden_at
+        .lock()
+        .map_err(|_| "main_window_failed")? = None;
+    let window = if let Some(window) = app.get_webview_window("main") {
+        window
+    } else {
+        let config = app
+            .config()
+            .app
+            .windows
+            .iter()
+            .find(|window| window.label == "main")
+            .ok_or("main_window_missing")?;
+        tauri::WebviewWindowBuilder::from_config(app, config)
+            .map_err(|_| "main_window_failed")?
+            .initialization_script(run_windows::initialization_script(&supervisor)?)
+            .build()
+            .map_err(|_| "main_window_failed")?
+    };
+    window.show().map_err(|_| "main_window_failed")?;
+    window.unminimize().map_err(|_| "main_window_failed")?;
+    window.set_focus().map_err(|_| "main_window_failed")?;
+    let _ = window.emit_to(window.label(), "lumi-window-activity", true);
+    Ok(())
+}
+
+#[tauri::command]
+fn get_window_activity(
+    window: tauri::WebviewWindow,
+    supervisor: State<'_, Arc<CoreSupervisor>>,
+    host_nonce: String,
+) -> Result<bool, String> {
+    supervisor.authorize(&host_nonce)?;
+    Ok(window.is_visible().map_err(|_| "window_unavailable")?
+        && !window.is_minimized().map_err(|_| "window_unavailable")?)
+}
+
+fn idle_main_can_release(label: &str, visible: bool, hidden_for: Option<Duration>) -> bool {
+    label == "main"
+        && !visible
+        && hidden_for.is_some_and(|elapsed| elapsed >= Duration::from_secs(300))
+}
+
+#[tauri::command]
+fn release_idle_main_window(
+    window: tauri::WebviewWindow,
+    supervisor: State<'_, Arc<CoreSupervisor>>,
+    host_nonce: String,
+) -> Result<bool, String> {
+    supervisor.authorize(&host_nonce)?;
+    let _opening = supervisor
+        .window_open_lock
+        .lock()
+        .map_err(|_| "main_window_failed")?;
+    let mut hidden_at = supervisor
+        .main_hidden_at
+        .lock()
+        .map_err(|_| "main_window_failed")?;
+    if !idle_main_can_release(
+        window.label(),
+        window.is_visible().map_err(|_| "window_unavailable")?,
+        hidden_at.map(|instant| instant.elapsed()),
+    ) {
+        return Ok(false);
+    }
+    window.destroy().map_err(|_| "main_window_failed")?;
+    *hidden_at = None;
+    Ok(true)
+}
+
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -900,9 +1100,8 @@ pub fn run() {
                 .menu(&menu)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "show" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
+                        if let Err(error) = show_main_window(app) {
+                            eprintln!("[lumiplug] main window unavailable: {error}");
                         }
                     }
                     "quit" => app.exit(0),
@@ -914,6 +1113,8 @@ pub fn run() {
         .invoke_handler({
             let regular: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
                 get_core_status,
+                get_window_activity,
+                release_idle_main_window,
                 run_windows::open_tool_run_window,
                 run_windows::close_tool_run_window,
                 choose_tool_directory,
@@ -923,6 +1124,7 @@ pub fn run() {
                 refresh_mcp_token,
                 check_mcp_connection,
                 get_workbench,
+                apply_workbench_template,
                 publish_workbench,
                 restore_workbench_version,
                 list_workbench_versions,
@@ -931,6 +1133,9 @@ pub fn run() {
                 copy_text,
                 skills_request,
                 knowledge_request,
+                usage_request,
+                export_usage_csv,
+                export_knowledge,
                 open_skill_source,
                 open_skill_link,
                 tools_request,
@@ -948,10 +1153,22 @@ pub fn run() {
             }
         })
         .on_window_event(|window, event| {
+            if matches!(event, WindowEvent::Focused(_) | WindowEvent::Resized(_)) {
+                let visible =
+                    window.is_visible().unwrap_or(false) && !window.is_minimized().unwrap_or(false);
+                let _ = window.emit_to(window.label(), "lumi-window-activity", visible);
+            }
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main" {
                     api.prevent_close();
-                    let _ = window.hide();
+                    if window.hide().is_ok() {
+                        let supervisor = window.app_handle().state::<Arc<CoreSupervisor>>();
+                        *supervisor
+                            .main_hidden_at
+                            .lock()
+                            .expect("main hidden mutex poisoned") = Some(Instant::now());
+                        let _ = window.emit_to(window.label(), "lumi-window-activity", false);
+                    }
                 } else if run_windows::is_run_window(window.label()) {
                     api.prevent_close();
                     let _ = window.app_handle().emit_to(
@@ -965,10 +1182,40 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building Lumi");
     app.run(|app_handle, event| {
+        #[cfg(target_os = "macos")]
+        if matches!(event, tauri::RunEvent::Reopen { .. }) {
+            if let Err(error) = show_main_window(app_handle) {
+                eprintln!("[lumiplug] main window unavailable: {error}");
+            }
+        }
+        if let tauri::RunEvent::ExitRequested {
+            code: None, api, ..
+        } = &event
+        {
+            api.prevent_exit();
+        }
         if matches!(event, tauri::RunEvent::Exit) {
             if let Some(supervisor) = app_handle.try_state::<Arc<CoreSupervisor>>() {
                 supervisor.shutdown();
             }
         }
     });
+}
+
+#[cfg(test)]
+mod resource_tests {
+    use super::*;
+    #[test]
+    fn only_releases_a_main_window_after_continuous_hiding() {
+        let idle = Some(Duration::from_secs(300));
+        assert!(idle_main_can_release("main", false, idle));
+        assert!(!idle_main_can_release("main", true, idle));
+        assert!(!idle_main_can_release("main", false, None));
+        assert!(!idle_main_can_release(
+            "main",
+            false,
+            Some(Duration::from_secs(299))
+        ));
+        assert!(!idle_main_can_release("run-task-example", false, idle));
+    }
 }

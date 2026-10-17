@@ -16,6 +16,7 @@ describe('Core HTTP boundary', () => {
       host: '127.0.0.1',
       port: 0,
       sessionToken: '0123456789abcdef0123456789abcdef',
+      hostToken: 'host-fixture-token-0123456789abcdef',
       userDataDir,
     })
 
@@ -171,6 +172,7 @@ describe('Core HTTP boundary', () => {
       const statusResponse = await fetch(`${baseUrl}/app/capabilities`, {
         headers: {
           origin: 'http://127.0.0.1:1420',
+          'x-lumiplug-host-token': 'host-fixture-token-0123456789abcdef',
           'x-lumiplug-session-token': '0123456789abcdef0123456789abcdef',
         },
       })
@@ -235,7 +237,7 @@ describe('persistent desktop MCP connection', () => {
       expect(
         (
           await fetch(`${base}/app/capabilities`, {
-            headers: { 'x-lumiplug-session-token': newToken },
+            headers: { 'x-lumiplug-session-token': newToken, 'x-lumiplug-host-token': hostToken },
           })
         ).status,
       ).toBe(200)
@@ -260,7 +262,7 @@ describe('persistent desktop MCP connection', () => {
       expect(
         (
           await fetch(`${base}/app/capabilities`, {
-            headers: { 'x-lumiplug-session-token': newToken },
+            headers: { 'x-lumiplug-session-token': newToken, 'x-lumiplug-host-token': hostToken },
           })
         ).status,
       ).toBe(200)

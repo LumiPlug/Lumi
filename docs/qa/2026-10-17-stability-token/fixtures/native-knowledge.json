@@ -1,0 +1,78 @@
+{
+  "format": "lumi-knowledge",
+  "version": 3,
+  "projectKey": "acceptance-native-20261017",
+  "branch": "main",
+  "git": false,
+  "name": "原生验收知识库",
+  "description": "隔离测试数据",
+  "commitSha": null,
+  "content": {
+    "documents": [
+      {
+        "id": "overview",
+        "title": "验收概览",
+        "parentId": null,
+        "order": 0,
+        "markdown": "# 原生保存验收\n\nNATIVE_QA_ROUNDTRIP_20261017",
+        "citationIds": [
+          "cite"
+        ]
+      },
+      {
+        "id": "child",
+        "title": "子章节",
+        "parentId": "overview",
+        "order": 1,
+        "markdown": "保留层级与 Unicode：中文 Ω 😀",
+        "citationIds": [
+          "cite"
+        ]
+      }
+    ],
+    "nodes": [
+      {
+        "id": "module",
+        "label": "验收节点",
+        "kind": "module",
+        "summary": "原生保存闭环",
+        "documentId": "overview",
+        "citationIds": [
+          "cite"
+        ]
+      },
+      {
+        "id": "child-module",
+        "label": "子节点",
+        "kind": "module",
+        "summary": "层级验证",
+        "documentId": "child",
+        "citationIds": [
+          "cite"
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "id": "contains",
+        "from": "module",
+        "to": "child-module",
+        "type": "contains",
+        "evidenceKind": "inferred",
+        "citationIds": [
+          "cite"
+        ]
+      }
+    ],
+    "citations": [
+      {
+        "id": "cite",
+        "path": "src/fixture.ts",
+        "fileHash": "41cf6794ba4200b839c53531555f0f3998df4cbb01a4d5cb0b94e3ca5e23947d",
+        "startLine": 1,
+        "endLine": 2,
+        "quoteHash": "6327245c3a45d3d9ea72b70fbb671926e7b80f63d311bfd73dde876d5df02b26"
+      }
+    ]
+  }
+}

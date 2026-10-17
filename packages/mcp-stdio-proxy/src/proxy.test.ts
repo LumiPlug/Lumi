@@ -110,7 +110,8 @@ describe('proxy request budget and cancellation', () => {
       expect(p.messages()[0]?.error).toMatchObject({ data: { reason: 'request_timeout' } })
       expect(p.messages()[0]?.error.message).toContain('timed out')
       expect(p.messages()[0]?.error.message).not.toContain('unavailable')
-      expect(state.aborted).toContain('timeout')
+      expect(state.aborted).toHaveLength(1)
+      expect(p.messages()[0]?.id).toBe('timeout')
     } finally {
       await p.close()
     }
@@ -136,7 +137,8 @@ describe('proxy request budget and cancellation', () => {
         }) + '\n',
       )
       await vi.advanceTimersByTimeAsync(35001)
-      expect(state.aborted).toEqual(['a'])
+      expect(state.aborted).toHaveLength(1)
+      expect(state.aborted[0]).not.toBe('a')
       expect(p.messages().map((m) => m.id)).toEqual(['b'])
     } finally {
       await p.close()

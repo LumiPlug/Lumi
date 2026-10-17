@@ -115,9 +115,78 @@ describe('official homepage project', () => {
     expect(service.workbench.get()).toMatchObject({ version: 3, bundle: first })
   })
 
-  it('rejects stored projects outside the current HTML contract', async () => {
+  it('loads an older release unchanged after upgrade and preserves publish, export, restore and project state', async () => {
+    const older = homeFixture('升级前主页')
+    older.manifest.lumiVersion = '0.1.0'
+    older.manifest.sdkVersion = '0.1.0'
+    older.sourceFiles.find((file) => file.path === 'lumi.home.json')!.content = JSON.stringify(
+      older.manifest,
+    )
+    service.database.raw
+      .prepare(
+        'INSERT INTO workbench_versions (version, document_json, updated_at) VALUES (?, ?, ?)',
+      )
+      .run(1, JSON.stringify(older), new Date().toISOString())
+    service.workbench.state(older.manifest.projectId, 'set', 'preferences', { compact: true })
+
+    const { data: view } = await (await app('/app/workbench')).json()
+    expect(view).toMatchObject({ version: 1, compatible: true, manifest: older.manifest })
+    expect((await fetch(view.runtimeUrl)).status).toBe(200)
+    const sdk = await fetch(new URL('./lumi-sdk.js', view.runtimeUrl))
+    expect(await sdk.text()).toContain(HOME_CONTRACT.sdkVersion)
+    expect(
+      await service.registry.homeRpc({ version: 1, method: 'context.get', args: {} }),
+    ).toMatchObject({ ok: true })
+    const exported = path.join(directory, 'older-home-export')
+    await service.registry.invoke('Lumi.export_workbench_project', { directory: exported })
+    expect(JSON.parse(fs.readFileSync(path.join(exported, 'lumi.home.json'), 'utf8'))).toEqual(
+      older.manifest,
+    )
+    expect(service.workbench.get()).toMatchObject({ version: 1, bundle: older })
+    expect(service.workbench.restore(1, 1)).toMatchObject({ version: 2, bundle: older })
+    expect(
+      (await app('/app/workbench/publish', { expectedVersion: 2, bundle: older })).status,
+    ).toBe(200)
+
+    await service.stop()
+    service = new CoreService({
+      host: '127.0.0.1',
+      port: 0,
+      sessionToken: token,
+      userDataDir: directory,
+    })
+    await service.start()
+    const { data: restarted } = await (await app('/app/workbench')).json()
+    expect(restarted).toMatchObject({ version: 3, compatible: true, manifest: older.manifest })
+    expect((await fetch(restarted.runtimeUrl)).status).toBe(200)
+    expect(service.workbench.get().bundle).toEqual(older)
+    expect(service.workbench.state(older.manifest.projectId, 'get', 'preferences')).toEqual({
+      compact: true,
+    })
+  })
+
+  it('does not gate publication on newer or differing application and SDK release numbers', async () => {
+    const bundle = homeFixture()
+    bundle.manifest.lumiVersion = '9.0.0'
+    bundle.manifest.sdkVersion = '8.2.1'
+    bundle.sourceFiles.find((file) => file.path === 'lumi.home.json')!.content = JSON.stringify(
+      bundle.manifest,
+    )
+    expect(validateHomeBundle(bundle)).toEqual(bundle)
+    service.workbench.publish(0, bundle)
+    const { data: view } = await (await app('/app/workbench')).json()
+    expect(view.compatible).toBe(true)
+    expect((await fetch(view.runtimeUrl)).status).toBe(200)
+  })
+
+  it.each([
+    { formatVersion: 1 },
+    { bridgeVersion: 2 },
+    { template: 'unsupported' },
+    { entry: 'other.html' },
+  ])('rejects stored projects outside the HTML contract: %j', async (contract) => {
     const unsupported = homeFixture()
-    Object.assign(unsupported.manifest, { formatVersion: 1, template: 'unsupported' })
+    Object.assign(unsupported.manifest, contract)
     service.database.raw
       .prepare(
         'INSERT INTO workbench_versions (version, document_json, updated_at) VALUES (?, ?, ?)',
@@ -136,7 +205,7 @@ describe('official homepage project', () => {
     service.workbench.publish(0, good)
     for (const mutate of [
       (bundle: HomeBundle) => {
-        bundle.manifest.lumiVersion = '9.0.0'
+        Object.assign(bundle.manifest, { bridgeVersion: 2 })
       },
       (bundle: HomeBundle) => {
         bundle.files[0]!.path = '../index.html'

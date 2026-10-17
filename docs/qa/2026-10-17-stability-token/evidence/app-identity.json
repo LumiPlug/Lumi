@@ -1,0 +1,12 @@
+{
+  "bundleIdentifier": "com.lumiplug.acceptanceqa.20261017",
+  "appName": "Lumi Acceptance QA",
+  "version": "0.1.1",
+  "binaries": {
+    "Lumi": "f6dfa7cc43fe13e716c774dc0f3367554670f8ee0e7490e40bfd04c9baaed36c",
+    "mcp-stdio-proxy": "e5b16263419bd481c804f5da4ea1b8011c0e809cd78d90b1f2a1ca40b48757d8",
+    "lumi-core": "8cc973f839dd5220e1c6b610a2501b5ccdcf4c208260b89616ecb95bc8aa39f4"
+  },
+  "launchedFinalBuild": false,
+  "notarized": false
+}

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { useRetainWindowState } from '../lib/window-retention'
 import { IconButton, Input, Button, Tabs, SurfaceButton, Card, Badge, Modal, Field } from './ui'
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
@@ -153,6 +154,16 @@ export default function SkillsPage({ active, coreReady }: { active: boolean; cor
   const [importDialog, setImportDialog] = useState(false)
   const [importPath, setImportPath] = useState('')
   const [importError, setImportError] = useState('')
+  useRetainWindowState(
+    !!detail ||
+      scanning ||
+      !!pending ||
+      !!opening ||
+      importDialog ||
+      !!importPath ||
+      tab !== 'installed' ||
+      Object.values(filters).some((filter) => !!filter.query || filter.client !== 'all'),
+  )
   const importInput = useRef<HTMLInputElement>(null)
   const importErrorId = useId()
   useEffect(() => {

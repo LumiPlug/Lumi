@@ -8,6 +8,8 @@ import { useSurfaceDepth } from './SurfaceEffects'
 
 export function Modal({
   title,
+  placement = 'center',
+  closeLabel = '关闭预览',
   children,
   actions,
   onClose,
@@ -24,6 +26,8 @@ export function Modal({
   requestClose,
 }: {
   title: string
+  placement?: 'center' | 'side'
+  closeLabel?: string
   children: ReactNode | ((close: () => void) => ReactNode)
   actions?: ReactNode | ((close: () => void) => ReactNode)
   onClose: () => void
@@ -85,7 +89,7 @@ export function Modal({
   return createPortal(
     <dialog
       ref={dialog}
-      className={`ui-modal${confirmation ? ' ui-modal--confirmation' : ''} ${className}`}
+      className={`ui-modal${placement === 'side' ? ' ui-modal--side' : ''}${confirmation ? ' ui-modal--confirmation' : ''} ${className}`}
       data-exiting={exiting || undefined}
       data-ui-depth={depth}
       role={confirmation ? 'alertdialog' : undefined}
@@ -126,7 +130,7 @@ export function Modal({
             {title}
           </h2>
           {!confirmation && (
-            <IconButton label="关闭预览" disabled={busy || exiting} onClick={close}>
+            <IconButton label={closeLabel} disabled={busy || exiting} onClick={close}>
               <svg
                 width="20"
                 height="20"

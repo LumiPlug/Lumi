@@ -4,7 +4,7 @@ export const HOME_ERRORS: Record<string, string> = {
   invalid_home_path: '主页包包含无效或重复路径，请重新构建。',
   home_bundle_too_large: '主页包超过大小限制：最多512文件、单文件4MiB、合计16MiB。',
   home_source_missing: '主页包缺少三个入口文件或可恢复的工程信息。',
-  home_version_incompatible: '主页工程版本与当前 Lumi 不一致，请使用当前版本的官方 HTML 模板。',
+  home_version_incompatible: '主页工程格式或桥接协议不受支持，请按官方 HTML 工程契约迁移。',
   workbench_version_conflict: '主页已被更新，请取回最新源码并合并后重试。',
   workbench_version_missing: '指定主页版本不存在，请刷新版本列表。',
   workbench_unavailable: '主页服务暂不可用，请保持 Lumi 运行后重试。',

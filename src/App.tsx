@@ -10,8 +10,12 @@ import SettingsPage from './components/SettingsPage'
 import SkillsPage from './components/SkillsPage'
 import ToolsPage from './components/ToolsPage'
 import KnowledgePage from './components/KnowledgePage'
-import { BookOpen } from 'lucide-react'
+import UsagePage from './components/UsagePage'
+import { BookOpen, ChartNoAxesCombined } from 'lucide-react'
 import { useTheme } from './lib/useTheme'
+import { refreshRunState } from './lib/run-task-refresh'
+import { useNativeWindowActivity } from './lib/window-activity'
+import { useMainWindowIdle } from './lib/window-retention'
 import { listen } from '@tauri-apps/api/event'
 import { useToast } from './components/ToastProvider'
 
@@ -20,7 +24,14 @@ const UiComponentsPage = import.meta.env.DEV
   : null
 
 type NavKey =
-  'workbench' | 'capabilities' | 'skills' | 'knowledge' | 'memory' | 'settings' | 'ui-components'
+  | 'workbench'
+  | 'capabilities'
+  | 'skills'
+  | 'knowledge'
+  | 'usage'
+  | 'memory'
+  | 'settings'
+  | 'ui-components'
 type GlyphName =
   | 'home'
   | 'capability'
@@ -31,12 +42,14 @@ type GlyphName =
   | 'terminal'
   | 'mcp'
   | 'knowledge'
+  | 'usage'
 
 const navigation: Array<{ id: NavKey; label: string; icon: GlyphName }> = [
   { id: 'workbench', label: '工作台', icon: 'home' },
   { id: 'capabilities', label: '工具', icon: 'capability' },
   { id: 'skills', label: 'Skills', icon: 'layers' },
   { id: 'knowledge', label: '知识库', icon: 'knowledge' },
+  { id: 'usage', label: 'AI 用量', icon: 'usage' },
 ]
 
 function Glyph({ name, size = 20 }: { name: GlyphName; size?: number }) {
@@ -51,6 +64,7 @@ function Glyph({ name, size = 20 }: { name: GlyphName; size?: number }) {
     terminal: 'm5 7 5 5-5 5m7 0h7',
     mcp: 'M4 8h16M4 16h16M8 4v16m8-16v16',
     knowledge: '',
+    usage: '',
   }
   return (
     <svg
@@ -101,6 +115,8 @@ function PlannedPage({ title, description }: { title: string; description: strin
 
 export default function App() {
   const [activeNav, setActiveNav] = useState<NavKey>('workbench')
+  useNativeWindowActivity()
+  useMainWindowIdle(activeNav === 'workbench')
   const [theme, setTheme] = useTheme()
   const showToast = useToast()
   const [coreStatus, setCoreStatus] = useState<UiCoreStatus>(disconnectedStatus)
@@ -135,29 +151,26 @@ export default function App() {
   }, [showToast])
 
   useEffect(() => {
-    // Read startup readiness promptly; settle into normal polling once Core is ready.
-    let cancelled = false
-    let timer: ReturnType<typeof setTimeout>
-    const poll = async () => {
-      const credentialRevision = mcpCredentialRevision.current
-      const [nextStatus, nextMcpConnection] = await Promise.all([
-        getCoreStatus(),
-        getMcpConnectionInfo(),
-      ])
-      if (cancelled) return
-      setCoreStatus(nextStatus)
-      setCoreStatusLoaded(true)
-      if (credentialRevision === mcpCredentialRevision.current) setMcpConnection(nextMcpConnection)
-      timer = setTimeout(
-        () => void poll(),
-        ['starting', 'restarting', 'disconnected'].includes(nextStatus.state) ? 250 : 2_000,
-      )
-    }
-    void poll()
-    return () => {
-      cancelled = true
-      clearTimeout(timer)
-    }
+    return refreshRunState({
+      wakeTarget: window,
+      interval: ({ nextStatus }) =>
+        ['starting', 'restarting', 'disconnected'].includes(nextStatus.state) ? 250 : 2000,
+      read: async () => {
+        const credentialRevision = mcpCredentialRevision.current
+        const [nextStatus, nextMcpConnection] = await Promise.all([
+          getCoreStatus(),
+          getMcpConnectionInfo(),
+        ])
+        return { credentialRevision, nextStatus, nextMcpConnection }
+      },
+      update: ({ credentialRevision, nextStatus, nextMcpConnection }) => {
+        setCoreStatus(nextStatus)
+        setCoreStatusLoaded(true)
+        if (credentialRevision === mcpCredentialRevision.current)
+          setMcpConnection(nextMcpConnection)
+      },
+      fail: () => {},
+    })
   }, [])
 
   function navButton(item: { id: NavKey; label: string; icon: GlyphName }) {
@@ -165,7 +178,15 @@ export default function App() {
       <NavigationButton
         key={item.id}
         label={item.label}
-        icon={item.icon === 'knowledge' ? <BookOpen size={20} /> : <Glyph name={item.icon} />}
+        icon={
+          item.icon === 'knowledge' ? (
+            <BookOpen size={20} />
+          ) : item.icon === 'usage' ? (
+            <ChartNoAxesCombined size={20} />
+          ) : (
+            <Glyph name={item.icon} />
+          )
+        }
         current={activeNav === item.id || (item.id === 'settings' && activeNav === 'ui-components')}
         onClick={() => navigate(item.id)}
       />
@@ -191,7 +212,7 @@ export default function App() {
       </aside>
       <section className="workspace">
         <div
-          className={`workspace-content${activeNav === 'skills' ? ' skills-workspace' : activeNav === 'capabilities' ? ' tools-workspace' : activeNav === 'knowledge' ? ' knowledge-workspace' : ''}`}
+          className={`workspace-content${activeNav === 'skills' ? ' skills-workspace' : activeNav === 'capabilities' ? ' tools-workspace' : activeNav === 'knowledge' ? ' knowledge-workspace' : activeNav === 'usage' ? ' usage-workspace' : ''}`}
           id="main-content"
         >
           <div className="desktop-content-inner">
@@ -219,6 +240,7 @@ export default function App() {
                 coreStatusLoaded={coreStatusLoaded}
                 openSettings={() => navigate('settings')}
               />
+              <UsagePage active={activeNav === 'usage'} coreReady={coreStatus.state === 'ready'} />
               {activeNav === 'memory' && (
                 <PlannedPage title="Memory" description="个人和项目经验功能正在开发中。" />
               )}

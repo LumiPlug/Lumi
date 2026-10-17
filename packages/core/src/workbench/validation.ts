@@ -36,11 +36,11 @@ export function decodeHomeFile(file: HomeFile): Buffer {
   return bytes
 }
 export function compatibleHome(manifest: HomeManifest): boolean {
+  // Release metadata describes the source project; only the wire and file contracts gate use.
   return (
-    manifest.lumiVersion === HOME_CONTRACT.lumiVersion &&
-    manifest.sdkVersion === HOME_CONTRACT.sdkVersion &&
     manifest.bridgeVersion === HOME_CONTRACT.bridgeVersion &&
     manifest.template === 'lumi-html-home' &&
+    manifest.entry === 'index.html' &&
     manifest.formatVersion === HOME_CONTRACT.formatVersion
   )
 }

@@ -1,0 +1,882 @@
+/// `matchedByFolderName`: a deleted folder joined to this repository by its name
+/// alone (see folderNameOriginKey), not by git data.
+export type ProjectCheckout = { id: string; cost: number; matchedByFolderName?: boolean }
+
+/// Rollup of one time window (today / 7 days / 30 days / month / all) used as the canonical
+/// input to the menubar payload. Built inside the CLI and also consumed by the day-aggregator
+/// when hydrating per-day cache entries.
+export type PeriodData = {
+  label: string
+  cost: number
+  /// Counterfactual USD the same tokens would have cost on the paid
+  /// baseline configured for each local model. Stays `0` when no
+  /// `codeburn model-savings` mappings are active. Always shown
+  /// separately from `cost` so the two never get summed into a "real
+  /// spend" number by accident.
+  savingsUSD: number
+  /// Portion of `cost` priced from estimated tokens (see ParsedApiCall.isEstimated).
+  /// Display/metadata only; never summed into `cost`. Optional so PeriodData
+  /// producers predating the field keep compiling.
+  estimatedCostUSD?: number
+  calls: number
+  sessions: number
+  /// How `sessions` was derived. `identity` is exact unique source ids with no
+  /// unknown-cache contribution; `partial` is a lower bound. Omitted on older
+  /// PeriodData producers.
+  sessionCountBasis?: SessionCountBasis
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  /// Total Codex credits consumed in the period (issues #408/#495). Optional so
+  /// non-menubar PeriodData producers don't have to compute it.
+  codexCredits?: number
+  categories: Array<{ name: string; cost: number; savingsUSD: number; turns: number; editTurns: number; oneShotTurns: number; rawCategory?: string }>
+  models: Array<{
+    name: string
+    cost: number
+    savingsUSD: number
+    calls: number
+    estimatedCostUSD?: number
+    /// Per-model token counts for the period, normalized exactly like the
+    /// headline totals: billable output (reasoning tokens are added only
+    /// where the provider reports them separately from output — where output
+    /// already includes them they are never added twice), `cacheReadTokens`
+    /// = reused input, `cacheWriteTokens` kept separate so the two are never
+    /// summed. The attributed cost already includes cache pricing; the counts
+    /// never restate or rescale it. Optional so PeriodData producers
+    /// predating the field keep compiling; a consumer must render absent
+    /// counts as unknown — never as zero, and never substitute the
+    /// period-wide totals.
+    inputTokens?: number
+    outputTokens?: number
+    cacheReadTokens?: number
+    cacheWriteTokens?: number
+  }>
+  /// Models with usage in the period whose pricing lookup fails against the
+  /// current tables (#638): their calls contribute $0 to `cost`. Optional so
+  /// PeriodData producers that predate the field keep compiling.
+  unpricedModels?: Array<{ model: string; calls: number; tokens: number }>
+  /// `path` and `calls` are set by the durable builder; `checkouts` lists the
+  /// clones and worktrees folded into a repository row, when there are several.
+  projects?: Array<{ id?: string; name: string; path?: string; calls?: number; temporary?: boolean; checkouts?: ProjectCheckout[]; checkoutCount?: number; cost: number; savingsUSD: number; sessions: number; sessionCountBasis?: SessionCountBasis; sessionDetails?: Array<{ cost: number; savingsUSD: number; calls: number; inputTokens: number; outputTokens: number; date: string; models: Array<{ name: string; cost: number; savingsUSD: number }>; sessionId?: string; provider?: string }> }>
+  modelEfficiency?: Array<{ name: string; costPerEdit: number | null; oneShotRate: number | null }>
+  topSessions?: Array<{ project: string; cost: number; savingsUSD: number; calls: number; date: string; sessionId?: string; provider?: string; projectKey?: string }>
+  /// Workflow-intelligence rollups (issue: workflow intelligence). Optional so
+  /// the day-aggregator PeriodData path (which has no per-turn data) can omit
+  /// them; the fresh-parse payload path always sets them.
+  workflow?: { corrections: number; correctionRate: number | null; medianTimeToFirstEditMs: number | null }
+  /// Files most reworked by edit-family calls, relative to project root, ranked
+  /// by distinct sessions then edits. Full (top 15) list; the payload basenames
+  /// and trims it.
+  topReworkedFiles?: ReworkedFile[]
+  /// Share (0-1) of cost-bearing calls that resolved a price.
+  pricingCoverage?: number
+  /// Spend attributed by referenced pull request (from Claude session
+  /// transcripts), at turn granularity. Rows carry attributed cost/calls and ARE
+  /// summable; `attributedCost`/`unattributedCost` split the PR-linked spend.
+  /// Absent when no PR links were observed.
+  pullRequests?: PullRequestsPayload
+  /// Per-branch spend, last-seen branch carried forward across each session's
+  /// turns. A `null` branch is unbranched spend inside a branch-bearing session.
+  /// Rows are by-reference (a session that switched branches counts toward each),
+  /// so never sum them. Absent when no branch data was observed.
+  byBranch?: BranchRow[]
+}
+
+export type PullRequestsPayload = {
+  /// Every attributed PR row, cost-descending.
+  rows: PrRow[]
+  /// PR-linked spend, now INCLUDING the subagent runs folded into those sessions
+  /// (so it can exceed the parents' own spend). Equals `attributedCost +
+  /// unattributedCost`; kept for backward compatibility.
+  distinctCost: number
+  /// Count of distinct PR-linked PARENT sessions.
+  distinctSessions: number
+  /// Count of subagent (sidechain) runs whose spend was folded into those parent
+  /// sessions. Each remains a standalone row in the sessions list; here it only
+  /// explains why the totals exceed the parents' own spend. 0 when none folded.
+  subagentSessions?: number
+  /// Sum of every PR's attributed cost.
+  attributedCost: number
+  /// PR-linked spend not tied to any specific PR (pre-reference session
+  /// overhead). `attributedCost + unattributedCost === distinctCost`.
+  unattributedCost: number
+}
+
+export type ProviderCost = {
+  /// Internal provider id (e.g. `grok`, `cursor-agent`). Round-trips back to the
+  /// CLI as `--provider`, so it must stay the id, not the display name.
+  name: string
+  displayName: string
+  cost: number
+  /** Behavioral calls in the selected period; token-only supplementary usage may be zero. */
+  calls?: number
+  /** True when the selected period contains cost, calls, sessions, savings, or tokens. */
+  hasUsage?: boolean
+  /** Set only on a provider whose spend the headline deliberately leaves out
+   *  (daily aggregates that local tools already report — see
+   *  `excludeProviderFromDay`). Add-only: absent means "counted". */
+  excludedFromTotal?: boolean
+  /** Provider-scoped tokens for the period. Absent (not zero) when no day in the
+   *  period carried a per-provider token breakdown, so a consumer can tell
+   *  "no token data" from "no tokens". */
+  inputTokens?: number
+  outputTokens?: number
+  /** Provider-scoped session count for the period, absent under the same rule. */
+  sessions?: number
+  sessionCountBasis?: SessionCountBasis
+  /** Provider-scoped prompt-cache read tokens for the period, absent under the
+   *  same rule: no day in the period reported cache reads for this provider,
+   *  so a consumer must render unknown rather than zero. Distinct from fresh
+   *  input (never double-counted into it) and priced inside `cost`. */
+  cacheReadTokens?: number
+  /** Internal accounting flag, never emitted: true when some active day slice
+   *  lacked the cache field, so `cacheReadTokens` is a partial sum that must
+   *  be dropped rather than labelled complete. */
+  cacheReadIncomplete?: boolean
+  /** Portion of `cost` priced from estimates (live parse only). Absent when zero. */
+  estimatedCostUSD?: number
+}
+import type { OptimizeResult } from './optimize.js'
+import { getCurrency } from './currency.js'
+import type { GranularHistory } from './granular-history.js'
+import { getShortModelName, modelRowKey } from './models.js'
+import type { ReworkedFile } from './workflow-insights.js'
+import type { PrRow, BranchRow } from './sessions-report.js'
+import type { LiveSessionsBlock } from './live-sessions.js'
+import type { CursorSyncStatus } from './cursor-sync.js'
+import { buildTelemetrySnapshot, type TelemetrySnapshot, type TelemetrySnapshotInput } from './telemetry-snapshot.js'
+import type { SessionCountBasis } from './session-count-label.js'
+
+const TOP_ACTIVITIES_LIMIT = 20
+const TOP_FINDINGS_LIMIT = 10
+const HISTORY_DAYS_LIMIT = 365
+const SYNTHETIC_MODEL_NAME = '<synthetic>'
+const TOP_PROJECTS_LIMIT = 5
+const TOP_SESSIONS_LIMIT = 3
+const MODEL_EFFICIENCY_LIMIT = 5
+const TOP_REWORKED_FILES_LIMIT = 8
+
+export type DailyModelBreakdown = {
+  name: string
+  cost: number
+  savingsUSD: number
+  calls: number
+  inputTokens: number
+  outputTokens: number
+  /// Raw provider/model ids that collapsed into this display name (e.g.
+  /// `minimax/MiniMax-M3` and `MiniMaxAI/MiniMax-M3` both showing as "MiniMax
+  /// M3"). Present only when more than one raw id folded in, so a cached vs
+  /// uncached route can still be told apart (#1239).
+  rawModels?: string[]
+}
+
+export type DailyHistoryEntry = {
+  date: string
+  cost: number
+  savingsUSD: number
+  calls: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  topModels: DailyModelBreakdown[]
+}
+
+export type LocalModelSavings = {
+  totalUSD: number
+  calls: number
+  byModel: Array<{
+    name: string
+    calls: number
+    actualUSD: number
+    savingsUSD: number
+    baselineModel: string
+    inputTokens: number
+    outputTokens: number
+  }>
+  byProvider: Array<{ name: string; calls: number; savingsUSD: number }>
+}
+
+export type DeviceSummary = {
+  id: string
+  name: string
+  local: boolean
+  error?: string
+  cost: number
+  calls: number
+  sessions: number
+  inputTokens: number
+  outputTokens: number
+  cacheCreateTokens: number
+  cacheReadTokens: number
+  totalTokens: number
+}
+
+export type CombinedUsage = {
+  perDevice: DeviceSummary[]
+  combined: {
+    cost: number
+    calls: number
+    sessions: number
+    inputTokens: number
+    outputTokens: number
+    cacheCreateTokens: number
+    cacheReadTokens: number
+    totalTokens: number
+    deviceCount: number
+    reachableCount: number
+  }
+}
+
+/// Optional full payloads used by clients that need to reproduce the detailed
+/// all-devices view (activity/history/etc.). Remote payloads are already
+/// sanitized by the sharing host before they reach this boundary.
+export type CombinedDevicePayload = {
+  id: string
+  name: string
+  local: boolean
+  error?: string
+  payload?: MenubarPayload
+}
+
+export type ClaudeConfigOption = {
+  id: string
+  label: string
+  path: string
+}
+
+export type ClaudeConfigSelector = {
+  selectedId: string | null
+  options: ClaudeConfigOption[]
+}
+
+/// How much of the corpus is behind the numbers in this payload (#1110).
+/// `complete: false` means the totals cover only the files indexed so far and
+/// a later poll will return more. The counts are progress indicators, not
+/// inventory: they are only meaningful while `complete` is false.
+export type HydrationState = {
+  complete: boolean
+  indexedFiles: number
+  totalFiles: number
+}
+
+export type MenubarPayload = {
+  generated: string
+  /// Cost and calls for the headline windows this payload's live scan covered,
+  /// all from the one aggregation that produced it. A client that lets the user
+  /// switch period shows these, so the windows it can display never come from
+  /// generations minutes apart; a window that is absent was not scanned and the
+  /// client falls back to that period's own payload. Omitted entirely on scoped
+  /// or filtered requests.
+  periodTotals?: Partial<Record<'today' | 'week' | '30days' | 'month' | 'all' | 'lifetime', { cost: number; calls: number; inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number }>>
+  /// Consecutive days with any activity, ending today or yesterday. One value
+  /// for the machine: computed across every provider and independent of the
+  /// selected period and provider filter, so every surface shows the same
+  /// number. Omitted by producers that predate the field.
+  streak?: number
+  /// Optional. Present and `true` only when this payload was assembled from a
+  /// read-only stale serve (see `isSessionHydrationComplete` in `parser.ts`).
+  /// Omitted — never `false` — on a fresh/complete payload, so absence always
+  /// means "assume fresh," including for payloads from a CLI version that
+  /// predates this field.
+  stale?: boolean
+  /// Optional. Emitted ONLY by the resident `codeburn serve` child, the one
+  /// producer whose consumers poll and therefore converge. Every one-shot CLI
+  /// output omits it and is always a full parse, so absence must be read as
+  /// "complete" — including for payloads from a CLI that predates the field.
+  /// A consumer that renders totals MUST check this before presenting them as
+  /// final; it is the only in-band marker that separates a partial answer from
+  /// a converged one. Distinct from `stale`: a first paint is fresh but
+  /// partial, a stale payload is complete but old.
+  hydration?: HydrationState
+  /// Add-only plugin socket sections (teams issue #3), keyed
+  /// `<plugin>.<section>`. Present only when a loaded plugin declared the
+  /// section AND its command wrote it. Surfaces render what they recognize
+  /// and ignore the rest; absence always means "no plugin output today".
+  plugins?: Record<string, unknown>
+  /// Add-only. Sessions whose transcript was appended inside the liveness
+  /// window, with the context each is holding. Omitted when the producer did
+  /// not compute it, so absence means "unknown", never "nothing is running".
+  liveSessions?: LiveSessionsBlock
+  /// Add-only. Emitted only by `status --format menubar-json`, and only when
+  /// Cursor is on this machine or has synced before; absence means "no Cursor".
+  cursorSync?: CursorSyncStatus
+  current: {
+    label: string
+    cost: number
+    calls: number
+    sessions: number
+    /// How `sessions` was derived. Omitted on older producers.
+    sessionCountBasis?: SessionCountBasis
+    oneShotRate: number | null
+    inputTokens: number
+    outputTokens: number
+    /// Period-scoped cache token totals. Kept separate from `history.daily`
+    /// (which is a 365-day backfill for the trend chart) so the web cache
+    /// cards read the same range as Cost/Calls/Tokens (issue #583).
+    cacheReadTokens: number
+    cacheWriteTokens: number
+    cacheHitPercent: number
+    /// Codex credits consumed in the period; 0 when there is no Codex usage.
+    codexCredits: number
+    /// Portion of `cost` priced from estimated tokens (see ParsedApiCall.isEstimated).
+    /// Machine-readable signal that distinguishes guessed spend from metered spend;
+    /// display/metadata only, never summed into `cost`. Optional for compatibility
+    /// with payloads produced before the field existed.
+    estimatedCostUSD?: number
+    topActivities: Array<{
+      name: string
+      cost: number
+      savingsUSD: number
+      turns: number
+      oneShotRate: number | null
+      /// Raw TaskCategory key (additive, optional) for drill-through chips:
+      /// `name` is the display label, this round-trips as the filter value.
+      rawCategory?: string
+    }>
+    topModels: Array<{
+      name: string
+      cost: number
+      savingsUSD: number
+      savingsBaselineModel: string
+      calls: number
+      /// Estimated portion of this model's `cost`; > 0 marks the row as priced
+      /// from estimated tokens. Optional for payload back-compat.
+      estimatedCostUSD?: number
+      /// Per-model token counts, same normalization as `PeriodData.models`:
+      /// billable output, cache read = reused input, cache write separate.
+      /// Add-only and optional — omitted when the period carries no count for
+      /// the row (an older producer, or any contributing legacy row without
+      /// counts), so a consumer must render absence as unknown, never as zero.
+      inputTokens?: number
+      outputTokens?: number
+      cacheReadTokens?: number
+      cacheWriteTokens?: number
+    }>
+    /// See PeriodData.unpricedModels: usage priced at $0 for lack of pricing
+    /// data. Empty when every model in the period resolved a price. Optional
+    /// so payload producers that predate the field stay source-compatible.
+    unpricedModels?: Array<{ model: string; calls: number; tokens: number }>
+    /// Local-model savings rollup, distinct from the routing-waste /
+    /// optimize savings concepts which describe hypothetical optimization
+    /// opportunities. This block tracks counterfactual spend that was
+    /// already avoided because the user ran a local model mapped via
+    /// `codeburn model-savings`.
+    localModelSavings: LocalModelSavings
+    providers: Record<string, number>
+    /// Provider identity alongside the `providers` map: `id` is the internal
+    /// provider name (round-trips as `--provider`), `label` the display name,
+    /// and `hasUsage` the period-activity signal used by provider pickers.
+    /// The `providers` map keys stay lowercased display names for compatibility.
+    /// `inputTokens`, `outputTokens`, `sessions` and `cacheReadTokens` are
+    /// add-only and optional: they are omitted when the period carries no
+    /// per-provider breakdown for them, so a consumer must render the absence
+    /// rather than substitute a period-wide figure.
+    providerDetails: Array<{
+      id: string
+      label: string
+      cost: number
+      calls: number
+      hasUsage: boolean
+      /// Present (and always `true`) only on a provider this payload's totals
+      /// deliberately exclude: its rows are daily aggregates the local tools
+      /// pointed at it already report, so counting both double counts. The
+      /// row still carries the real `cost` — a consumer must label it, never
+      /// add it to `cost`.
+      excludedFromTotal?: boolean
+      inputTokens?: number
+      outputTokens?: number
+      sessions?: number
+      sessionCountBasis?: SessionCountBasis
+      cacheReadTokens?: number
+      /// Add-only: portion of `cost` priced from estimates, from surviving
+      /// sessions only. Absent when nothing was estimated.
+      estimatedCostUSD?: number
+    }>
+    topProjects: Array<{
+      /// Stable identity (abs cwd when known). Optional so older PeriodData
+      /// producers keep compiling; renderer expand keys on `id ?? name`.
+      id?: string
+      name: string
+      cost: number
+      savingsUSD: number
+      sessions: number
+      /// Always present: menubar 0.9.14-0.9.24 decode it as required (#1541).
+      /// Exact only when `sessionCountBasis` is `identity`; a client must not
+      /// show it for any other basis.
+      avgCostPerSession: number
+      /// How `sessions` was derived. Omitted on older producers. `identity` is
+      /// an exact unique count from surviving source files; `partial` is a lower bound.
+      sessionCountBasis?: SessionCountBasis
+      /// The checkouts (clones, worktrees) folded into this repository row, when
+      /// there is more than one.
+      checkouts?: ProjectCheckout[]
+      /// All checkouts folded in; `checkouts` lists the costliest 50.
+      checkoutCount?: number
+      /// The row for every temp-root folder outside a known repository.
+      temporary?: boolean
+      sessionDetails: Array<{
+        cost: number
+        savingsUSD: number
+        calls: number
+        inputTokens: number
+        outputTokens: number
+        date: string
+        models: Array<{ name: string; cost: number; savingsUSD: number }>
+        /// Drill-through identity (additive, optional). `provider` is the
+        /// inferred session provider, so provider+sessionId opens the exact
+        /// session even across providers that reuse ids or titles.
+        sessionId?: string
+        provider?: string
+      }>
+    }>
+    modelEfficiency: Array<{
+      name: string
+      costPerEdit: number | null
+      oneShotRate: number | null
+    }>
+    topSessions: Array<{
+      project: string
+      cost: number
+      savingsUSD: number
+      calls: number
+      date: string
+      /// Drill-through identity (additive, optional): see topProjects.sessionDetails.
+      sessionId?: string
+      provider?: string
+      /// Raw session project (the sessions-list row key), distinct from the
+      /// friendly `project` display name.
+      projectKey?: string
+    }>
+    /// Workflow-intelligence rollup for the period. `unansweredSessions` is
+    /// add-only and optional: sessions that ended with no assistant reply are
+    /// not computable from the session cache (the parser drops a trailing
+    /// unanswered user turn), so it stays unset until a parse-time capture lands.
+    workflow: {
+      corrections: number
+      correctionRate: number | null
+      medianTimeToFirstEditMs: number | null
+      unansweredSessions?: number
+    }
+    /// Files most reworked by edit-family calls (top 8). Path is basename-only
+    /// for privacy; distinct sessions and total edit calls per file.
+    topReworkedFiles: Array<{ path: string; sessions: number; edits: number }>
+    /// Share (0-1) of cost-bearing calls that resolved a price.
+    /// null when not computable (no scan data on this path) — "unknown" must
+    /// never render as 100% coverage.
+    pricingCoverage: number | null
+    retryTax: {
+      totalUSD: number
+      retries: number
+      editTurns: number
+      byModel: Array<{
+        name: string
+        taxUSD: number
+        retries: number
+        retriesPerEdit: number | null
+      }>
+    }
+    routingWaste: {
+      totalSavingsUSD: number
+      baselineModel: string
+      baselineCostPerEdit: number
+      byModel: Array<{
+        name: string
+        costPerEdit: number
+        editTurns: number
+        actualUSD: number
+        counterfactualUSD: number
+        savingsUSD: number
+      }>
+    }
+    tools: Array<{ name: string; calls: number }>
+    skills: Array<{ name: string; turns: number; cost: number }>
+    subagents: Array<{
+      name: string
+      calls: number
+      cost: number
+      agentName?: string
+      model?: string
+      startedAt?: string
+      inputTokens?: number
+      outputTokens?: number
+      cacheReadTokens?: number
+      cacheWriteTokens?: number
+      totalTokens?: number
+    }>
+    mcpServers: Array<{ name: string; calls: number }>
+    /// Every pull request with attributed spend, cost-descending, plus the
+    /// multi-link-safe distinct total. Absent when no PR links were observed and
+    /// on payloads produced before the field existed.
+    pullRequests?: PullRequestsPayload
+    /// Per-branch spend (top 15 by cost), last-seen branch carried forward across
+    /// each session's turns; a `null` branch is unbranched spend inside a
+    /// branch-bearing session. By-reference like the PR rows. Absent when no
+    /// branch data was observed, and on payloads produced before the field.
+    byBranch?: BranchRow[]
+  }
+  optimize: {
+    findingCount: number
+    savingsUSD: number
+    topFindings: Array<{
+      title: string
+      impact: 'high' | 'medium' | 'low'
+      savingsUSD: number
+    }>
+  }
+  history: {
+    daily: DailyHistoryEntry[]
+    /// Selected-period timeline for the local browser dashboard. Optional for
+    /// compatibility with older peers and non-dashboard payload producers.
+    timeline?: GranularHistory
+  }
+  /// Active display currency. Payload cost values are raw USD; the client
+  /// multiplies by `rate` and prefixes `symbol` at display time. USD =
+  /// { code: 'USD', symbol: '$', rate: 1 }.
+  currency: { code: string; symbol: string; rate: number }
+  combined?: CombinedUsage
+  /// Present only when status was requested with --combined-details. This is
+  /// intentionally opt-in because it can be much larger than summary-only
+  /// combined usage. Remote entries contain aggregate, sanitized payloads.
+  combinedDevices?: CombinedDevicePayload[]
+  claudeConfigs?: ClaudeConfigSelector
+  /// Anonymised, fully bucketed daily aggregate for consent-gated product
+  /// telemetry: the `usage_snapshot` event that the desktop app and the Windows
+  /// tray both send verbatim, so the two surfaces cannot drift apart. Opaque to
+  /// every other consumer. `null` when it could not be computed. See
+  /// src/telemetry-snapshot.ts for the privacy contract it holds.
+  telemetrySnapshot: TelemetrySnapshot | null
+}
+
+function oneShotRateFor(editTurns: number, oneShotTurns: number): number | null {
+  if (editTurns === 0) return null
+  return oneShotTurns / editTurns
+}
+
+function aggregateOneShotRate(categories: PeriodData['categories']): number | null {
+  let edits = 0
+  let oneShots = 0
+  for (const cat of categories) {
+    edits += cat.editTurns
+    oneShots += cat.oneShotTurns
+  }
+  if (edits === 0) return null
+  return oneShots / edits
+}
+
+function cacheHitPercent(inputTokens: number, cacheReadTokens: number): number {
+  const denom = inputTokens + cacheReadTokens
+  if (denom === 0) return 0
+  return (cacheReadTokens / denom) * 100
+}
+
+function buildTopActivities(categories: PeriodData['categories']): MenubarPayload['current']['topActivities'] {
+  return categories.slice(0, TOP_ACTIVITIES_LIMIT).map(cat => ({
+    name: cat.name,
+    cost: cat.cost,
+    savingsUSD: cat.savingsUSD,
+    turns: cat.turns,
+    oneShotRate: oneShotRateFor(cat.editTurns, cat.oneShotTurns),
+    ...(cat.rawCategory ? { rawCategory: cat.rawCategory } : {}),
+  }))
+}
+
+/// Per-model token counts merged alongside cost. A `undefined` accumulator is
+/// "unknown", not zero: a legacy row that predates the counts must not turn the
+/// merged row into a plausible-looking 0, so one unknown contributor marks the
+/// merged count unknown and the field is omitted from the payload.
+///
+/// KNOWN GAP: on the durable (daily-cache) path this guard cannot fire today.
+/// `ModelDayStats` types the four counts as required numbers and daily-cache's
+/// `sanitizeModels` runs every field through `num()`, which turns a missing
+/// value into a known `0`. A day carried forward from a generation that
+/// predates the counts therefore contributes an exact zero and the period row
+/// under-reports as if it were complete, instead of going unknown here. Making
+/// it reachable means widening `ModelDayStats` to optional counts and teaching
+/// every daily-cache arithmetic site (fold, subtract, reduce) plus
+/// `buildPeriodDataFromDays` to propagate absence — a durable-cache contract
+/// change, tracked separately. The guard stays because the PeriodData contract
+/// already types these counts optional: fresh-session and plugin-sourced rows
+/// may legitimately omit them.
+const MODEL_COUNT_KEYS = ['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens'] as const
+type ModelCountKey = (typeof MODEL_COUNT_KEYS)[number]
+
+function mergeCount(target: { counts: Partial<Record<ModelCountKey, number>>; unknown: Set<ModelCountKey> }, key: ModelCountKey, value: number | undefined): void {
+  // Once a contributor without this count has been seen, the merged count is
+  // unknown for good — later contributors must not resurrect a partial sum.
+  if (value === undefined) {
+    target.unknown.add(key)
+    delete target.counts[key]
+    return
+  }
+  if (target.unknown.has(key)) return
+  target.counts[key] = (target.counts[key] ?? 0) + value
+}
+
+function buildTopModels(models: PeriodData['models']): MenubarPayload['current']['topModels'] {
+  // Day entries key models by the raw provider id (day-aggregator), so resolve
+  // display names here — the menubar shows "Kimi K3" rather than "k3". Ids that
+  // collapse to one display name (e.g. k3 and kimi-k3) merge into a single row,
+  // and their token counts merge under the same grouping as cost.
+  //
+  // The list is uncapped (#1318): the desktop Overview renders it as the
+  // period's model table, where cutting at N would drop exactly the local and
+  // free models the table exists to expose. Every consumer that wants fewer
+  // rows already slices its own (the desktop hero takes 8, MCP tables take 5
+  // or the caller's limit) — rows are still cost-ranked, so "top" ordering
+  // survives without a count limit.
+  const merged = new Map<string, {
+    cost: number
+    calls: number
+    savingsUSD: number
+    estimatedCostUSD: number
+    counts: Partial<Record<ModelCountKey, number>>
+    unknown: Set<ModelCountKey>
+  }>()
+  for (const m of models) {
+    if (m.name === SYNTHETIC_MODEL_NAME) continue
+    const name = modelRowKey(m.name)
+    const acc = merged.get(name) ?? { cost: 0, calls: 0, savingsUSD: 0, estimatedCostUSD: 0, counts: {}, unknown: new Set<ModelCountKey>() }
+    acc.cost += m.cost
+    acc.calls += m.calls
+    acc.savingsUSD += m.savingsUSD ?? 0
+    acc.estimatedCostUSD += m.estimatedCostUSD ?? 0
+    for (const key of MODEL_COUNT_KEYS) mergeCount(acc, key, m[key])
+    merged.set(name, acc)
+  }
+  return [...merged.entries()]
+    .sort(([, a], [, b]) => b.cost - a.cost)
+    .map(([name, d]) => ({
+      name,
+      cost: d.cost,
+      calls: d.calls,
+      savingsUSD: d.savingsUSD,
+      savingsBaselineModel: '',
+      estimatedCostUSD: d.estimatedCostUSD,
+      ...(d.counts.inputTokens === undefined ? {} : { inputTokens: d.counts.inputTokens }),
+      ...(d.counts.outputTokens === undefined ? {} : { outputTokens: d.counts.outputTokens }),
+      ...(d.counts.cacheReadTokens === undefined ? {} : { cacheReadTokens: d.counts.cacheReadTokens }),
+      ...(d.counts.cacheWriteTokens === undefined ? {} : { cacheWriteTokens: d.counts.cacheWriteTokens }),
+    }))
+}
+
+function buildOptimize(optimize: OptimizeResult | null): MenubarPayload['optimize'] {
+  if (!optimize || optimize.findings.length === 0) {
+    return { findingCount: 0, savingsUSD: 0, topFindings: [] }
+  }
+  const { findings, costRate } = optimize
+  const totalSavingsUSD = findings.reduce((s, f) => s + f.tokensSaved * costRate, 0)
+  const topFindings = findings.slice(0, TOP_FINDINGS_LIMIT).map(f => ({
+    title: f.title,
+    impact: f.impact,
+    savingsUSD: f.tokensSaved * costRate,
+  }))
+  return {
+    findingCount: findings.length,
+    savingsUSD: totalSavingsUSD,
+    topFindings,
+  }
+}
+
+function buildProviders(providers: ProviderCost[]): Record<string, number> {
+  const map: Record<string, number> = {}
+  for (const p of providers) {
+    if (p.cost < 0) continue
+    map[p.displayName.toLowerCase()] = p.cost
+  }
+  return map
+}
+
+function buildProviderDetails(providers: ProviderCost[]): MenubarPayload['current']['providerDetails'] {
+  return providers
+    .filter(p => p.cost >= 0)
+    .map(p => ({
+      id: p.name,
+      label: p.displayName,
+      cost: p.cost,
+      calls: p.calls ?? 0,
+      hasUsage: p.hasUsage ?? (p.cost > 0 || (p.calls ?? 0) > 0),
+      ...(p.excludedFromTotal ? { excludedFromTotal: true as const } : {}),
+      ...(p.inputTokens === undefined ? {} : { inputTokens: p.inputTokens }),
+      ...(p.outputTokens === undefined ? {} : { outputTokens: p.outputTokens }),
+      ...(p.sessions === undefined ? {} : { sessions: p.sessions }),
+      ...(p.sessionCountBasis ? { sessionCountBasis: p.sessionCountBasis } : {}),
+      ...(p.cacheReadTokens === undefined || p.cacheReadIncomplete ? {} : { cacheReadTokens: p.cacheReadTokens }),
+      ...(p.estimatedCostUSD ? { estimatedCostUSD: p.estimatedCostUSD } : {}),
+    }))
+}
+
+function buildHistory(daily: DailyHistoryEntry[] | undefined, timeline?: GranularHistory): MenubarPayload['history'] {
+  if (!daily || daily.length === 0) return { daily: [], ...(timeline ? { timeline } : {}) }
+  const sorted = [...daily].sort((a, b) => a.date.localeCompare(b.date))
+  const trimmed = sorted.slice(-HISTORY_DAYS_LIMIT)
+  return { daily: trimmed, ...(timeline ? { timeline } : {}) }
+}
+
+function buildTopProjects(projects: PeriodData['projects']): MenubarPayload['current']['topProjects'] {
+  return (projects ?? [])
+    .filter(p => p.cost > 0 || p.savingsUSD > 0)
+    .sort((a, b) => (b.cost + b.savingsUSD) - (a.cost + a.savingsUSD))
+    .slice(0, TOP_PROJECTS_LIMIT)
+    .map(p => ({
+      ...(p.id ? { id: p.id } : {}),
+      name: p.name,
+      cost: p.cost,
+      savingsUSD: p.savingsUSD,
+      sessions: p.sessions,
+      avgCostPerSession: p.sessions > 0 ? p.cost / p.sessions : 0,
+      ...(p.sessionCountBasis ? { sessionCountBasis: p.sessionCountBasis } : {}),
+      ...(p.checkouts ? { checkouts: p.checkouts, checkoutCount: p.checkoutCount } : {}),
+      ...(p.temporary ? { temporary: true } : {}),
+      sessionDetails: (p.sessionDetails ?? []).map(s => ({
+        cost: s.cost,
+        savingsUSD: s.savingsUSD,
+        calls: s.calls,
+        inputTokens: s.inputTokens,
+        outputTokens: s.outputTokens,
+        date: s.date,
+        models: s.models,
+        // Drill-through identity (additive, optional): lets the desktop open the
+        // exact session (provider + id), not just a lookalike row.
+        ...(s.sessionId ? { sessionId: s.sessionId } : {}),
+        ...(s.provider ? { provider: s.provider } : {}),
+      })),
+    }))
+}
+
+function buildModelEfficiency(models: PeriodData['modelEfficiency']): MenubarPayload['current']['modelEfficiency'] {
+  return (models ?? [])
+    .filter(m => m.costPerEdit !== null)
+    .sort((a, b) => (a.costPerEdit ?? Infinity) - (b.costPerEdit ?? Infinity))
+    .slice(0, MODEL_EFFICIENCY_LIMIT)
+    .map(m => ({ name: m.name, costPerEdit: m.costPerEdit, oneShotRate: m.oneShotRate }))
+}
+
+function buildWorkflow(workflow: PeriodData['workflow']): MenubarPayload['current']['workflow'] {
+  return {
+    corrections: workflow?.corrections ?? 0,
+    correctionRate: workflow?.correctionRate ?? null,
+    medianTimeToFirstEditMs: workflow?.medianTimeToFirstEditMs ?? null,
+  }
+}
+
+function buildTopReworkedFiles(files: PeriodData['topReworkedFiles']): MenubarPayload['current']['topReworkedFiles'] {
+  return (files ?? [])
+    .slice(0, TOP_REWORKED_FILES_LIMIT)
+    // Basename only: the menubar/web payload can leave the machine, so drop the
+    // directory path and keep just the file name.
+    .map(f => ({ path: f.path.split('/').pop() || f.path, sessions: f.sessions, edits: f.edits }))
+}
+
+function buildTopSessions(sessions: PeriodData['topSessions']): MenubarPayload['current']['topSessions'] {
+  return (sessions ?? [])
+    .sort((a, b) => (b.cost + b.savingsUSD) - (a.cost + a.savingsUSD))
+    .slice(0, TOP_SESSIONS_LIMIT)
+    .map(s => ({
+      project: s.project,
+      cost: s.cost,
+      savingsUSD: s.savingsUSD,
+      calls: s.calls,
+      date: s.date,
+      // Drill-through identity (additive, optional): provider + session id make
+      // the row openable even when another provider reuses the same id or title.
+      ...(s.sessionId ? { sessionId: s.sessionId } : {}),
+      ...(s.provider ? { provider: s.provider } : {}),
+      ...(s.projectKey ? { projectKey: s.projectKey } : {}),
+    }))
+}
+
+export type BreakdownArrays = {
+  tools?: MenubarPayload['current']['tools']
+  skills?: MenubarPayload['current']['skills']
+  subagents?: MenubarPayload['current']['subagents']
+  mcpServers?: MenubarPayload['current']['mcpServers']
+  /// Optional rollup of per-model and per-provider local-model savings.
+  /// Computed by the CLI from the parsed projects (we have raw token
+  /// + baseline info there, not in `PeriodData`). When omitted, the
+  /// menubar payload defaults to an empty savings block — keeping the
+  /// schema stable for consumers that don't care about local savings.
+  localModelSavings?: LocalModelSavings
+  /// Inputs the telemetry snapshot needs that the payload itself does not
+  /// carry: the per-(model, task category) turn cross and session wall-clock
+  /// durations. The raw values never enter the payload, only their buckets.
+  telemetry?: TelemetrySnapshotInput
+}
+
+export function buildMenubarPayload(
+  current: PeriodData,
+  providers: ProviderCost[],
+  optimize: OptimizeResult | null,
+  dailyHistory?: DailyHistoryEntry[],
+  retryTax?: MenubarPayload['current']['retryTax'],
+  routingWaste?: MenubarPayload['current']['routingWaste'],
+  breakdowns?: BreakdownArrays,
+  claudeConfigs?: ClaudeConfigSelector,
+  granularHistory?: GranularHistory,
+  stale?: boolean,
+  hydration?: HydrationState,
+): MenubarPayload {
+  const payload: MenubarPayload = {
+    generated: new Date().toISOString(),
+    current: {
+      label: current.label,
+      cost: current.cost,
+      calls: current.calls,
+      sessions: current.sessions,
+      ...(current.sessionCountBasis ? { sessionCountBasis: current.sessionCountBasis } : {}),
+      oneShotRate: aggregateOneShotRate(current.categories),
+      inputTokens: current.inputTokens,
+      outputTokens: current.outputTokens,
+      cacheReadTokens: current.cacheReadTokens,
+      cacheWriteTokens: current.cacheWriteTokens,
+      cacheHitPercent: cacheHitPercent(current.inputTokens, current.cacheReadTokens),
+      codexCredits: current.codexCredits ?? 0,
+      estimatedCostUSD: current.estimatedCostUSD ?? 0,
+      topActivities: buildTopActivities(current.categories),
+      topModels: buildTopModels(current.models),
+      unpricedModels: current.unpricedModels ?? [],
+      localModelSavings: breakdowns?.localModelSavings ?? { totalUSD: 0, calls: 0, byModel: [], byProvider: [] },
+      providers: buildProviders(providers),
+      providerDetails: buildProviderDetails(providers),
+      topProjects: buildTopProjects(current.projects ?? []),
+      modelEfficiency: buildModelEfficiency(current.modelEfficiency ?? []),
+      topSessions: buildTopSessions(current.topSessions ?? []),
+      workflow: buildWorkflow(current.workflow),
+      topReworkedFiles: buildTopReworkedFiles(current.topReworkedFiles),
+      pricingCoverage: current.pricingCoverage ?? null,
+      retryTax: retryTax ?? { totalUSD: 0, retries: 0, editTurns: 0, byModel: [] },
+      routingWaste: routingWaste ?? { totalSavingsUSD: 0, baselineModel: '', baselineCostPerEdit: 0, byModel: [] },
+      tools: breakdowns?.tools ?? [],
+      skills: breakdowns?.skills ?? [],
+      subagents: breakdowns?.subagents ?? [],
+      mcpServers: breakdowns?.mcpServers ?? [],
+      // Add-only: emitted only when the producer computed them (all-provider
+      // path), omitted otherwise so the schema stays stable for consumers that
+      // predate the fields.
+      ...(current.pullRequests ? { pullRequests: current.pullRequests } : {}),
+      ...(current.byBranch ? { byBranch: current.byBranch } : {}),
+    },
+    optimize: buildOptimize(optimize),
+    history: buildHistory(dailyHistory, granularHistory),
+    currency: (() => {
+      const c = getCurrency()
+      return { code: c.code, symbol: c.symbol, rate: c.rate }
+    })(),
+    telemetrySnapshot: null,
+  }
+  // Derived from the payload that was just assembled, so the snapshot can never
+  // report something the payload does not already say.
+  payload.telemetrySnapshot = buildTelemetrySnapshot(payload, breakdowns?.telemetry)
+  if (claudeConfigs && claudeConfigs.options.length > 1) {
+    payload.claudeConfigs = claudeConfigs
+  }
+  if (stale) {
+    payload.stale = true
+  }
+  if (hydration) {
+    payload.hydration = hydration
+  }
+  return payload
+}

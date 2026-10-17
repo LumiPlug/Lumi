@@ -1,0 +1,134 @@
+# Claude
+
+Anthropic Claude Code CLI and Claude Desktop's local agent mode.
+
+- **Source:** `src/providers/claude.ts`
+- **Loading:** eager (`src/providers/index.ts:1`)
+- **Test:** `tests/providers/claude-cowork-ledger.test.ts` and `tests/providers/claude-cowork-ledger-readonly.test.ts`, plus `tests/parser-claude-cwd.test.ts`, `tests/parser-filter.test.ts`, and `tests/parser-mcp-inventory.test.ts`.
+
+## Where it reads from
+
+| Source | Path |
+|---|---|
+| Claude Code CLI | `$CLAUDE_CONFIG_DIR` if set, otherwise `~/.claude/projects/` |
+| Claude Desktop (macOS, classic) | `~/Library/Application Support/Claude/local-agent-mode-sessions/` |
+| Claude Desktop (macOS, 3p/Cowork) | `~/Library/Application Support/Claude-3p/local-agent-mode-sessions/` |
+| Claude Desktop (Windows, classic) | `%APPDATA%/Claude/local-agent-mode-sessions/` |
+| Claude Desktop (Windows, MSIX) | `%LOCALAPPDATA%/Packages/<Claude package>/LocalCache/Roaming/Claude/local-agent-mode-sessions/` |
+| Claude Desktop (Linux) | `~/.config/Claude/local-agent-mode-sessions/` |
+
+From October 6, 2026, new Claude Cowork tasks on Pro and Max plans run in Anthropic's cloud instead of on your computer, so they no longer write local session files and CodeBurn can't price them. Tasks started on your computer before then are still read. Plan limits are unaffected: the Claude quota windows come from Anthropic's own usage figures, which include cloud Cowork. Claude Code runs locally and is tracked as before.
+
+For Desktop, `findDesktopProjectDirs` walks up to 8 levels deep looking for `projects/` subdirectories, skipping `node_modules` and `.git`.
+
+Desktop session roots are resolved in this order:
+
+1. A non-empty `CODEBURN_DESKTOP_SESSIONS_DIR` overrides discovery and is the
+   only returned root.
+2. macOS checks both the classic `Claude` path and the `Claude-3p` Cowork path.
+3. Windows always includes the classic path first. It then scans
+   `%LOCALAPPDATA%/Packages` for package directories whose names start with
+   `Claude_` or contain `.Claude_`, sorted by package name, and includes only
+   packages whose full MSIX sessions path exists as a directory.
+4. Other platforms use the single Linux path shown above.
+
+All returned roots are absolute, resolved, and deduplicated. Missing or
+unreadable Windows package directories are ignored.
+
+## Storage format
+
+JSONL, one event per line, per session file. Sessions live under `<project>/<sessionId>.jsonl`.
+Claude Desktop 3p also writes `usage-ledger/*.ndjson` records under its
+`local-agent-mode-sessions` root. Both `surface: "cowork"` and
+`surface: "code"` records are included and labeled `Claude Cowork` and
+`Claude Code`, respectively.
+
+A ledger record and a JSONL transcript can describe the same API call. The
+transcript call is kept, since it carries the project, tools, and turn
+classification, and a ledger call is dropped only when its model, token
+counts, and timestamp match a transcript call within 30 seconds. This keeps
+the request counted once while retaining it when the transcript is later
+deleted.
+
+## Parser
+
+`src/parser.ts` reads Claude JSONL files directly with full turn grouping,
+dedup of streaming message IDs, and MCP tool inventory extraction.
+`createSessionParser` reads the Desktop usage ledger, which is parsed through
+the shared provider cache so its records can be served independently of the
+transcript tree.
+
+Claude Code can record a message sent while it is working as an
+`attachment` entry with `attachment.type: "queued_command"` and
+`commandMode: "prompt"`. CodeBurn counts a timestamped, non-empty prompt as a
+new user turn and assigns later assistant API calls to it. Task notifications,
+IDE or system-reminder injections, slash commands, and other attachment types
+are ignored, as are peer and agent-message queued commands
+(`isMeta: true`/`origin.kind: "peer"`), which are queue plumbing rather than a
+prompt the user typed. Turns represent API usage, so a queued prompt with no following
+assistant API call is omitted, just like an ordinary user message with no
+assistant call.
+
+## Pricing
+
+Claude Code reports total cache-write tokens in `usage.cache_creation_input_tokens`.
+When available, it also splits those writes by duration in
+`usage.cache_creation.ephemeral_5m_input_tokens` and
+`usage.cache_creation.ephemeral_1h_input_tokens`. CodeBurn keeps the existing
+aggregate cache-write token total for reports, but prices the 1-hour portion at
+2x base input cost (1.6x the 5-minute cache-write rate exposed by LiteLLM).
+If the split fields are missing, the parser falls back to the legacy behavior
+and prices every cache write at the 5-minute rate.
+
+For Desktop ledger records, CodeBurn uses the shared CodeBurn pricing table
+and configured price overrides for known model ids. The recorded ledger cost
+is used only as a fallback when CodeBurn has no billable price for that model,
+so changing Claude Desktop pricing does not replace a CodeBurn estimate.
+The raw model id remains available to pricing; route variants such as
+`us.anthropic.…` and `global.anthropic.…` are not collapsed for billing.
+
+## Bedrock sessions
+
+The JSONL has no provider field; the only trace of how a call was billed is
+the model id. With `CLAUDE_CODE_USE_BEDROCK=1` the assistant messages record
+Bedrock's id — `anthropic.claude-haiku-4-5-20251001-v1:0`, or with the
+cross-region profile prefix the user configured, `us.anthropic.…` — where a
+direct-API session records `claude-haiku-4-5-20251001`. `getModelRoute` reads
+the shape, so the rows are `Haiku 4.5`, `Haiku 4.5 (Bedrock)` and
+`Haiku 4.5 (Bedrock us)`: three SKUs at three prices, kept apart on every
+surface (see "Model rows and billing routes" in `../architecture.md`). Vertex
+ids (`claude-…@20251001`) are not a route yet; the `@` suffix is stripped and
+they merge with the direct row.
+
+## Caching
+
+None at the provider level. The daily aggregation cache (`src/daily-cache.ts`) reuses prior computed days.
+
+## Quirks
+
+- The parser is in `src/parser.ts`, not in `src/providers/claude.ts`. Anything that changes Claude parsing belongs in `parser.ts`.
+- Streaming responses produce duplicate message IDs across resumed sessions; `parser.ts` strips them via the global `seenMsgIds` Set.
+- Model display names are mapped in `claude.ts:7-20`; add new versions there when Anthropic releases them.
+
+## Early quota resets
+
+Anthropic sometimes resets a usage window before its scheduled time. The menubar
+notices on the existing refresh lifecycle — no extra request — by comparing each
+fetch's windows against the previous fetch's readings, which are kept per window
+in `UserDefaults` alongside the record of what has already been announced.
+Everything is local; nothing is fetched to produce it. A detected reset posts one
+system notification and nothing else: there is no persistent UI for it.
+
+The detection is deliberately quiet. It needs a validated window length (the
+fixed 5-hour and 7-day limits), a stored reset that has not yet passed, and
+either a reset time anchored to a genuinely new cycle or a fall of at least 40
+points that lands at or under 10%. A scheduled reset, a plan change, clock or
+timestamp skew, a window appearing or disappearing, a first observation and a
+reconnect after a terminal failure all produce nothing.
+
+## When fixing a bug here
+
+1. Confirm whether the bug is in **discovery** (sessions not picked up) or **parsing** (sessions found but data wrong).
+2. Discovery bugs live in `claude.ts:78-99`. Verify the directory layout you expect actually matches what Claude writes today.
+3. Parsing bugs live in `src/parser.ts`. Look for `parseSessionFile`, `groupIntoTurns`, and `dedupeStreamingMessageIds`.
+4. Add a fixture under `tests/fixtures/` and a test under `tests/parser-claude-cwd.test.ts` (or a new file). Do not mock the filesystem.

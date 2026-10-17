@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { McpConnectionInfo, WorkbenchView } from '@lumiplug/shared'
+import { refreshRunState } from './run-task-refresh'
 import { getWorkbench } from './tauri'
 
 export function useWorkbenchDocument(connection: McpConnectionInfo | null, active: boolean) {
@@ -35,12 +36,21 @@ export function useWorkbenchDocument(connection: McpConnectionInfo | null, activ
     requestEpoch.current += 1
     reading.current = null
     if (!active || !ready) return
-    void refresh()
-    const timer = window.setInterval(() => void refresh(), 2000)
+    const stop = refreshRunState({
+      wakeTarget: window,
+      interval: 2000,
+      read: refresh,
+      update: () => {},
+      fail: () => {},
+    })
     return () => {
       requestEpoch.current += 1
-      window.clearInterval(timer)
+      stop()
     }
   }, [active, ready, connection?.endpoint, connection?.sessionToken, refresh])
-  return { view, loadError, ready, refresh }
+  const accept = (next: WorkbenchView) => {
+    setView((current) => (!current || next.version >= current.version ? next : current))
+    setLoadError(false)
+  }
+  return { view, loadError, ready, refresh, accept }
 }

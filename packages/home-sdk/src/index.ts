@@ -63,12 +63,9 @@ if (mock) {
       port
     )
       return
-    if (
-      event.data.info?.bridgeVersion !== SDK_CONTRACT.bridgeVersion ||
-      event.data.info?.lumiVersion !== SDK_CONTRACT.lumiVersion ||
-      event.data.info?.sdkVersion !== SDK_CONTRACT.sdkVersion
-    ) {
-      rejectReady(new LumiError('bridge_incompatible', 'Lumi SDK 版本不兼容。'))
+    // Application and SDK release numbers do not change the bridge contract.
+    if (event.data.info?.bridgeVersion !== SDK_CONTRACT.bridgeVersion) {
+      rejectReady(new LumiError('bridge_incompatible', '主页桥接协议不兼容。'))
       return
     }
     port = event.ports[0]

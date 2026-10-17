@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+import { randomUUID } from 'node:crypto'
 import { isSea } from 'node:sea'
 import {
   StreamableHTTPClientTransport,
@@ -74,6 +75,8 @@ export async function startProxy(
   const controllers = new Set<AbortController>()
   const requestControllers = new Map<string | number, AbortController>()
   const initializationIds = new Set<string | number>()
+  const wireIds = new Map<string | number, string>()
+  const clientIds = new Map<string, string | number>()
   const close = async (): Promise<void> => {
     if (closed) return
     closed = true
@@ -96,14 +99,27 @@ export async function startProxy(
     }
     if (isJSONRPCErrorResponse(message) && message.id !== null && message.id !== undefined)
       initializationIds.delete(message.id)
-    if (!closed) void stdio.send(message).catch(() => close())
+    let forwarded = message
+    if (
+      (isJSONRPCResultResponse(message) || isJSONRPCErrorResponse(message)) &&
+      typeof message.id === 'string'
+    ) {
+      const clientId = clientIds.get(message.id)
+      if (clientId !== undefined) forwarded = { ...message, id: clientId }
+    }
+    if (!closed) void stdio.send(forwarded).catch(() => close())
   }
   stdio.onmessage = (message: JSONRPCMessage) => {
     if (closed) return
+    let forwarded = message
     if ('method' in message && message.method === 'notifications/cancelled') {
       const id = message.params?.requestId
       if (typeof id === 'string' || typeof id === 'number')
         requestControllers.get(id)?.abort('cancelled')
+      const wireId = typeof id === 'string' || typeof id === 'number' ? wireIds.get(id) : undefined
+      // Unknown or completed IDs must never be forwarded to another client's call.
+      if (!wireId) return
+      forwarded = { ...message, params: { ...message.params, requestId: wireId } }
     }
     if (controllers.size >= 128) {
       if (isJSONRPCRequest(message)) {
@@ -117,15 +133,21 @@ export async function startProxy(
       }
       return
     }
-    if (isJSONRPCRequest(message) && message.method === 'initialize')
-      initializationIds.add(message.id)
+    if (isJSONRPCRequest(message)) {
+      if (wireIds.has(message.id)) return
+      const wireId = randomUUID()
+      wireIds.set(message.id, wireId)
+      clientIds.set(wireId, message.id)
+      forwarded = { ...message, id: wireId }
+      if (message.method === 'initialize') initializationIds.add(wireId)
+    }
     const controller = new AbortController()
     controllers.add(controller)
     if (isJSONRPCRequest(message)) requestControllers.set(message.id, controller)
     const timer = setTimeout(() => controller.abort('timeout'), config.requestTimeoutMs)
     // Concurrent requests stay concurrent. Notifications never acquire synthetic IDs.
     void http
-      .send(message, { requestSignal: controller.signal })
+      .send(forwarded, { requestSignal: controller.signal })
       .catch(async () => {
         if (closed || controller.signal.reason === 'cancelled' || !isJSONRPCRequest(message)) return
         initializationIds.delete(message.id)
@@ -150,8 +172,15 @@ export async function startProxy(
       .finally(() => {
         clearTimeout(timer)
         controllers.delete(controller)
-        if (isJSONRPCRequest(message) && requestControllers.get(message.id) === controller)
+        if (isJSONRPCRequest(message) && requestControllers.get(message.id) === controller) {
           requestControllers.delete(message.id)
+          const wireId = wireIds.get(message.id)
+          if (wireId) {
+            clientIds.delete(wireId)
+            initializationIds.delete(wireId)
+          }
+          wireIds.delete(message.id)
+        }
       })
   }
   await http.start()

@@ -159,7 +159,7 @@ export default function WorkbenchContent({
             {!ready
               ? '本地服务暂不可用，页面操作已暂停。'
               : !view.compatible
-                ? '此主页与当前 Lumi 的 HTML 工程契约不一致。请让 AI 通过 MCP 发布当前版本的主页。'
+                ? '此主页的工程格式或桥接协议暂不受支持，请让 AI 按官方 HTML 工程契约迁移主页。'
                 : frameState === 'error'
                   ? '主页未能连接 Lumi，请重新加载，或让 AI 通过 MCP 恢复历史版本。'
                   : '暂时无法同步主页，已有内容已保留。'}

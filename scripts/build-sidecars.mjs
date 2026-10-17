@@ -47,6 +47,15 @@ const buildDirectory = path.join(root, 'dist', 'sidecars')
 await mkdir(outputDirectory, { recursive: true })
 await mkdir(buildDirectory, { recursive: true })
 const notices = new Map()
+notices.set(
+  'CodeBurn 0.9.27 (9a40cc6)',
+  (await readFile(path.join(root, 'packages/core/vendor/codeburn/LICENSE'), 'utf8')) +
+    '\n\n' +
+    (await readFile(
+      path.join(root, 'packages/core/vendor/codeburn/THIRD_PARTY_NOTICES.md'),
+      'utf8',
+    )),
+)
 for (const candidate of [
   path.join(path.dirname(runtime), 'LICENSE'),
   path.join(path.dirname(runtime), '..', 'LICENSE'),

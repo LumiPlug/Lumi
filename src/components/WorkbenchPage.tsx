@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
+import { useRetainWindowState } from '../lib/window-retention'
 import { Textarea, Button, ChoiceCard } from './ui'
 
 import { useEffect, useReducer, useRef, useState } from 'react'
 import type { McpConnectionInfo, UiCoreStatus } from '@lumiplug/shared'
+import { WORKBENCH_PRESETS } from '@lumiplug/shared'
+import type { WorkbenchPresetId } from '@lumiplug/shared'
 import { copyText } from '../lib/clipboard'
 import { buildWorkbenchPrompt } from '../lib/mcp'
-import { checkMcpConnection } from '../lib/tauri'
+import { applyWorkbenchTemplate, checkMcpConnection } from '../lib/tauri'
 import { useWorkbenchDocument } from '../lib/useWorkbenchDocument'
 import WorkbenchContent from './WorkbenchContent'
 import LumiLoading from './LumiLoading'
@@ -42,9 +45,12 @@ export default function WorkbenchPage({
   const [copying, setCopying] = useState(false)
   const [copyFallback, setCopyFallback] = useState<{ epoch: number } | null>(null)
   const [checking, setChecking] = useState(false)
+  const [preset, setPreset] = useState<WorkbenchPresetId>('office')
+  const [applying, setApplying] = useState(false)
   const showToast = useToast()
-  const { view, loadError, ready, refresh } = useWorkbenchDocument(connection, active)
+  const { view, loadError, ready, refresh, accept } = useWorkbenchDocument(connection, active)
 
+  useRetainWindowState(!!view?.manifest || copying || checking || applying || !!copyFallback)
   const promptField = useRef<HTMLTextAreaElement>(null)
   const promptDetails = useRef<HTMLDetailsElement>(null)
   const heading = useRef<HTMLHeadingElement>(null)
@@ -111,6 +117,7 @@ export default function WorkbenchPage({
     }
     inFlight.current = false
     setChecking(false)
+    setApplying(false)
     setCopying(false)
     setCopyFallback(null)
     dispatch({ type: 'invalidate' })
@@ -209,6 +216,37 @@ export default function WorkbenchPage({
     showToast('引导已完成，可随时重新配置工作台。', 'success')
   }
 
+  async function handleApply() {
+    if (
+      inFlight.current ||
+      !ready ||
+      !view ||
+      view.manifest ||
+      step !== 'templates' ||
+      !isSameReadySession(setup.verifiedConnection, currentConnection.current)
+    )
+      return
+    const epoch = operationEpoch.current
+    inFlight.current = true
+    setApplying(true)
+    try {
+      const next = await applyWorkbenchTemplate(preset, view.version)
+      if (epoch !== operationEpoch.current) return
+      accept(next)
+      dispatch({ type: 'complete' })
+      showToast('模板已应用，可添加待办并配置常用工作流。', 'success')
+    } catch {
+      if (epoch !== operationEpoch.current) return
+      showToast('模板未能应用，主页可能已更新。请刷新后重试。', 'error')
+      void refresh()
+    } finally {
+      if (epoch === operationEpoch.current) {
+        inFlight.current = false
+        setApplying(false)
+      }
+    }
+  }
+
   const promptArea = (
     <Textarea
       id="workbench-system-prompt"
@@ -237,7 +275,8 @@ export default function WorkbenchPage({
 
   if (
     !view &&
-    (coreStarting || (!loadError && coreStatus.state === 'ready' && connection?.coreState === 'ready'))
+    (coreStarting ||
+      (!loadError && coreStatus.state === 'ready' && connection?.coreState === 'ready'))
   ) {
     return (
       <section
@@ -326,7 +365,7 @@ export default function WorkbenchPage({
       <section
         className="workbench-prompt"
         aria-labelledby="workbench-prompt-title"
-        aria-busy={checking || copying}
+        aria-busy={checking || copying || applying}
       >
         <h2 id="workbench-prompt-title" ref={heading} tabIndex={-1}>
           {step === 'connection'
@@ -363,33 +402,60 @@ export default function WorkbenchPage({
           </>
         ) : step === 'templates' ? (
           <>
-            <p className="workbench-description">让 AI 使用官方工程，按你的工作方式开发主页。</p>
+            <p className="workbench-description">
+              选择适合你的工作方式，直接应用模板。接入已授权工具后即可运行。
+            </p>
             <div
-              className="workbench-prompt-types"
+              className="workbench-prompt-types workbench-default-presets"
               role="group"
-              aria-label="工作台快捷模板"
-              aria-describedby="workbench-template-hint"
+              aria-label="默认效率工作台模板"
             >
-              {workbenchTemplates.map((type) => (
+              {WORKBENCH_PRESETS.map((item) => (
                 <ChoiceCard
-                  key={type.id}
-                  label={type.label}
-                  description={type.description}
-                  selected={selected === type.id}
-                  disabled={copying}
-                  onClick={() => void handleCopy(type.id)}
+                  key={item.id}
+                  label={item.label}
+                  description={item.description}
+                  selected={preset === item.id}
+                  disabled={copying || applying}
+                  onClick={() => setPreset(item.id)}
                 />
               ))}
             </div>
-            <p id="workbench-template-hint" className="workbench-template-hint">
-              点击快捷模板即可复制提示词，发送给你的 AI 开始设计。
+            <p className="workbench-template-hint">
+              模板使用真实工具和数据，未配置时会提供设置引导。应用模板不会执行工具。
             </p>
-            {selected && (
-              <details className="workbench-generated-prompt" ref={promptDetails} key={selected}>
-                <summary>查看构建提示词</summary>
-                {promptArea}
-              </details>
-            )}
+            <details className="workbench-generated-prompt">
+              <summary>让 AI 定制工作台</summary>
+              <p className="workbench-description">
+                复制提示词，让已连接的 AI 按你的需求开发或调整主页。
+              </p>
+              <div
+                className="workbench-prompt-types"
+                role="group"
+                aria-label="工作台快捷模板"
+                aria-describedby="workbench-template-hint"
+              >
+                {workbenchTemplates.map((type) => (
+                  <ChoiceCard
+                    key={type.id}
+                    label={type.label}
+                    description={type.description}
+                    selected={selected === type.id}
+                    disabled={copying || applying}
+                    onClick={() => void handleCopy(type.id)}
+                  />
+                ))}
+              </div>
+              <p id="workbench-template-hint" className="workbench-template-hint">
+                点击快捷模板即可复制提示词，发送给你的 AI 开始设计。
+              </p>
+              {selected && (
+                <details className="workbench-generated-prompt" ref={promptDetails} key={selected}>
+                  <summary>查看构建提示词</summary>
+                  {promptArea}
+                </details>
+              )}
+            </details>
           </>
         ) : (
           <p className="workbench-description">随时选择一个模板，制作你的专属工作台。</p>
@@ -406,15 +472,22 @@ export default function WorkbenchPage({
               {checking ? '检查连接中…' : '开始使用'}
             </Button>
           ) : step === 'templates' ? (
-            <Button
-              variant="primary"
-              type="button"
-              className="primary-button"
-              disabled={copying}
-              onClick={finishSetup}
-            >
-              完成
-            </Button>
+            <>
+              <Button type="button" disabled={copying || applying} onClick={finishSetup}>
+                稍后配置
+              </Button>
+              <Button
+                variant="primary"
+                type="button"
+                className="primary-button"
+                disabled={copying || !ready || !view || loadError}
+                loading={applying}
+                loadingLabel="应用中…"
+                onClick={() => void handleApply()}
+              >
+                应用模板
+              </Button>
+            </>
           ) : (
             <Button
               variant="primary"

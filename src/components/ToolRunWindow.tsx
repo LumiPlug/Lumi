@@ -1,23 +1,37 @@
 // SPDX-License-Identifier: MPL-2.0
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import type { CapabilityDefinition, JsonObject, ToolRunOverrides, ToolTask } from '@lumiplug/shared'
+import type {
+  CapabilityDefinition,
+  JsonObject,
+  ToolRunOverrides,
+  ToolTask,
+  ToolTaskInputSnapshot,
+} from '@lumiplug/shared'
 import { Button, Modal, SurfaceEffects, WindowPanel } from './ui'
-import ToolRunPanel, { RunProcess, ToolRunHeader, ToolRunStages } from './ToolRunPanel'
+import ToolRunPanel, {
+  RunProcess,
+  ToolRunHeader,
+  ToolRunStages,
+  HistoricalTaskConfiguration,
+} from './ToolRunPanel'
 import { useToast } from './ToastProvider'
 import { getCoreStatus } from '../lib/tauri'
 import { toolsRequest, toolErrorMessage } from '../lib/tools'
 import { activeTask, closeToolRunWindow, type RunWindowRoute } from '../lib/tool-run-window'
 import { useTheme } from '../lib/useTheme'
 import { completeTaskSnapshot, refreshRunState } from '../lib/run-task-refresh'
+import { useNativeWindowActivity } from '../lib/window-activity'
 import './tools.css'
 
 export default function ToolRunWindow({ route }: { route: RunWindowRoute }) {
   useTheme()
+  useNativeWindowActivity()
   const toast = useToast()
   const [definition, setDefinition] = useState<CapabilityDefinition | null>(null)
   const [latest, setLatest] = useState<CapabilityDefinition | null>(null)
   const [tasks, setTasks] = useState<ToolTask[]>([])
+  const [inputSnapshot, setInputSnapshot] = useState<ToolTaskInputSnapshot | null>(null)
   const [viewId, setViewId] = useState<string | null>(route.taskId)
   const [taskView, setTaskView] = useState(!!route.taskId)
   const [ready, setReady] = useState(false)
@@ -51,7 +65,8 @@ export default function ToolRunWindow({ route }: { route: RunWindowRoute }) {
 
   useEffect(() => {
     return refreshRunState({
-      interval: 500,
+      interval: ({ snapshot }) => (!snapshot || snapshot.tasks.some(activeTask) ? 500 : 5000),
+      shouldPoll: ({ snapshot }) => !snapshot || !snapshot.id || snapshot.tasks.some(activeTask),
       wakeTarget: window,
       read: async () => {
         const status = await getCoreStatus()
@@ -62,12 +77,16 @@ export default function ToolRunWindow({ route }: { route: RunWindowRoute }) {
         ])
         const id = viewRef.current ?? (!initialised.current ? metadata.find(activeTask)?.id : null)
         const full = id ? await toolsRequest<ToolTask>('task', { id }) : null
+        const inputSnapshot = id
+          ? await toolsRequest<ToolTaskInputSnapshot | null>('snapshot', { id })
+          : null
         return {
           status,
           snapshot: {
             current,
             tasks: completeTaskSnapshot(metadata, full, route.capabilityId),
             id,
+            inputSnapshot,
           },
         }
       },
@@ -87,6 +106,7 @@ export default function ToolRunWindow({ route }: { route: RunWindowRoute }) {
           initialised.current = true
         }
         setTasks(snapshot.tasks)
+        setInputSnapshot(snapshot.inputSnapshot)
         setStale(false)
         setLoadFailed(false)
       },
@@ -257,7 +277,9 @@ export default function ToolRunWindow({ route }: { route: RunWindowRoute }) {
                 <Button
                   variant="danger"
                   disabled={busy || !ready || task.status === 'stopping'}
-                  onClick={() => void taskAction('stop', task.id)}
+                  onClick={(event) => {
+                    if (event.detail < 2) void taskAction('stop', task.id)
+                  }}
                 >
                   {task.status === 'stopping' ? '正在停止…' : '停止运行'}
                 </Button>
@@ -296,9 +318,7 @@ export default function ToolRunWindow({ route }: { route: RunWindowRoute }) {
           {task ? (
             <ToolRunStages
               task={task}
-              configuration={
-                <p className="tool-help">这条运行记录没有保留当时的输入，无法查看。</p>
-              }
+              configuration={<HistoricalTaskConfiguration snapshot={inputSnapshot} />}
             >
               <RunProcess key={task.id} task={task} />
             </ToolRunStages>

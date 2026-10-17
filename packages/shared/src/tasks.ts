@@ -64,3 +64,10 @@ export interface ToolRunOverrides {
   settings: CapabilityDefinition['runner']['settings']
   fixedParameters: JsonObject
 }
+
+/** Desktop-only historical configuration; never included in public MCP task responses. */
+export interface ToolTaskInputSnapshot {
+  definition: CapabilityDefinition
+  operation: string
+  arguments: JsonObject
+}

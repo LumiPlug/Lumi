@@ -1,0 +1,105 @@
+# OpenCode
+
+OpenCode (sst/opencode).
+
+- **Source:** `src/providers/opencode.ts`
+- **Loading:** lazy (`src/providers/index.ts:59-75`)
+- **Test:** `tests/providers/opencode.test.ts` (676 lines, the largest provider test)
+
+## Where it reads from
+
+Default `~/.local/share/opencode/` or `$XDG_DATA_HOME/opencode/`. The discovery walk picks up `opencode*.db` files (`opencode.ts:71-88`).
+
+For renamed/forked OpenCode-compatible builds (e.g. MiMoCode writing
+`~/.local/share/mimocode/mimicode.db` with the same `session`/`message`/`part`
+schema), point CodeBurn at the fork's data directory with two env vars:
+
+- `OPENCODE_DATA_DIR` — the **exact** data directory (no `opencode` suffix is
+  appended). Example: `OPENCODE_DATA_DIR=$HOME/.local/share/mimocode`. Relocates
+  both file-based and SQLite storage.
+- `OPENCODE_DB_PREFIX` — the SQLite filename prefix (default `opencode`,
+  matching `opencode*.db`). Example: `OPENCODE_DB_PREFIX=mimicode` discovers
+  `mimicode*.db`. Affects SQLite discovery only; file-based storage under
+  `<OPENCODE_DATA_DIR>/storage/` is found regardless.
+
+Precedence when no `dataDir` argument is passed (the production path):
+`OPENCODE_DATA_DIR` → `$XDG_DATA_HOME/opencode` → `~/.local/share/opencode`.
+
+## Storage format
+
+SQLite (older builds) or file-based JSON (OpenCode 1.1+, under `storage/`).
+
+OpenCode 2.x (mainline since 2.0.3, issue #1293) writes a second SQLite
+generation into the same `opencode.db`: `session_v2` + `session_message`
+(messages tagged by a `type` column, ordered by `seq`, payload JSON in `data`;
+assistant rows carry `model: {id, providerID}`, `cost` and `tokens` inline).
+The desktop app (Electron) runs the same CLI as a background service, so CLI
+and GUI sessions land in the same file. On first start 2.x copies 1.x sessions
+into the new tables under their original session and message ids, but the
+legacy `session`/`message`/`part` tables stay and freeze. The copy is lossy:
+it drops compaction summary turns and task-tool turns, skips any message it
+fails to decode, and can stop partway, leaving `session_v2` rows with no
+`session_message` rows.
+
+So on a database with both generations the parser reads a session's legacy
+turns first and then adds the `session_message` turns legacy does not have
+(dedup by message id). Pre-upgrade history counts exactly as it did on 1.x and
+post-upgrade turns are added. Legacy sessions missing from `session_v2` are
+discovered from the legacy table. A 2.x-only database reads `session_message`
+alone; a 1.x database runs the legacy path unchanged. v2 model ids are used
+bare (as 1.x stored `modelID`) so a turn prices the same from either table.
+
+## Caching
+
+None.
+
+## Deduplication
+
+Per `<sessionId>:<messageId>`.
+
+## Billing routes
+
+OpenCode stores the transport in each assistant message's `providerID`. CodeBurn
+preserves the exact usage-bearing values across legacy SQLite, v2
+`session_message`, file storage, and session-level rollup fallbacks:
+
+- `openrouter` → OpenRouter, metered
+- `amazon-bedrock` → Bedrock, metered
+- `google-vertex`, `google-vertex-anthropic` → Vertex, metered
+
+Case or whitespace variants of those values are not inferred. The Bedrock
+model-id detector remains a fallback for recognised Anthropic and OpenAI
+foundation-model ids, but `providerID=amazon-bedrock` also covers model families
+such as Nova whose ids do not match that detector. Direct provider values remain
+unrouted/unknown. OpenCode and KiloCode session-cache fingerprints move whenever
+this shared provider-field mapping changes, so warm and cold reads agree.
+
+## Quirks
+
+- **Schema validation is loud.** When a required table is missing, the parser logs an actionable warning telling the user which table is gone and what version of OpenCode it expects. This is the right behavior; do not silently swallow these.
+- Source paths are encoded as `<dbPath>:<sessionId>`.
+- Discovery only emits root sessions (`parent_id IS NULL`) to avoid double
+  counting. Parsing a root session walks the whole `session.parent_id` subtree,
+  archived children included — OpenCode's archive is organizational, the rows
+  stay — so child and grandchild agent sessions contribute their message,
+  token, and tool usage back to the root session.
+- Each message's `parts` are indexed; preserving the order matters for reasoning-token correctness.
+- Tokens are reported across `input`, `output`, `reasoning`, `cache.read`, and `cache.write`. Anthropic semantics.
+- A turn or session rollup whose model CodeBurn cannot price keeps OpenCode's
+  recorded `cost` (as `fallbackCostUSD` on the cached call), unless the user
+  declared the id free (`model-flat-rate`, a zero-rate price override, a local
+  model). Tokens still win whenever the id prices, including after a catalog
+  update or price override.
+- Assistant messages with missing router usage are kept as zero-cost calls
+  when their parts contain non-empty text or tool activity. Empty zero-usage
+  assistant placeholders are still skipped.
+- External MCP tools are stored as `<server>_<tool>` names (for example
+  `clickup_clickup_get_task`). The provider normalizes those to CodeBurn's
+  canonical `mcp__<server>__<tool>` names before aggregation so shared MCP
+  panels and `optimize` findings count OpenCode usage.
+
+## When fixing a bug here
+
+1. The 558-line test suite catches a lot. Run `npx vitest run tests/providers/opencode.test.ts` before and after any change.
+2. If the bug is "missing table" warning, do not catch and silence it. Either upgrade the version expectation in the parser or document the breaking schema change.
+3. If the bug is "reasoning tokens off by one", check the parts index ordering.

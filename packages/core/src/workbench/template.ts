@@ -3,7 +3,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { HOME_CONTRACT } from '@lumiplug/shared'
+import { HOME_CONTRACT, WORKBENCH_PRESETS, isWorkbenchPresetId } from '@lumiplug/shared'
 import type { HomeBundle, HomeFile, HomeManifest } from '@lumiplug/shared'
 import { HOME_TEMPLATE_FILES } from './template-files'
 import { compatibleHome, decodeHomeFile, WorkbenchError } from './validation'
@@ -22,14 +22,46 @@ export function homeTemplate() {
     })),
   }
 }
+export function homePreset(id: unknown): HomeBundle {
+  if (!isWorkbenchPresetId(id)) throw new WorkbenchError('invalid_home_bundle')
+  const preset = WORKBENCH_PRESETS.find((item) => item.id === id)!
+  const sources = new Map(
+    homeTemplate()
+      .files.filter((file) => !file.path.startsWith('productivity/'))
+      .map((file) => [file.path, file.content]),
+  )
+  const manifest = JSON.parse(sources.get('lumi.home.json')!) as HomeManifest
+  manifest.name = `${preset.label}工作台`
+  sources.set('lumi.home.json', `${JSON.stringify(manifest, null, 2)}\n`)
+  for (const name of ['index.html', 'app.js', 'style.css'])
+    sources.set(name, HOME_TEMPLATE_FILES[`productivity/${name}`]!)
+  sources.set(
+    'preset.js',
+    `// SPDX-License-Identifier: MPL-2.0\nwindow.lumiPreset = ${JSON.stringify(preset)}\n`,
+  )
+  const sourceFiles = Array.from(sources, ([name, content]) => ({
+    path: name,
+    encoding: 'utf8' as const,
+    content,
+  }))
+  return {
+    manifest,
+    sourceFiles,
+    files: sourceFiles.filter((file) =>
+      ['index.html', 'app.js', 'style.css', 'preset.js'].includes(file.path),
+    ),
+  }
+}
 export function homeSourceForExport(bundle: HomeBundle | null): HomeFile[] {
   if (!bundle) return homeTemplate().files
   if (!compatibleHome(bundle.manifest)) throw new WorkbenchError('home_version_incompatible')
   const files = new Map(bundle.sourceFiles.map((file) => [file.path, file]))
   for (const item of homeTemplate().files) {
-    if (['lumi-sdk.js', 'theme.css'].includes(item.path) ||
+    if (
+      ['lumi-sdk.js', 'theme.css'].includes(item.path) ||
       item.path === 'LUMI_DEVELOPMENT.md' ||
-      item.path.startsWith('knowledge/')) {
+      item.path.startsWith('knowledge/')
+    ) {
       if (!files.has(item.path) || ['lumi-sdk.js', 'theme.css'].includes(item.path))
         files.set(item.path, item)
     }

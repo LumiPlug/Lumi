@@ -33,6 +33,7 @@ type ChoiceProps<T extends string> = {
   onValueChange: (value: T) => void
   label: string
   className?: string
+  appearance?: 'default' | 'enclosed' | 'chips'
   buttonRef?: (element: HTMLButtonElement | null, index: number) => void
 }
 function Choices<T extends string>({
@@ -41,6 +42,7 @@ function Choices<T extends string>({
   onValueChange,
   label,
   className = '',
+  appearance = 'default',
   buttonRef,
   tabs,
 }: ChoiceProps<T> & { tabs: boolean }) {
@@ -48,7 +50,11 @@ function Choices<T extends string>({
   const selectedIndex = items.findIndex((item) => item.value === value && !item.disabled)
   const focusIndex = selectedIndex < 0 ? items.findIndex((item) => !item.disabled) : selectedIndex
   return (
-    <div className={`ui-choices ${className}`} role={tabs ? 'tablist' : 'group'} aria-label={label}>
+    <div
+      className={`ui-choices${appearance === 'default' ? '' : ` ui-choices--${appearance}`} ${className}`}
+      role={tabs ? 'tablist' : 'group'}
+      aria-label={label}
+    >
       {items.map((item, index) => (
         <button
           key={item.value}
@@ -85,6 +91,7 @@ function Choices<T extends string>({
             onValueChange(items[next]!.value)
           }}
         >
+          {appearance === 'chips' && <span className="ui-choice-dot" aria-hidden="true" />}
           {item.label}
           {item.count !== undefined && (
             <span className="ui-choice-count" aria-hidden={item.accessibleLabel ? true : undefined}>

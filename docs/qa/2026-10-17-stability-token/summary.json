@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "at": "2026-10-17T05:20:10.820145+00:00",
+  "branch": "feat/ai-token-usage",
+  "head": "50d4dbf2457b856d8eed577b0b0e2b9f9288a281",
+  "initialStatusEntries": 69,
+  "remoteRead": {
+    "originMain": "a4e8171da91fb5696f988a15c2ecf701458dfa8b",
+    "featureBranchAdvertised": false,
+    "fetchPerformed": false,
+    "pushPerformed": false
+  },
+  "verification": {
+    "check": {
+      "passed": true,
+      "files": 46,
+      "tests": 376,
+      "exitCode": 0
+    },
+    "upstream": {
+      "passed": true,
+      "files": 69,
+      "tests": 1256
+    },
+    "rust": {
+      "passed": true,
+      "tests": 8
+    },
+    "nativeBundle": {
+      "platform": "macOS ARM64",
+      "debug": true,
+      "built": true,
+      "signatureVerified": true,
+      "notarized": false,
+      "releaseBuildRun": false
+    },
+    "packagedSidecars": {
+      "passed": true,
+      "mcpTools": 30
+    },
+    "realCodex": {
+      "type": "real_codex_numeric_projection",
+      "sampleEvents": 4,
+      "sourceRead": "normal_read_no_escalation",
+      "counterReference": "independent last_token_usage; exclusive input = input-cached-cacheWrite; output already includes reasoning",
+      "checks": {
+        "inputOutputCache": true,
+        "repeatScan": true,
+        "incrementalAppend": true,
+        "duplicateAppend": true,
+        "restartDedupe": true,
+        "summaryDetailCsv": true,
+        "dailyHourly": true,
+        "pause": true,
+        "pauseSurvivesRestart": true,
+        "resume": true,
+        "closeStopsCollection": true,
+        "bodyNotCopied": true
+      },
+      "actualCountersCommitted": false
+    },
+    "newAcceptanceTests": 3
+  },
+  "blockers": [
+    {
+      "action": "CUA getApp/getAXState + native save, modal interaction, five-minute hidden-window lifecycle",
+      "target": "Lumi Acceptance QA.app; com.lumiplug.acceptanceqa.20261017",
+      "reason": "CUA Transport closed; js_reset also unavailable",
+      "outcome": "native_interaction_not_confirmed",
+      "denied": false,
+      "systemLocked": "not_inferred"
+    }
+  ],
+  "notRun": [
+    "native_knowledge_save_restart_reimport",
+    "native_modal_AX_keyboard",
+    "native_five_minute_blank_reclaim_and_custom_home_retention",
+    "native_doubleclick_and_history",
+    "Windows_native",
+    "Linux_native",
+    "macOS_Intel_native"
+  ],
+  "productChanges": [
+    "redact Codex pending prompt/tool checkpoint fields while preserving estimated token count"
+  ],
+  "commitCreated": false,
+  "reasonNoCommit": "Fix changes are isolated against saved dirty baseline but depend on preexisting uncommitted CodeBurn integration; no mixed commit created.",
+  "privateDataPolicy": {
+    "realCountersInRepo": false,
+    "chatBodiesCopied": false,
+    "credentialsRead": false,
+    "formalCacheInspectedOrCleared": false,
+    "originalLogsModified": false
+  },
+  "cleanup": {
+    "isolatedPidsStopped": [
+      50920,
+      50924
+    ],
+    "isolatedPort49671Released": true,
+    "formalAppPid43996StillRunning": true,
+    "formalCorePid44006StillListening38491": true,
+    "finalNativeBuildLaunched": false
+  },
+  "finalStatusEntries": 70,
+  "baselineChanges": {
+    "changed": [
+      "packages/core/src/usage/codeburn.ts",
+      "reports/codeburn-upstream-tests.json",
+      "scripts/build-codeburn-reader.mjs",
+      "docs/TECHNICAL_ARCHITECTURE.md"
+    ],
+    "missing": []
+  },
+  "patchAppliesToSavedDirtyBaseline": true
+}

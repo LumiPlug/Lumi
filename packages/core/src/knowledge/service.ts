@@ -2,6 +2,7 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import Ajv from 'ajv/dist/2020'
+import { KnowledgeComputer, knowledgeTokens, type KnowledgeComputation } from './compute'
 import {
   KNOWLEDGE_LIMITS as LIMIT,
   KNOWLEDGE_TOOLS,
@@ -55,19 +56,6 @@ const fail = (code: string): never => {
   throw new KnowledgeError(code)
 }
 const active = (build: Build) => !['published', 'cancelled'].includes(build.status)
-const tokens = (value: string) => {
-  const words = value.toLowerCase().match(/[a-z0-9_]+|[\p{Script=Han}]+/gu) ?? []
-  return words
-    .flatMap((word) =>
-      /\p{Script=Han}/u.test(word)
-        ? [
-            ...word,
-            ...Array.from({ length: Math.max(0, word.length - 1) }, (_, i) => word.slice(i, i + 2)),
-          ]
-        : [word, ...word.split('_')],
-    )
-    .join(' ')
-}
 
 export class KnowledgeService {
   private readonly ajv = new Ajv({ strict: false, allErrors: false })
@@ -75,9 +63,15 @@ export class KnowledgeService {
   private readonly validators = new Map(
     KNOWLEDGE_TOOLS.map((tool) => [tool.name, this.ajv.compile(tool.inputSchema)]),
   )
+  private shuttingDown = false
+  private readonly computer = new KnowledgeComputer()
   private readonly jobs = new Set<Promise<void>>()
   constructor(private readonly db: DatabaseSync) {
-    for (const row of db.prepare('SELECT data FROM knowledge_builds').all() as { data: string }[]) {
+    for (const row of db
+      .prepare(
+        "SELECT data FROM knowledge_builds WHERE json_extract(data, '$.status') = 'validating'",
+      )
+      .all() as { data: string }[]) {
       const build = JSON.parse(row.data) as Build
       if (build.status === 'validating') {
         build.status = 'writing'
@@ -87,8 +81,13 @@ export class KnowledgeService {
       }
     }
   }
+  async shutdown() {
+    this.shuttingDown = true
+    await this.close()
+  }
   async close() {
     await Promise.allSettled(this.jobs)
+    await this.computer.drain()
   }
   private background(work: () => Promise<void>) {
     const job = new Promise<void>((resolve) => setImmediate(resolve)).then(work)
@@ -278,84 +277,20 @@ export class KnowledgeService {
         : [],
     }
   }
-  private validateStructure(build: Build): string[] {
-    const data = build.content,
-      issues: string[] = []
-    if (!this.validateData(data)) return ['invalid_content_schema']
-    if (!data.documents.length || !data.nodes.length) issues.push('empty_knowledge')
-    const documents = new Map(data.documents.map((document) => [document.id, document]))
-    const nodes = new Map(data.nodes.map((node) => [node.id, node]))
-    const citations = new Map(data.citations.map((citation) => [citation.id, citation]))
-    for (const [kind, items] of Object.entries(data))
-      if (new Set(items.map((item: { id: string }) => item.id)).size !== items.length)
-        issues.push(`duplicate_${kind}`)
-    for (const document of data.documents) {
-      const seen = new Set([document.id])
-      let parent = document.parentId
-      while (parent) {
-        if (seen.has(parent)) {
-          issues.push(`outline_cycle:${document.id}`)
-          break
-        }
-        seen.add(parent)
-        const next = documents.get(parent)
-        if (!next) {
-          issues.push(`missing_parent:${document.id}`)
-          break
-        }
-        parent = next.parentId
-      }
-    }
-    for (const node of data.nodes)
-      if (node.documentId && !documents.has(node.documentId))
-        issues.push(`missing_document:${node.id}`)
-    for (const edge of data.edges)
-      if (!nodes.has(edge.from) || !nodes.has(edge.to)) issues.push(`missing_endpoint:${edge.id}`)
-    for (const entity of [...data.documents, ...data.nodes, ...data.edges])
-      for (const id of entity.citationIds)
-        if (!citations.has(id)) issues.push(`missing_citation:${entity.id}`)
-    for (const entity of [...data.documents, ...data.nodes])
-      if (!entity.citationIds.length) issues.push(`ungrounded_content:${entity.id}`)
-    for (const citation of data.citations) {
-      if (
-        citation.startLine > citation.endLine ||
-        !citation.path ||
-        citation.path.includes('\\') ||
-        citation.path.includes('\0') ||
-        citation.path
-          .split('/')
-          .some((part) => !part || part === '.' || part === '..' || part.includes(':'))
-      )
-        issues.push(`invalid_evidence:${citation.id}`)
-    }
-    return issues.slice(0, 100)
-  }
-  private insertRevision(library: Library, content: KnowledgeData, commitSha: string | null) {
+  private insertRevision(
+    library: Library,
+    computed: KnowledgeComputation,
+    commitSha: string | null,
+  ) {
     const revision = library.revision + 1
     this.db
       .prepare('INSERT INTO knowledge_revisions VALUES (?,?,?,?,?)')
-      .run(library.id, revision, commitSha, JSON.stringify(content), now())
+      .run(library.id, revision, commitSha, computed.serialized, now())
     const insert = this.db.prepare(
       'INSERT INTO knowledge_fts(kb_id,revision,kind,target_id,title,tokens) VALUES (?,?,?,?,?,?)',
     )
-    for (const doc of content.documents)
-      insert.run(
-        library.id,
-        revision,
-        'document',
-        doc.id,
-        doc.title,
-        tokens(`${doc.title}\n${doc.markdown}`),
-      )
-    for (const node of content.nodes)
-      insert.run(
-        library.id,
-        revision,
-        'node',
-        node.id,
-        node.label,
-        tokens(`${node.label}\n${node.summary}`),
-      )
+    for (const [kind, id, title, tokens] of computed.rows)
+      insert.run(library.id, revision, kind, id, title, tokens)
     library.revision = revision
     library.commitSha = commitSha
     library.updatedAt = now()
@@ -408,6 +343,7 @@ export class KnowledgeService {
     return { kbId: library.id, ...this.summary(library) }
   }
   async invoke(name: string, args: Record<string, unknown>, host = false): Promise<unknown> {
+    if (this.shuttingDown) fail('knowledge_operation_failed')
     const validate = this.validators.get(name)
     if (!validate || !validate(args)) fail('knowledge_invalid_arguments')
     const str = (key: string) => args[key] as string
@@ -616,7 +552,14 @@ export class KnowledgeService {
         this.background(async () => {
           const current = this.build(build.id)
           if (current.status !== 'validating' || current.validationId !== build.validationId) return
-          const issues = this.validateStructure(current)
+          let issues: string[]
+          try {
+            issues = this.validateData(current.content)
+              ? (await this.computer.run(current.content)).issues
+              : ['invalid_content_schema']
+          } catch {
+            issues = ['knowledge_operation_failed']
+          }
           const latest = this.build(build.id)
           if (latest.status !== 'validating' || latest.validationId !== current.validationId) return
           latest.issues = issues
@@ -647,9 +590,31 @@ export class KnowledgeService {
         )
           fail('knowledge_validation_required')
         if (args.latestCommitSha !== build.commitSha) fail('knowledge_commit_conflict')
-        if (this.validateStructure(build).length) fail('knowledge_validation_required')
+        if (!this.validateData(build.content)) fail('knowledge_validation_required')
+        const computed = await this.computer.run(build.content, true)
+        if (computed.issues.length) fail('knowledge_validation_required')
+        // Computation yields to concurrent cancel/write/publish/archive requests; re-authorize the snapshot.
+        const latestBuild = this.build(build.id, args.resumeToken as string | undefined)
+        const latestLibrary = this.library(build.kbId)
+        if (latestBuild.status === 'published') {
+          if (
+            latestBuild.publishKey !== str('requestKey') ||
+            latestBuild.validationId !== str('validationId')
+          )
+            fail('knowledge_request_conflict')
+          return { revision: latestBuild.resultRevision, duplicate: true }
+        }
+        if (latestLibrary.archived) fail('knowledge_archived')
+        if (latestLibrary.revision !== library.revision) fail('knowledge_revision_conflict')
+        if (
+          latestBuild.status !== 'validated' ||
+          latestBuild.seq !== build.seq ||
+          latestBuild.validationId !== build.validationId ||
+          latestBuild.validationHash !== build.validationHash
+        )
+          fail('knowledge_validation_required')
         const revision = this.transaction(() => {
-          const revision = this.insertRevision(library, build.content, build.commitSha)
+          const revision = this.insertRevision(latestLibrary, computed, build.commitSha)
           build.status = 'published'
           build.resultRevision = revision
           build.publishKey = str('requestKey')
@@ -664,7 +629,9 @@ export class KnowledgeService {
     const revision = (args.revision as number | undefined) ?? library.revision
     const content = this.data(library.id, revision)
     if (action === 'search') {
-      const queryTokens = [...new Set(tokens(str('query')).split(' ').filter(Boolean))].slice(0, 30)
+      const queryTokens = [
+        ...new Set(knowledgeTokens(str('query')).split(' ').filter(Boolean)),
+      ].slice(0, 30)
       const query = queryTokens.map((word) => `"${word}"`).join(' AND ')
       const rows = query
         ? this.db
@@ -772,6 +739,7 @@ export class KnowledgeService {
     return fail('knowledge_invalid_arguments')
   }
   async hostRequest(action: string, payload: Record<string, unknown>) {
+    if (this.shuttingDown) fail('knowledge_operation_failed')
     const id = typeof payload.kbId === 'string' ? payload.kbId : ''
     if (action === 'list') return { libraries: this.list(true) }
     if (action === 'view')
@@ -812,7 +780,11 @@ export class KnowledgeService {
       const commitSha =
         this.revisions(id).find((item) => item.revision === Number(payload.revision))?.commitSha ??
         null
-      return { revision: this.transaction(() => this.insertRevision(library, content, commitSha)) }
+      const computed = await this.computer.run(content, true)
+      const latest = this.library(id)
+      if (latest.archived) fail('knowledge_archived')
+      if (latest.revision !== library.revision) fail('knowledge_revision_conflict')
+      return { revision: this.transaction(() => this.insertRevision(latest, computed, commitSha)) }
     }
     if (action === 'export')
       return {
@@ -828,7 +800,7 @@ export class KnowledgeService {
       }
     return fail('knowledge_invalid_arguments')
   }
-  private importBundle(bundle: Record<string, unknown>) {
+  private async importBundle(bundle: Record<string, unknown>) {
     if (
       bundle.format !== 'lumi-knowledge' ||
       bundle.version !== 3 ||
@@ -866,12 +838,13 @@ export class KnowledgeService {
     )
       fail('knowledge_invalid_import')
     const content = structuredClone(bundle.content) as KnowledgeData
-    if (this.validateStructure({ content } as Build).length) fail('knowledge_invalid_import')
+    const computed = await this.computer.run(content, true)
+    if (computed.issues.length) fail('knowledge_invalid_import')
     return this.transaction(() => {
       const group = this.createGroup(args)
       const library = this.library(group.kbId)
       if (library.archived || this.latestBuild(library.id)) fail('knowledge_build_busy')
-      this.insertRevision(library, content, bundle.commitSha as string | null)
+      this.insertRevision(library, computed, bundle.commitSha as string | null)
       return this.view(library.id)
     })
   }

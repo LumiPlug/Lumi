@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { useRetainWindowState } from '../lib/window-retention'
 import {
   Button,
   Input,
@@ -109,6 +110,16 @@ export default function ToolsPage({
   const busyRef = useRef(false)
   const initialDraft = useRef('')
   const detailsRef = useRef<HTMLElement>(null)
+  useRetainWindowState(
+    !!selected ||
+      editing ||
+      creating ||
+      busy ||
+      loading ||
+      !!search ||
+      type !== 'all' ||
+      status !== 'all',
+  )
   const dirty =
     editing &&
     (rawDirty ||
@@ -162,14 +173,19 @@ export default function ToolsPage({
   )
   useEffect(() => {
     if (!active || !coreReady) return
-    void refresh()
-    const timer = setInterval(() => void refresh(), 2000)
-    return () => clearInterval(timer)
+    return refreshRunState({
+      wakeTarget: window,
+      interval: 2000,
+      read: () => refresh(),
+      update: () => {},
+      fail: () => {},
+    })
   }, [active, coreReady, refresh])
   useEffect(() => {
     if (!active || !coreReady || !selected) return
     return refreshRunState({
       interval: 1000,
+      shouldPoll: (tasks) => tasks.some((task) => ['running', 'stopping'].includes(task.status)),
       wakeTarget: window,
       read: async () => {
         const next = await toolsRequest<ToolTask[]>('tasks', { id: selected.id })

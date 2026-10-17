@@ -20,7 +20,8 @@ import { CapabilityRegistry } from './capability/registry'
 import { CapabilityRepository } from './capability/repository'
 import type { CoreRuntimeConfig } from './config'
 import { checkMcpConnection, McpGateway } from './mcp/gateway'
-import { WorkbenchRepository } from './workbench/repository'
+import { WorkbenchRepository, WorkbenchError } from './workbench/repository'
+import { homePreset } from './workbench/template'
 import { RegistryError } from './capability/registry'
 import { HOME_ERRORS } from './workbench/errors'
 import { HOME_LIMITS } from '@lumiplug/shared'
@@ -35,8 +36,11 @@ import { McpConnections } from './tools/mcp'
 import { ToolError } from './tools/config'
 import { TOOL_ERRORS } from '@lumiplug/shared'
 import { KnowledgeService, KnowledgeError } from './knowledge/service'
+import { UsageService } from './usage/service'
+import type { UsageRoot } from './usage/discovery'
 
 interface ServiceOptions extends CoreRuntimeConfig {
+  usageRoots?: UsageRoot[]
   emitReady?: (handshake: SidecarReadyHandshake) => void
 }
 
@@ -100,6 +104,7 @@ function hostIsLoopback(hostHeader: string | undefined, port: number): boolean {
 }
 
 export class CoreService {
+  public readonly usage: UsageService
   public readonly knowledge: KnowledgeService
   public readonly database: CoreDatabase
   public readonly repository: CapabilityRepository
@@ -131,6 +136,10 @@ export class CoreService {
       throw new Error('invalid_host_token')
     fs.mkdirSync(options.userDataDir, { recursive: true })
     this.database = new CoreDatabase(path.join(options.userDataDir, 'lumiplug.sqlite'))
+    this.usage = new UsageService(
+      this.database.raw,
+      options.usageRoots ?? (process.env.VITEST ? [] : undefined),
+    )
     this.knowledge = new KnowledgeService(this.database.raw)
     this.repository = new CapabilityRepository(this.database.raw)
     this.workbench = new WorkbenchRepository(this.database.raw)
@@ -203,12 +212,14 @@ export class CoreService {
       port: address.port,
       pid: process.pid,
     }
+    this.usage.start()
     this.options.emitReady?.(handshake)
     return handshake
   }
 
   public async stop(): Promise<void> {
-    await this.knowledge.close()
+    await this.usage.close()
+    await this.knowledge.shutdown()
     await this.tasks.close()
     await this.mcp.close()
     await this.homeRuntime.close()
@@ -273,6 +284,28 @@ export class CoreService {
     request: IncomingMessage,
     responseObject: ServerResponse,
   ): Promise<void> {
+    // These desktop APIs expose private definitions and user approval operations.
+    // The MCP token still grants every enabled tool through the public MCP interface.
+    if (
+      route === '/app/usage' ||
+      route === '/app/tools' ||
+      route === '/app/capabilities' ||
+      route.startsWith('/app/capabilities/')
+    ) {
+      if (
+        !this.options.hostToken ||
+        !this.tokenMatches(request.headers['x-lumiplug-host-token'], this.options.hostToken)
+      ) {
+        writeJson(
+          responseObject,
+          403,
+          route === '/app/usage'
+            ? failure('usage_host_required', 'AI 用量需要桌面宿主授权。')
+            : failure('tools_host_required', '桌面工具管理需要宿主授权。'),
+        )
+        return
+      }
+    }
     if (route === '/app/mcp/token' && method === 'POST') {
       if (
         !this.options.hostToken ||
@@ -304,6 +337,41 @@ export class CoreService {
           responseObject,
           500,
           failure('mcp_token_settings_save_failed', 'token could not be saved'),
+        )
+      }
+      return
+    }
+    if (route === '/app/usage' && method === 'POST') {
+      try {
+        const body = await readBody(request)
+        if (
+          !isRecord(body) ||
+          !['query', 'sessions', 'export', 'scan', 'pause'].includes(String(body.action)) ||
+          (body.payload != null && !isRecord(body.payload))
+        )
+          throw new Error('usage_invalid_request')
+        const payload = isRecord(body.payload) ? body.payload : {}
+        this.usage.validateQuery(payload)
+        if (body.action === 'pause') {
+          if (typeof payload.paused !== 'boolean') throw new Error('usage_invalid_pause')
+          await this.usage.setPaused(payload.paused)
+        } else if (body.action === 'scan') await this.usage.setPaused(false)
+        writeJson(
+          responseObject,
+          200,
+          response(
+            body.action === 'export'
+              ? this.usage.exportSessions(payload)
+              : body.action === 'sessions'
+                ? this.usage.querySessions(payload)
+                : this.usage.query(payload),
+          ),
+        )
+      } catch {
+        writeJson(
+          responseObject,
+          400,
+          failure('usage_operation_failed', '用量操作未完成，请检查时间区间或重试。'),
         )
       }
       return
@@ -456,6 +524,26 @@ export class CoreService {
     }
     if (route === '/app/workbench' && method === 'GET') {
       writeJson(responseObject, 200, response(this.homeRuntime.view()))
+      return
+    }
+    if (route === '/app/workbench/apply-template' && method === 'POST') {
+      try {
+        const body = await readBody(request, 4096)
+        if (!isRecord(body) || typeof body.expectedVersion !== 'number')
+          throw new RegistryError('invalid_tool_arguments')
+        this.workbench.publish(body.expectedVersion, homePreset(body.template))
+        writeJson(responseObject, 200, response(this.homeRuntime.view()))
+      } catch (error) {
+        const code =
+          error instanceof RegistryError || error instanceof WorkbenchError
+            ? error.code
+            : 'invalid_home_bundle'
+        writeJson(
+          responseObject,
+          code === 'workbench_version_conflict' ? 409 : 400,
+          failure(code, HOME_ERRORS[code] ?? '模板应用失败，请刷新后重试。'),
+        )
+      }
       return
     }
     const homeActions: Record<string, string> = {

@@ -12,6 +12,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
+    exclude: ['**/node_modules/**', '**/vendor/**'],
     include: ['packages/**/*.test.ts', 'src/lib/**/*.test.{ts,tsx}'],
     reporters: ['default'],
   },

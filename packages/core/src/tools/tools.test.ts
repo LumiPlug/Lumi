@@ -47,7 +47,13 @@ async function enable(def: CapabilityDefinition): Promise<CapabilityDefinition> 
 }
 beforeEach(async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lumi-tools-'))
-  service = new CoreService({ host: '127.0.0.1', port: 0, sessionToken: token, userDataDir: dir })
+  service = new CoreService({
+    host: '127.0.0.1',
+    port: 0,
+    sessionToken: token,
+    hostToken: 'host-tools-fixture-0123456789abcdef',
+    userDataDir: dir,
+  })
   await service.start()
 })
 afterEach(async () => {
@@ -602,7 +608,10 @@ describe('tools management and shared execution', () => {
     ).rejects.toThrow('tool_version_conflict')
     const invalid = await fetch(url, {
       method: 'POST',
-      headers: { [SESSION_TOKEN_HEADER]: token },
+      headers: {
+        [SESSION_TOKEN_HEADER]: token,
+        'x-lumiplug-host-token': 'host-tools-fixture-0123456789abcdef',
+      },
       body: JSON.stringify({
         action: 'save',
         payload: { definition: { runner: { settings: { secret: canary } } }, expectedVersion: 0 },

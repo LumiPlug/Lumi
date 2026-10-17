@@ -7,8 +7,30 @@ import { Field } from '../components/ui/Field'
 import { InputHint } from '../components/ui/InputHint'
 import { Tooltip } from '../components/ui/Tooltip'
 import { nextChoiceIndex, Tabs } from '../components/ui/choice'
+import { ExpandableTable } from '../components/ui/DataDashboard'
 
 describe('shared UI interaction contract', () => {
+  it('distinguishes table navigation from disclosure for assistive technology', () => {
+    const props = {
+      label: '会话',
+      rows: [{ id: 'one', name: '示例会话' }],
+      columns: [{ key: 'name', label: '名称', render: (row: { name: string }) => row.name }],
+      rowKey: (row: { id: string }) => row.id,
+      rowName: (row: { name: string }) => row.name,
+    }
+    const navigation = renderToStaticMarkup(<ExpandableTable {...props} onRowOpen={() => {}} />)
+    expect(navigation).toContain('aria-label="查看示例会话的明细"')
+    expect(navigation).not.toContain('aria-expanded')
+    expect(navigation).not.toContain('aria-controls')
+    expect(navigation).not.toContain('ui-data-table-expansion')
+    const disclosure = renderToStaticMarkup(
+      <ExpandableTable {...props} renderExpanded={() => <p>记录</p>} />,
+    )
+    expect(disclosure).toContain('aria-label="展开示例会话"')
+    expect(disclosure).toContain('aria-expanded="false"')
+    expect(disclosure).toContain('aria-controls=')
+    expect(disclosure).toContain('ui-data-table-expansion')
+  })
   it('preserves Field label and error association through question hints without submitting the form', () => {
     const html = renderToStaticMarkup(
       <Field label="任务名称" error="名称必填">

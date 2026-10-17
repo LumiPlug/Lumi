@@ -19,6 +19,7 @@ export function toolAddedTime(value: string): { dateTime: string | null; text: s
 }
 
 export type ToolsAction =
+  | 'snapshot'
   | 'list'
   | 'get'
   | 'save'

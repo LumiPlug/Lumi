@@ -28,6 +28,7 @@ const textOutput: JsonSchema = {
 }
 const fixture = String.raw`
 const readline=require('node:readline'),fs=require('node:fs'),mode=process.argv[2],ledger=process.argv[3];
+fs.appendFileSync(ledger+'.pids',String(process.pid)+'\n');
 const closed={type:'object',properties:{},additionalProperties:false},output={type:'object',properties:{text:{type:'string'}},additionalProperties:false};
 let tools=mode==='concurrent'?['fail','slow'].map(name=>({name,inputSchema:closed,outputSchema:output})):[{name:'echo',inputSchema:closed,...(mode==='result'?{}:{outputSchema:output})}];
 if(mode==='constraints')tools=[{name:'echo',inputSchema:{type:'object',properties:{a:{type:'string'},b:{type:'string'},flag:{type:'boolean'}},dependentRequired:{a:['b']},if:{properties:{flag:{const:true}},required:['flag']},then:{required:['a']},minProperties:1,additionalProperties:false},outputSchema:output}];
@@ -417,5 +418,42 @@ describe('MCP regression: isolation, schemas and cancellation', () => {
     expect((await first).status).toBe(200)
     expect((await second).status).toBe(200)
     expect(service.tasks.list(d.id).map((t) => t.status)).toEqual(['completed', 'completed'])
+  })
+})
+
+describe('upstream idle process lifecycle', () => {
+  it('reuses before expiry, protects active calls, reaps idle stdio processes and reconnects', async () => {
+    const def = await ready('concurrent')
+    const manager = new McpConnections(() => {}, 80)
+    const slow = def.tools.find((tool) => tool.upstreamName === 'slow')!
+    const signal = new AbortController().signal
+    const pids = () =>
+      fs.readFileSync(path.join(dir, 'ledger.pids'), 'utf8').trim().split('\n').map(Number)
+    const alive = (pid: number) => {
+      try {
+        process.kill(pid, 0)
+        return true
+      } catch {
+        return false
+      }
+    }
+    try {
+      await manager.call(def, slow, {}, signal)
+      const first = pids().at(-1)!
+      // Reusing the connection cancels the old idle timer, even though this call exceeds its deadline.
+      const pending = manager.call(def, slow, {}, signal)
+      await new Promise((resolve) => setTimeout(resolve, 120))
+      expect(alive(first)).toBe(true)
+      expect(pids().at(-1)).toBe(first)
+      expect(await pending).toEqual({ text: 'success' })
+      await expect.poll(() => alive(first)).toBe(false)
+      expect(await manager.call(def, slow, {}, signal)).toEqual({ text: 'success' })
+      const second = pids().at(-1)!
+      expect(second).not.toBe(first)
+      await manager.close()
+      await expect.poll(() => alive(second)).toBe(false)
+    } finally {
+      await manager.close()
+    }
   })
 })

@@ -1,6 +1,6 @@
 {
   "name": "lumiplug",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "license": "MPL-2.0",
   "private": true,
   "type": "module",
@@ -26,7 +26,9 @@
     "tauri": "tauri",
     "tauri:build": "tauri build",
     "sync:home": "node scripts/sync-home-contract.mjs && node scripts/bundle-home-template.mjs",
-    "check:home-contract": "node scripts/sync-home-contract.mjs --check && node scripts/bundle-home-template.mjs --check"
+    "check:home-contract": "node scripts/sync-home-contract.mjs --check && node scripts/bundle-home-template.mjs --check",
+    "test:codeburn": "vitest run --config scripts/codeburn-vitest.config.ts",
+    "verify:usage": "node scripts/verify-codeburn.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.0",

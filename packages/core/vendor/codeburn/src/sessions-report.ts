@@ -1,0 +1,1556 @@
+import { readFileSync, statSync } from 'fs'
+import { behavioralCallCount, behavioralTurnCount } from './behavioral-weight.js'
+import { flatString } from './content-utils.js'
+import { ESTIMATED_COST_LEGEND, isEstimatedCost, markEstimated } from './format.js'
+import { modelRowKey } from './models.js'
+import { maxOf } from './math-utils.js'
+import { callCommands, createHead, ghPrCommands, isCommit, namedPr, namedPrNumber, prNumbersIn, pushes, readPrNumbers, readsCode, reviewVerdict, roundStarts, type NamedPr } from './pr-signals.js'
+import { inferSessionProvider, sessionBillableOutputTokens } from './session-output.js'
+import { CATEGORY_LABELS } from './types.js'
+import type { ProjectSummary, SessionSummary, TaskCategory } from './types.js'
+import { resolveWorkUnits, workUnitSessionKey } from './work-units.js'
+import type { WorkUnit, WorkUnitResolution } from './work-units.js'
+
+export type SessionRow = {
+  sessionId: string
+  /// Captured human title, empty when the transcript never produced one.
+  title: string
+  project: string
+  provider: string
+  models: string[]
+  cost: number
+  /// Portion of `cost` from calls flagged `isEstimated`; `isEstimated` is
+  /// `isEstimatedCost(cost, estimatedCost)`, the marker rule every view shares.
+  estimatedCost: number
+  isEstimated: boolean
+  savingsUSD: number
+  calls: number
+  turns: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  startedAt: string
+  endedAt: string
+  durationMs: number
+  /// Subagent sessions folded into this parent row (already included in its
+  /// cost, calls, turns and tokens). Absent on rows with none.
+  subagents?: SessionRow[]
+}
+
+function sessionCostLabel(cost: number): string {
+  return `$${cost.toFixed(2)}`
+}
+
+function durationMs(startedAt: string, endedAt: string): number {
+  const duration = new Date(endedAt).getTime() - new Date(startedAt).getTime()
+  return Number.isFinite(duration) ? duration : 0
+}
+
+export function aggregateSessions(projects: ProjectSummary[]): SessionRow[] {
+  return projects.flatMap(project => project.sessions.map(session => ({
+    sessionId: session.sessionId,
+    title: session.title ?? '',
+    project: session.project || project.project,
+    provider: inferSessionProvider(session),
+    models: Object.keys(session.modelBreakdown),
+    cost: session.totalCostUSD,
+    savingsUSD: session.totalSavingsUSD,
+    calls: session.apiCalls,
+    turns: behavioralTurnCount(session.turns),
+    inputTokens: session.totalInputTokens,
+    outputTokens: sessionBillableOutputTokens(session),
+    cacheReadTokens: session.totalCacheReadTokens,
+    cacheWriteTokens: session.totalCacheWriteTokens,
+    startedAt: session.firstTimestamp,
+    endedAt: session.lastTimestamp,
+    durationMs: durationMs(session.firstTimestamp, session.lastTimestamp),
+    estimatedCost: session.totalEstimatedCostUSD ?? 0,
+    isEstimated: isEstimatedCost(session.totalCostUSD, session.totalEstimatedCostUSD, sessionCostLabel(session.totalCostUSD)),
+  })))
+}
+
+export function renderJson(rows: SessionRow[]): string {
+  return JSON.stringify(rows, null, 2)
+}
+
+type SessionColumnKey = 'started' | 'session' | 'children' | 'project' | 'provider' | 'models' | 'cost' | 'saved' | 'calls' | 'turns'
+type SessionColumn = {
+  key: SessionColumnKey
+  header: string
+  width: number
+  minWidth: number
+  flex?: number
+  right?: boolean
+  optional?: boolean
+}
+
+export type SessionTableOptions = {
+  /// Override terminal detection in tests or embedders.
+  terminalWidth?: number
+}
+
+function defaultTerminalWidth(): number {
+  const cols = process.stdout.columns
+  if (typeof cols === 'number' && cols > 0) return cols
+  const env = process.env['COLUMNS'] ? Number.parseInt(process.env['COLUMNS'], 10) : NaN
+  return Number.isFinite(env) && env > 0 ? env : 120
+}
+
+function frameWidth(columns: SessionColumn[]): number {
+  // Outer borders + one space either side of each cell + inner separators.
+  return 2 + columns.reduce((sum, col) => sum + col.width + 2, 0) + Math.max(0, columns.length - 1)
+}
+
+function fitColumns(columns: SessionColumn[], available: number, dropOrder?: SessionColumnKey[]): SessionColumn[] {
+  const fitted = columns.map(col => ({ ...col }))
+
+  // Remove low-value columns before squeezing names into unreadable slivers.
+  for (const key of dropOrder ?? ['turns', 'saved', 'provider', 'calls'] as SessionColumnKey[]) {
+    if (frameWidth(fitted) <= available) break
+    const index = fitted.findIndex(col => col.key === key && col.optional)
+    if (index >= 0) fitted.splice(index, 1)
+  }
+
+  while (frameWidth(fitted) > available) {
+    const shrinkable = fitted
+      .filter(col => col.width > col.minWidth)
+      .sort((a, b) => (b.flex ?? 0) - (a.flex ?? 0) || b.width - a.width)
+    const col = shrinkable[0]
+    if (!col) break
+    col.width--
+  }
+  return fitted
+}
+
+function truncate(value: string, width: number): string {
+  if (value.length <= width) return value
+  if (width <= 1) return value.slice(0, width)
+  return value.slice(0, width - 1) + '\u2026'
+}
+
+export function cleanSessionProjectLabel(raw: string): string {
+  const normalized = raw.trim().replace(/\\/g, '/').replace(/\/+$/, '')
+  if (!normalized) return 'Unknown'
+
+  if (normalized.startsWith('/')) {
+    const parts = normalized.split('/').filter(Boolean)
+    if (normalized === '/private/tmp' || normalized === '/tmp') return 'Temporary'
+    return parts.at(-1) || 'Unknown'
+  }
+
+  // Claude stores a cwd such as /Users/alex/Projects/acme/app as the lossy
+  // directory slug -Users-alex-Projects-acme-app. Strip the private home
+  // prefix and known workspace container without ever exposing the username.
+  let label = normalized.replace(/^-?Users-[^-]+-/, '')
+  label = label.replace(/^(Projects|Developer|Documents|Desktop|Downloads)-/, '')
+  if (label === 'private-tmp' || label === '-private-tmp') return 'Temporary'
+
+  const worktreeMarker = label.match(/(?:--|-\.claude-|-)(?:claude-)?worktrees-/)
+  if (worktreeMarker?.index !== undefined) {
+    const base = label.slice(0, worktreeMarker.index)
+    let branch = label.slice(worktreeMarker.index + worktreeMarker[0].length)
+    const baseParts = base.split('-').filter(Boolean)
+    const repo = baseParts.at(-1) || base
+    if (branch.startsWith('agent-')) branch = `agent ${branch.slice(6, 14)}`
+    return branch ? `${repo} · ${branch}` : repo
+  }
+
+  // Repeated repository leaves are common after canonical worktree folding
+  // (Projects/eywa/eywa). Collapse that noisy shape.
+  const parts = label.split('-').filter(Boolean)
+  if (parts.length >= 2 && parts.at(-1) === parts.at(-2)) return parts.at(-1)!
+  return label || 'Unknown'
+}
+
+export function shortSessionId(value: string): string {
+  const id = value.trim()
+  if (id.startsWith('agent-')) return `Agent ${id.slice(6, 14)}`
+  if (id.startsWith('rollout-')) {
+    const tail = id.match(/([0-9a-f]{8})-[0-9a-f-]{27,}$/i)?.[1]
+    return `Codex ${tail ?? id.slice(-8)}`
+  }
+  if (/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(id)) return `${id.slice(0, 8)}\u2026${id.slice(-4)}`
+  return id.length > 24 ? `${id.slice(0, 12)}\u2026${id.slice(-6)}` : id || 'Unknown session'
+}
+
+export function sessionDisplayName(row: SessionRow): string {
+  return row.title.trim() || shortSessionId(row.sessionId)
+}
+
+export function sessionModelLabel(models: string[]): string {
+  const visible = models.filter(model => model !== '<synthetic>')
+  return (visible.length > 0 ? visible : models).map(m => modelRowKey(m)).join(', ') || 'Unknown'
+}
+
+function cellValue(row: SessionRow, key: SessionColumnKey): string {
+  switch (key) {
+    case 'started': return row.startedAt ? row.startedAt.replace('T', ' ').slice(0, 16) : '-'
+    case 'session': return sessionDisplayName(row)
+    // Only the work-unit view carries a Children column, and it renders
+    // through workUnitCell; a bare SessionRow has no child count.
+    case 'children': return ''
+    case 'project': return cleanSessionProjectLabel(row.project)
+    case 'provider': return row.provider
+    case 'models': return sessionModelLabel(row.models)
+    case 'cost': return markEstimated(sessionCostLabel(row.cost), row.isEstimated)
+    case 'saved': return `$${row.savingsUSD.toFixed(2)}`
+    case 'calls': return row.calls.toLocaleString('en-US')
+    case 'turns': return row.turns.toLocaleString('en-US')
+  }
+}
+
+/// Shared bordered-grid renderer. `cell` produces the raw string for one item
+/// and column; fitting, width expansion, and borders are identical for every
+/// table this module emits, so the default sessions table stays byte-identical.
+function renderSessionGrid<T>(columns: SessionColumn[], items: T[], cell: (item: T, key: SessionColumnKey) => string, footer: string, available: number, dropOrder?: SessionColumnKey[]): string {
+  const fitted = fitColumns(columns, available, dropOrder)
+  const values = items.map(item => fitted.map(col => cell(item, col.key)))
+  // Content can use spare room, but never grow beyond the terminal frame.
+  for (let i = 0; i < fitted.length; i++) {
+    const col = fitted[i]!
+    const longest = maxOf(values.map(row => row[i]?.length ?? 0), col.header.length)
+    const spare = available - frameWidth(fitted)
+    const wanted = Math.max(0, Math.min(longest - col.width, spare))
+    col.width += wanted
+  }
+
+  const border = (left: string, middle: string, right: string): string =>
+    left + fitted.map(col => '\u2500'.repeat(col.width + 2)).join(middle) + right
+  const line = (cells: string[]): string => '\u2502' + fitted.map((col, i) => {
+    const value = truncate(cells[i] ?? '', col.width)
+    const padding = ' '.repeat(Math.max(0, col.width - value.length))
+    return ` ${col.right ? padding + value : value + padding} `
+  }).join('\u2502') + '\u2502'
+
+  return [
+    border('\u250c', '\u252c', '\u2510'),
+    line(fitted.map(col => col.header)),
+    border('\u251c', '\u253c', '\u2524'),
+    ...values.map(line),
+    border('\u2514', '\u2534', '\u2518'),
+    footer,
+  ].join('\n')
+}
+
+function sessionColumns(hasSavings: boolean, childrenColumn: boolean): SessionColumn[] {
+  return [
+    { key: 'started', header: 'Started', width: 16, minWidth: 10 },
+    { key: 'session', header: 'Session', width: 30, minWidth: 12, flex: 3 },
+    ...(childrenColumn ? [{ key: 'children' as const, header: 'Children', width: 8, minWidth: 5, right: true, optional: true }] : []),
+    { key: 'project', header: 'Project', width: 24, minWidth: 10, flex: 2 },
+    { key: 'provider', header: 'Provider', width: 9, minWidth: 8, optional: true },
+    { key: 'models', header: 'Models', width: 22, minWidth: 10, flex: 2 },
+    { key: 'cost', header: 'Cost', width: 9, minWidth: 7, right: true },
+    ...(hasSavings ? [{ key: 'saved' as const, header: 'Saved', width: 9, minWidth: 7, right: true, optional: true }] : []),
+    { key: 'calls', header: 'Calls', width: 7, minWidth: 5, right: true, optional: true },
+    { key: 'turns', header: 'Turns', width: 7, minWidth: 5, right: true, optional: true },
+  ]
+}
+
+function estimatedLegend(rows: SessionRow[]): string {
+  return rows.some(row => row.isEstimated) ? `\n${ESTIMATED_COST_LEGEND}` : ''
+}
+
+export function renderTable(rows: SessionRow[], opts: SessionTableOptions = {}): string {
+  const sorted = [...rows].sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+  const hasSavings = sorted.some(row => row.savingsUSD > 0)
+  const available = Math.max(60, opts.terminalWidth ?? defaultTerminalWidth())
+  const totalCost = sorted.reduce((sum, row) => sum + row.cost, 0)
+  const footer = `${sorted.length.toLocaleString('en-US')} sessions  \u2022  $${totalCost.toFixed(2)} total  \u2022  newest first${estimatedLegend(sorted)}`
+  return renderSessionGrid(sessionColumns(hasSavings, false), sorted, cellValue, footer, available)
+}
+
+/// One printed line in the work-unit view: a unit row (aggregate of root plus
+/// children, `childCount > 0`), a standalone row, or an indented child detail
+/// row (`depth === 1`).
+export type WorkUnitDisplay = { row: SessionRow; depth: 0 | 1; childCount: number }
+
+function workUnitCell(display: WorkUnitDisplay, key: SessionColumnKey): string {
+  if (key === 'children') return display.childCount > 0 ? String(display.childCount) : ''
+  if (key === 'session') {
+    const name = sessionDisplayName(display.row)
+    return display.depth === 1 ? `  \u21b3 ${name}` : name
+  }
+  return cellValue(display.row, key)
+}
+
+/// One top-level entry of a grouped sessions view: a work-unit root whose
+/// provider-recorded children are summed into `row` (`children` non-empty), or a
+/// standalone row (`row === root`, no children). Entries keep the input order of
+/// their root row; a child whose root is missing from `rows` stays standalone.
+type WorkUnitEntry<T extends SessionRow> = { row: T; root: T; children: T[] }
+
+function groupWorkUnitRows<T extends SessionRow>(rows: T[], resolution: WorkUnitResolution): WorkUnitEntry<T>[] {
+  const unitById = new Map(resolution.units.map(unit => [unit.workUnitId, unit]))
+  const unitOf = (row: T): WorkUnit | undefined => {
+    const unitId = resolution.bySession.get(workUnitSessionKey(row.provider, row.sessionId))
+    const unit = unitId !== undefined ? unitById.get(unitId) : undefined
+    return unit && unit.childSessionIds.length > 0 ? unit : undefined
+  }
+  const membersByUnit = new Map<WorkUnit, T[]>()
+  for (const row of rows) {
+    const unit = unitOf(row)
+    if (!unit) continue
+    const list = membersByUnit.get(unit)
+    if (list) list.push(row)
+    else membersByUnit.set(unit, [row])
+  }
+  const rootByUnit = new Map<WorkUnit, T>()
+  for (const [unit, members] of membersByUnit) {
+    const root = members.find(row => row.sessionId === unit.rootSessionId)
+    if (root && members.length >= 2) rootByUnit.set(unit, root)
+  }
+
+  const entries: WorkUnitEntry<T>[] = []
+  for (const row of rows) {
+    const unit = unitOf(row)
+    const root = unit ? rootByUnit.get(unit) : undefined
+    if (!unit || !root) { entries.push({ row, root: row, children: [] }); continue }
+    if (row !== root) continue
+    const members = membersByUnit.get(unit)!
+    const children = members
+      .filter(member => member !== root)
+      .sort((a, b) => b.startedAt.localeCompare(a.startedAt) || a.sessionId.localeCompare(b.sessionId))
+    const sum = (pick: (member: T) => number): number => members.reduce((total, member) => total + pick(member), 0)
+    const startedAt = members.reduce((min, member) => (member.startedAt < min ? member.startedAt : min), root.startedAt)
+    const endedAt = members.reduce((max, member) => (member.endedAt > max ? member.endedAt : max), root.endedAt)
+    const models: string[] = []
+    for (const member of [root, ...children]) {
+      for (const model of member.models) if (!models.includes(model)) models.push(model)
+    }
+    const cost = sum(member => member.cost)
+    const estimatedCost = sum(member => member.estimatedCost)
+    entries.push({
+      row: {
+        ...root,
+        models,
+        cost,
+        estimatedCost,
+        isEstimated: isEstimatedCost(cost, estimatedCost, sessionCostLabel(cost)),
+        savingsUSD: sum(member => member.savingsUSD),
+        calls: sum(member => member.calls),
+        turns: sum(member => member.turns),
+        inputTokens: sum(member => member.inputTokens),
+        outputTokens: sum(member => member.outputTokens),
+        cacheReadTokens: sum(member => member.cacheReadTokens),
+        cacheWriteTokens: sum(member => member.cacheWriteTokens),
+        startedAt,
+        endedAt,
+        durationMs: durationMs(startedAt, endedAt),
+      },
+      root,
+      children,
+    })
+  }
+  return entries
+}
+
+/// The default sessions list: one row per parent session with its
+/// provider-recorded subagent sessions (work-unit children) folded in, so the
+/// parent's cost/calls/tokens include them and `subagents` lists them. Only
+/// grouping changes: the rows still sum to exactly the ungrouped total.
+export function foldSubagentRows<T extends SessionRow>(rows: T[], resolution: WorkUnitResolution): T[] {
+  return groupWorkUnitRows(rows, resolution).map(({ row, children }) => (children.length ? { ...row, subagents: children } : row))
+}
+
+/// Every session in `projects` with its subagents folded in as in the default
+/// sessions list, each row tagged with the project summary it came from. Ranked
+/// lists (top sessions) use this so a parent's cost includes its subagents and
+/// a folded subagent never shows as its own row.
+export function foldedSessionRows(projects: ProjectSummary[]): Array<SessionRow & { summary: ProjectSummary }> {
+  const resolution = resolveWorkUnits(projects.flatMap(summary => summary.sessions.map(session => ({
+    sessionId: session.sessionId,
+    provider: inferSessionProvider(session),
+    lineage: session.lineage,
+  }))))
+  return foldSubagentRows(projects.flatMap(summary => aggregateSessions([summary]).map(row => ({ ...row, summary }))), resolution)
+}
+
+/// The `sessions --by-work-unit` table: one row per multi-session work unit
+/// (root's title/project, cost/calls/savings/turns summed over root+children,
+/// child count in the Children column), its children indented beneath, and
+/// every standalone session exactly as in the default table. Entries sort
+/// newest-first by each unit's latest member activity. The footer total sums
+/// top-level entries only, so the grouped view reconciles exactly with the
+/// ungrouped table (no double count, no dropped spend).
+export function renderWorkUnitTable(rows: SessionRow[], resolution: WorkUnitResolution, opts: SessionTableOptions = {}): string {
+  type Entry = { display: WorkUnitDisplay; children: WorkUnitDisplay[]; sortKey: string }
+  const entries: Entry[] = groupWorkUnitRows(rows, resolution).map(({ row, root, children }) => ({
+    display: { row, depth: 0 as const, childCount: children.length },
+    children: children.map(child => ({ row: child, depth: 1 as const, childCount: 0 })),
+    sortKey: children.reduce((max, child) => (child.startedAt > max ? child.startedAt : max), root.startedAt),
+  }))
+  entries.sort((a, b) => b.sortKey.localeCompare(a.sortKey))
+
+  const displays = entries.flatMap(entry => [entry.display, ...entry.children])
+  const hasSavings = rows.some(row => row.savingsUSD > 0)
+  const available = Math.max(60, opts.terminalWidth ?? defaultTerminalWidth())
+  // Money invariant: the footer sums TOP-LEVEL entries (unit aggregates plus
+  // standalone rows), never the indented child detail, so grouped and
+  // ungrouped views total the same spend.
+  const totalCost = entries.reduce((total, entry) => total + entry.display.row.cost, 0)
+  const unitCount = entries.filter(entry => entry.display.childCount > 0).length
+  const footer = `${rows.length.toLocaleString('en-US')} sessions  \u2022  ${unitCount.toLocaleString('en-US')} work unit${unitCount === 1 ? '' : 's'}  \u2022  $${totalCost.toFixed(2)} total  \u2022  newest first${estimatedLegend(displays.map(d => d.row))}`
+  return renderSessionGrid(sessionColumns(hasSavings, true), displays, workUnitCell, footer, available, ['children', 'turns', 'saved', 'provider', 'calls'])
+}
+
+/// `sessions --by-work-unit --format json`: an add-only envelope. `sessions`
+/// is the flat per-session row array (subagents not folded); `workUnits` is
+/// the resolver's full partition (standalone sessions included, so consumers
+/// can reconcile counts and totals).
+export function renderWorkUnitJson(rows: SessionRow[], resolution: WorkUnitResolution): string {
+  return JSON.stringify({ sessions: rows, workUnits: resolution.units }, null, 2)
+}
+
+export type PrRow = {
+  /// Full PR URL (the aggregation key).
+  url: string
+  /// Short display form, `owner/repo#123` for GitHub URLs, else the URL.
+  label: string
+  cost: number
+  savingsUSD: number
+  sessions: number
+  calls: number
+  /// Start of the first and end of the last turn (or folded run) attributed to
+  /// this PR. Legacy approx shares fall back to their session's span.
+  firstStarted: string
+  lastEnded: string
+  /// Agent runs that put spend on this PR: contributing parent sessions plus
+  /// the subagent runs folded into it. `sessions` stays the parent count.
+  runs: number
+  /// True when any contributing session used the legacy even-split fallback
+  /// (session-level prLinks but no surviving per-turn refs), so this row's share
+  /// is an approximation rather than genuine turn-level attribution.
+  approx: boolean
+  /// Short model names that processed this PR's attributed calls, ordered by
+  /// attributed cost descending, deduplicated.
+  models: string[]
+  /// Attributed cost per task category (from the turns' classification), ordered
+  /// by cost descending. Omitted for legacy approx rows: with no turn-level
+  /// attribution there is no honest per-category split.
+  categories?: Array<{ name: string; cost: number }>
+  // Local PR signals, read from the cached commands of the turns and folded runs
+  // attributed to this row (never from GitHub). Only commands are cached, not
+  // their results, so a failed push or merge still counts.
+  /// 'explicit' when some attributed command names this PR (gh pr <verb> N, a PR
+  /// URL, an API path), it was opened here, a prompt pasted its URL, or a run's
+  /// description named it. 'pr-link-only' when only Claude Code's own pr-link
+  /// entries tie spend to it (a stale link such as an old closed PR).
+  /// null: no turn-level data (legacy even split).
+  linkEvidence: 'explicit' | 'pr-link-only' | null
+  /// Time of the `gh pr create` call paired with the turn that first referenced
+  /// this PR (its `--head` becomes the PR's branch). null: the open was not seen
+  /// in this period (not opened here, or before the range).
+  openedAt: string | null
+  /// `git push` calls after the open that name the PR's `--head` branch (a bare
+  /// push in a subagent run counts for the branch it last pushed), plus every
+  /// push of a subagent run whose description names this PR alone; grouped into
+  /// rounds by 10-minute gaps. Unnamed pushes in a top-level session never
+  /// count. null: no tracked open and no push seen. Without a tracked open
+  /// these are only your follow-ups, never proof of one shot.
+  followUpRounds: number | null
+  followUpPushes: number
+  /// true: opened here, head branch known, no push after the open. false:
+  /// opened here and pushed again. null: open or head branch not seen, so one
+  /// shot is unknown.
+  oneShot: boolean | null
+  /// Review work attributed here: a folded run that read this PR (gh pr
+  /// view/diff/checkout/review N, or git diff under a description naming it) and
+  /// made no commit or push ('reads-pr', label is its agent type), or a turn on
+  /// this PR that ran `gh pr review <n>` ('gh-pr-review', label is the
+  /// verdict). costUSD is the share of this row's cost that run or turn
+  /// carried. Empty: no review seen.
+  reviewRuns: PrReviewRun[]
+  /// Sum of reviewRuns costUSD (already inside `cost`).
+  reviewCostUSD: number
+  /// Time of the first `gh pr merge` naming this PR (by number, URL or --repo,
+  /// matched to one row) from its open on. A merge run through a script or a
+  /// shell variable is not seen. null: merge not seen here.
+  mergedAt: string | null
+  /// mergedAt - openedAt. null when either is unknown.
+  timeToMergeMs: number | null
+  /// `cost` split by phase, summing exactly to `cost`: review = reviewCostUSD,
+  /// fixes = everything else from the first review on, build = the rest.
+  costSplit: { buildUSD: number; reviewUSD: number; fixesUSD: number }
+  /// Part of `cost` from turns and runs with no evidence of their own: only the
+  /// session's carried pr-link tag (or a legacy even split) put them here.
+  carriedUSD: number
+  /// Every contribution to `cost`, by time: a session's turns grouped by why they
+  /// count here, and each folded run. Costs sum to `cost`.
+  runList: PrRun[]
+  /// Latest state local commands show: a `--draft` open, then `gh pr
+  /// merge/close/ready/reopen` naming this PR. null: none seen.
+  state: 'open' | 'draft' | 'merged' | 'closed' | null
+  /// Start of each follow-up round counted in `followUpRounds`.
+  followUpAt: string[]
+}
+
+/// Why a run counts toward a PR: its description named it, it pushed the PR's
+/// head branch, a command named the PR, it opened it, or only the carried tag.
+export type PrRunLink = 'named' | 'pushed-head' | 'gh-pr' | 'opened' | 'carried'
+
+export type PrRun = {
+  kind: 'session' | 'subagent'
+  description: string | null
+  model: string | null
+  costUSD: number
+  at: string
+  link: PrRunLink
+}
+
+export type PrReviewRun = {
+  kind: 'agent' | 'you'
+  label: string
+  model: string | null
+  costUSD: number
+  at: string
+  evidence: 'reads-pr' | 'gh-pr-review'
+}
+
+const GITHUB_PR_RE = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/
+
+export function shortenPrUrl(url: string): string {
+  const m = GITHUB_PR_RE.exec(url)
+  return m ? `${m[1]}/${m[2]}#${m[3]}` : url
+}
+
+/// One PR's slice of a session's spend. `models`/`categories` map a key (raw
+/// model name / task category) to the attributed cost carried under it.
+export type PrContribution = {
+  cost: number; calls: number; savingsUSD: number; approx: boolean
+  models: Map<string, number>
+  categories: Map<string, number>
+  /// Span of the turns attributed here; empty on legacy approx shares.
+  firstTs: string
+  lastTs: string
+}
+
+/// A single session's PR-attributed spend: `perUrl` is the turn-level split
+/// across the PRs it referenced; `unattributed` is the spend that belongs to no
+/// specific PR (turns before the session's first PR reference).
+export type SessionPrAttribution = {
+  perUrl: Map<string, PrContribution>
+  unattributed: { cost: number; calls: number; savingsUSD: number }
+  /// The PR set each turn was attributed to, aligned with `session.turns`
+  /// (null: unattributed). Empty for the legacy even split.
+  turnPrs: Array<string[] | null>
+}
+
+// Minimal structural shape a SessionSummary satisfies, so the state machine is
+// unit-testable without constructing a full session fixture.
+type AttributableSession = {
+  turns: Array<{ prRefs?: string[]; category?: string; timestamp?: string; assistantCalls: Array<{ costUSD: number; savingsUSD?: number; model?: string; supplementaryAccounting?: boolean; timestamp?: string }> }>
+  prLinks?: string[]
+  totalCostUSD: number
+  apiCalls: number
+  totalSavingsUSD: number
+  /// The PR set carried into the in-range turn slice: the refs of the last turn
+  /// BEFORE the report's range start that referenced any PR. Seeds `current` so a
+  /// PR referenced before the range still owns its later, in-range, ref-less turns
+  /// (mirrors the branch carry-forward). Set by the parser; absent in unit tests.
+  prRefsAtRangeStart?: string[]
+}
+
+function addToMap(m: Map<string, number>, key: string, value: number): void {
+  m.set(key, (m.get(key) ?? 0) + value)
+}
+
+function ensureContribution(map: Map<string, PrContribution>, url: string): PrContribution {
+  let e = map.get(url)
+  if (!e) {
+    e = { cost: 0, calls: 0, savingsUSD: 0, approx: false, models: new Map(), categories: new Map(), firstTs: '', lastTs: '' }
+    map.set(url, e)
+  }
+  return e
+}
+
+// Split an integer `total` across `n` buckets as evenly as possible, giving the
+// first `total % n` buckets the extra unit (largest-remainder, deterministic by
+// bucket order). Keeps per-PR call counts integral so aggregated rows never
+// over- or under-count from independent per-row rounding (a 1-call, 2-PR turn
+// allocates [1, 0], not [0.5, 0.5] that would each round up to 1).
+export function allocateEven(total: number, n: number): number[] {
+  const base = Math.floor(total / n)
+  const extra = total - base * n
+  return Array.from({ length: n }, (_, i) => base + (i < extra ? 1 : 0))
+}
+
+/// A subagent (sidechain) session's spend plus its non-self-linking descendants,
+/// pre-aggregated for folding into the PR its launching parent turn was working
+/// on. `models` keys are RAW model names (the row builder collapses them to short
+/// names, exactly like a turn's own calls); `categories` are TaskCategory. All
+/// three sum to `cost` (derived from the same sessions), so folding never adds a
+/// rounding gap. `foldedSessions` counts the subtree (self plus folded
+/// descendants); `spawnAtMs` is the TOP child's first-activity epoch (the whole
+/// subtree resolves against the top parent through the top child's spawn);
+/// `firstTs`/`lastTs` are the subtree's real activity span, used for the PR row's
+/// date range when the parent has no in-range turns of its own.
+export type ChildFold = {
+  agentId: string
+  cost: number
+  calls: number
+  savingsUSD: number
+  spawnAtMs: number
+  firstTs: string
+  lastTs: string
+  models: Map<string, number>
+  categories: Map<string, number>
+  foldedSessions: number
+  /// The PR the top child's Agent description names (see `namedPr`). A single named PR in
+  /// the parent's repo outranks the carried-forward PR when the fold resolves.
+  named: NamedPr | 'multi' | null
+  agentType?: string
+  /// The one PR number the description names, whatever repo the fold lands in.
+  mentioned: number | null
+  /// Over the whole subtree: whether any call pushed, committed, or read code
+  /// (git diff, gh pr view/diff/checkout/review), the PRs it read by number, and
+  /// every PR number its commands name.
+  pushed: boolean
+  committed: boolean
+  readsCode: boolean
+  readPrs: Set<number>
+  prNumbers: Set<number>
+  /// Branches the subtree pushed (a bare push counts for the branch its session
+  /// last pushed by name).
+  branches: Set<string>
+  description: string
+}
+
+function parseMs(ts: string | undefined): number {
+  return ts ? Date.parse(ts) : NaN
+}
+
+// A child "self-links" when it referenced its own PR: it then attributes
+// standalone (its own turn-level attribution is more precise) and is NEVER folded
+// into a parent, so its spend is counted exactly once. A child with no links is
+// folded only. This mutual exclusion is what prevents a double-charge.
+function selfLinks(session: { prLinks?: string[] }): boolean {
+  return !!session.prLinks?.length
+}
+
+// A session id alone is NOT globally unique: imported or duplicated transcripts,
+// or two providers, can reuse one id, letting two parents claim one child and
+// corrupting the attribution map. Key parents (and a child's parent reference) by
+// provider + id so linkage stays one-to-one; the ambiguity skip in
+// resolveSubagentAttribution handles a genuine same-provider id collision.
+// Subagent linkage (parentSessionId / agentSpawnLinks / spawnPrSets) is Claude
+// only, and a fold ANCHOR has no in-range turns to infer a provider from, so a
+// linkage-bearing session is always attributed to 'claude'; this keeps a parent
+// and its child on the same key.
+// NUL delimiter for composite keys: it cannot appear in a provider name, project
+// name, or session id, so keys never collide (a plain space collides for a name
+// or id that contains a space).
+const KEY_SEP = String.fromCharCode(0)
+
+function linkageProvider(session: SessionSummary): string {
+  if (session.parentSessionId || session.agentSpawnLinks || session.spawnPrSets) return 'claude'
+  return inferSessionProvider(session)
+}
+function providerSessionKey(session: SessionSummary): string {
+  return `${linkageProvider(session)}${KEY_SEP}${session.sessionId}`
+}
+function providerParentKey(session: SessionSummary): string {
+  return `${linkageProvider(session)}${KEY_SEP}${session.parentSessionId ?? ''}`
+}
+
+// Row-level distinct-session key: provider + project + sessionId, NUL-delimited so a
+// project name or session id containing a space never collides (undercounting
+// distinct sessions in a PR row).
+function rowSessionKey(session: SessionSummary): string {
+  return `${linkageProvider(session)}${KEY_SEP}${session.project}${KEY_SEP}${session.sessionId}`
+}
+
+// Recursive canonical normalizer: sorts every OBJECT's keys so serialization is
+// order-independent, and preserves ARRAY order (the caller pre-sorts arrays whose
+// semantics are set-like). Emitting the normalized structure through JSON.stringify
+// (rather than delimiter concatenation) means no separator can collide across
+// distinct inputs.
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize)
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const k of Object.keys(value as Record<string, unknown>).sort()) {
+      out[k] = canonicalize((value as Record<string, unknown>)[k])
+    }
+    return out
+  }
+  return value
+}
+
+const sortedCopy = (a: readonly string[] | undefined): string[] => [...(a ?? [])].sort()
+
+// A record whose value arrays are SET-semantic (sorted), for spawnPrSets.
+function sortedRecord(rec: Record<string, string[]> | undefined): Record<string, string[]> {
+  const out: Record<string, string[]> = {}
+  for (const k of Object.keys(rec ?? {})) out[k] = sortedCopy(rec![k])
+  return out
+}
+
+// Distinguishes two DIFFERENT records that happen to share a session id (duplicate
+// or imported data): identical copies produce the same fingerprint and fold once,
+// any difference marks the key ambiguous so it folds into NEITHER parent/subtree.
+// The fingerprint serializes the COMPLETE fold-determining state, canonically:
+// session-level linkage AND the per-turn sequence (timestamp, prRefs, cost, calls,
+// savings, per-model cost). Set-semantic fields (PR-ref lists, ambiguous ids,
+// spawnPrSets values) are sorted; the turn list keeps its order (sequence-semantic).
+function sessionFingerprint(s: SessionSummary): string {
+  return JSON.stringify(canonicalize({
+    cost: s.totalCostUSD,
+    calls: s.apiCalls,
+    first: s.firstTimestamp,
+    last: s.lastTimestamp,
+    parent: s.parentSessionId ?? '',
+    agent: s.agentId ?? '',
+    prLinks: sortedCopy(s.prLinks),
+    rangeStart: sortedCopy(s.prRefsAtRangeStart),
+    ambiguous: sortedCopy(s.ambiguousSpawnAgentIds),
+    spawnLinks: s.agentSpawnLinks ?? {},
+    spawnPrSets: sortedRecord(s.spawnPrSets),
+    turns: s.turns.map(t => {
+      const modelCost: Record<string, number> = {}
+      for (const c of t.assistantCalls) if (c.model) modelCost[c.model] = (modelCost[c.model] ?? 0) + c.costUSD
+      return {
+        ts: t.assistantCalls[0]?.timestamp ?? t.timestamp ?? '',
+        prRefs: sortedCopy(t.prRefs),
+        cost: t.assistantCalls.reduce((n, c) => n + c.costUSD, 0),
+        calls: behavioralCallCount(t.assistantCalls),
+        savings: t.assistantCalls.reduce((n, c) => n + (c.savingsUSD ?? 0), 0),
+        models: modelCost,
+      }
+    }),
+  }))
+}
+
+/// Provider-aware, fingerprint-qualified identity of a session: two sessions share
+/// it ONLY when they are the same provider+id AND a proven-identical record. Used to
+/// dedupe a fold anchor against a genuinely-identical surviving session without
+/// dropping a different-provider or different-record session that shares a raw id.
+export function sessionIdentity(session: SessionSummary): string {
+  return `${providerSessionKey(session)}${KEY_SEP}${sessionFingerprint(session)}`
+}
+
+/// Index every sidechain (subagent) session by the parent that spawned it, keyed
+/// by provider + `parentSessionId`. A child whose parent is absent from the scan
+/// is never looked up, so it stays a standalone orphan.
+export function buildSubagentIndex(projects: ProjectSummary[]): Map<string, SessionSummary[]> {
+  const index = new Map<string, SessionSummary[]>()
+  for (const project of projects)
+    for (const session of project.sessions) {
+      if (!session.parentSessionId) continue
+      const key = providerParentKey(session)
+      const list = index.get(key)
+      if (list) list.push(session)
+      else index.set(key, [session])
+    }
+  return index
+}
+
+// Read on demand rather than at parse: only folded runs and runs that push need
+// it. Keyed by mtime so a long-lived `serve` re-reads only a changed sidecar.
+const agentDescriptions = new Map<string, { mtimeMs: number; description: string }>()
+function agentDescriptionOf(session: SessionSummary): string {
+  const path = session.agentMetaPath
+  if (!path) return ''
+  try {
+    const { mtimeMs } = statSync(path)
+    const hit = agentDescriptions.get(path)
+    if (hit?.mtimeMs === mtimeMs) return hit.description
+    const d = (JSON.parse(readFileSync(path, 'utf8')) as { description?: unknown }).description
+    const description = typeof d === 'string' && d.trim() ? flatString(d.trim().slice(0, 200)) : ''
+    agentDescriptions.set(path, { mtimeMs, description })
+    return description
+  } catch {
+    return ''
+  }
+}
+
+// Aggregate a child session and its non-self-linking descendants, depth-first.
+// `claimed` is ONE set per parent resolution (shared across all direct children),
+// so a descendant reachable through two paths (duplicate/diamond ids) folds
+// exactly once and a parent-link cycle terminates. A self-linking descendant is
+// skipped: it attributes standalone. `spawnAtMs` stays the TOP child's, since the
+// whole subtree resolves against the top parent.
+function buildChildFold(child: SessionSummary, index: Map<string, SessionSummary[]>, claimed: Set<string>, ambiguous: Set<string>, scanCommands: boolean): ChildFold {
+  claimed.add(child.sessionId)
+  const models = new Map<string, number>()
+  const categories = new Map<string, number>()
+  let pushed = false
+  let committed = false
+  let reads = false
+  const readPrs = new Set<number>()
+  const prNumbers = new Set<number>()
+  const branches = new Set<string>()
+  let upstream: string | undefined
+  for (const turn of child.turns) {
+    let turnCost = 0
+    for (const call of turn.assistantCalls) {
+      turnCost += call.costUSD
+      if (call.model) addToMap(models, call.model, call.costUSD)
+      if (scanCommands) for (const cmd of callCommands(call)) {
+        for (const named of pushes(cmd)) {
+          pushed = true
+          if (named.length) upstream = named.at(-1)
+          for (const b of named.length ? named : upstream ? [upstream] : []) branches.add(b)
+        }
+        if (isCommit(cmd)) committed = true
+        if (readsCode(cmd)) reads = true
+        for (const n of readPrNumbers(cmd)) readPrs.add(n)
+        for (const n of prNumbersIn(cmd)) prNumbers.add(n)
+      }
+    }
+    if (turn.category) addToMap(categories, turn.category, turnCost)
+  }
+  const description = agentDescriptionOf(child)
+  const fold: ChildFold = {
+    agentId: child.agentId ?? child.sessionId,
+    cost: child.totalCostUSD, calls: child.apiCalls, savingsUSD: child.totalSavingsUSD,
+    spawnAtMs: parseMs(child.firstTimestamp),
+    firstTs: child.firstTimestamp, lastTs: child.lastTimestamp,
+    models, categories, foldedSessions: 1,
+    named: namedPr(description),
+    ...(child.agentType ? { agentType: child.agentType } : {}),
+    mentioned: namedPrNumber(description),
+    pushed, committed, readsCode: reads, readPrs, prNumbers, branches, description,
+  }
+  for (const gc of index.get(providerSessionKey(child)) ?? []) {
+    // Skip a descendant whose id is ambiguous (two conflicting records share it):
+    // fold neither, consistent with the parent-level rule.
+    if (claimed.has(gc.sessionId) || selfLinks(gc) || ambiguous.has(providerSessionKey(gc))) continue
+    const gcf = buildChildFold(gc, index, claimed, ambiguous, scanCommands)
+    fold.cost += gcf.cost; fold.calls += gcf.calls; fold.savingsUSD += gcf.savingsUSD
+    fold.foldedSessions += gcf.foldedSessions
+    fold.pushed ||= gcf.pushed
+    fold.committed ||= gcf.committed
+    fold.readsCode ||= gcf.readsCode
+    for (const n of gcf.readPrs) fold.readPrs.add(n)
+    for (const n of gcf.prNumbers) fold.prNumbers.add(n)
+    for (const b of gcf.branches) fold.branches.add(b)
+    for (const [m, c] of gcf.models) addToMap(fold.models, m, c)
+    for (const [cat, c] of gcf.categories) addToMap(fold.categories, cat, c)
+    if (gcf.firstTs && (!fold.firstTs || gcf.firstTs < fold.firstTs)) fold.firstTs = gcf.firstTs
+    if (gcf.lastTs > fold.lastTs) fold.lastTs = gcf.lastTs
+  }
+  return fold
+}
+
+/// A folded child resolved against its parent: to a PR set (`prSet` non-empty), to
+/// the parent's unattributed spend (`prSet` null, `unlinked` false), or unlinked
+/// (`unlinked` true, contributes NOTHING to by-PR, the orphan semantics).
+export type ResolvedChild = { fold: ChildFold; prSet: string[] | null; unlinked: boolean }
+
+function turnStartTs(turn: { timestamp?: string; assistantCalls: Array<{ timestamp?: string }> }): string {
+  return turn.assistantCalls[0]?.timestamp || turn.timestamp || ''
+}
+
+// Grace window for a child whose spawn pairing was AMBIGUOUS (the parent recorded
+// its agentId, so we KNOW it spawned this child, but the exact launching turn could
+// not be pinned) and whose first activity lands just after the parent's last turn.
+// The repo has no session-idle gap constant to reuse, so 30 minutes is used as a
+// conservative window: within it the child folds to the parent's last turn rather
+// than vanish; beyond it, it stays unlinked.
+const AMBIGUOUS_SPAWN_GRACE_MS = 30 * 60 * 1000
+
+/// Resolve a fold to the PR its launching parent turn was working on, using the
+/// parent's UNFILTERED turn data so a date range cannot misattribute:
+///   1. spawn `tool_use` id to `parent.spawnPrSets` (built at assembly from the
+///      FULL turn list), so a spawn in a pre-range turn still yields the right PR;
+///      an empty set there means the spawn had no active PR, so unattributed.
+///   2. else the child's first-activity epoch bucketed into the parent's turn PR
+///      carry (seeded from `prRefsAtRangeStart`). Timestamps compare as epoch ms
+///      (mixed UTC offsets order correctly). Activity strictly AFTER the parent's
+///      last timestamp is unlinked (contributes nothing); before the first turn it
+///      carries the pre-range set (or unattributed).
+function resolveChild(parent: SessionSummary, fold: ChildFold): ResolvedChild {
+  const spawnId = parent.agentSpawnLinks?.[fold.agentId]
+  if (spawnId !== undefined && parent.spawnPrSets && Object.prototype.hasOwnProperty.call(parent.spawnPrSets, spawnId)) {
+    const prs = parent.spawnPrSets[spawnId]!
+    return { fold, prSet: prs.length ? namedPrSet(prs, fold.named) : null, unlinked: false }
+  }
+  const ms = fold.spawnAtMs
+  if (Number.isNaN(ms)) return { fold, prSet: null, unlinked: true }
+  const lastMs = parseMs(parent.lastTimestamp)
+  if (!Number.isNaN(lastMs) && ms > lastMs) {
+    // After the parent's last turn: normally unlinked. But if the spawn pairing was
+    // AMBIGUOUS (we know it was spawned here, just not which turn) and the child
+    // started within the grace window, extend the fallback to the parent's LAST
+    // turn rather than lose it. A truly-absent pairing (no agentId at all) does not
+    // qualify: we cannot confirm this parent spawned it.
+    const ambiguousPairing = !!parent.ambiguousSpawnAgentIds?.includes(fold.agentId)
+    if (!(ambiguousPairing && ms - lastMs <= AMBIGUOUS_SPAWN_GRACE_MS)) {
+      return { fold, prSet: null, unlinked: true }
+    }
+    // Fall through: every turn has start <= lastMs <= ms, so the walk below carries
+    // `current` to the last turn's PR set.
+  }
+  let current: string[] | null = parent.prRefsAtRangeStart?.length ? parent.prRefsAtRangeStart : null
+  for (const turn of parent.turns) {
+    const tMs = parseMs(turnStartTs(turn))
+    if (Number.isNaN(tMs)) continue
+    if (tMs <= ms) { if (turn.prRefs?.length) current = turn.prRefs }
+    else break
+  }
+  return { fold, prSet: current ? namedPrSet(current, fold.named) : null, unlinked: false }
+}
+
+// A run whose prompt names one PR belongs to that PR, not to whatever PR the
+// parent's last pr-link happened to carry (a review of #1729 spawned while the
+// parent carried a stale #24). Only re-points spend that already had a PR, and
+// only within the carried PR's repo (or the exact URL the prompt gave), so
+// attributed totals never change.
+function namedPrSet(carried: string[], named: NamedPr | 'multi' | null): string[] {
+  if (!named || named === 'multi') return carried
+  const repos = new Set(carried.map(url => {
+    const m = GITHUB_PR_RE.exec(url)
+    return m ? `${m[1]}/${m[2]}` : ''
+  }))
+  const repo = named.repo ?? (repos.size === 1 ? [...repos][0] : '')
+  if (!repo) return carried
+  return [`https://github.com/${repo}/pull/${named.number}`]
+}
+
+/// Resolve every folded child to its parent's PR set, once. Keyed by the parent's
+/// provider + sessionId. Parents come from each project's `sessions` AND its
+/// `subagentAnchors` (PR-linked parents kept only for folding). When two DISTINCT
+/// parents share a key (true duplicate data), the child is folded into NEITHER
+/// (deterministic skip, stays standalone): correctness over coverage.
+export type SubagentAttribution = Map<string, ResolvedChild[]>
+
+/// `scanCommands: false` skips the per-call PR signals (pushed, readPrs, ...) for
+/// callers that only need each child's PR set.
+export function resolveSubagentAttribution(projects: ProjectSummary[], scanCommands = true): SubagentAttribution {
+  const index = buildSubagentIndex(projects)
+  // A provider+sessionId key is AMBIGUOUS when it is carried by more than one
+  // DISTINCT record (different fingerprint) across ALL candidate sessions and
+  // anchors, regardless of whether each has prLinks: a child pointing at that id
+  // cannot tell which record spawned it. Such a key folds into NEITHER parent and
+  // its subtree is skipped (correctness over coverage). Identical duplicates share
+  // a fingerprint, so they are not ambiguous and fold once.
+  const fpByKey = new Map<string, Set<string>>()
+  const note = (s: SessionSummary): void => {
+    const k = providerSessionKey(s)
+    const set = fpByKey.get(k)
+    if (set) set.add(sessionFingerprint(s))
+    else fpByKey.set(k, new Set([sessionFingerprint(s)]))
+  }
+  for (const project of projects) {
+    for (const s of project.sessions) note(s)
+    for (const a of project.subagentAnchors ?? []) note(a)
+  }
+  const ambiguous = new Set<string>()
+  for (const [k, fps] of fpByKey) if (fps.size > 1) ambiguous.add(k)
+
+  const out: SubagentAttribution = new Map()
+  const resolveParent = (parent: SessionSummary): void => {
+    if (!parent.prLinks?.length) return
+    const k = providerSessionKey(parent)
+    if (out.has(k)) return                          // already resolved for this key
+    if (ambiguous.has(k)) { out.set(k, []); return } // ambiguous parent id: fold nothing
+    const direct = index.get(k)
+    if (!direct?.length) return
+    const claimed = new Set<string>()               // one claimed set across all direct children
+    const resolved: ResolvedChild[] = []
+    for (const child of direct) {
+      if (claimed.has(child.sessionId) || selfLinks(child) || ambiguous.has(providerSessionKey(child))) continue
+      resolved.push(resolveChild(parent, buildChildFold(child, index, claimed, ambiguous, scanCommands)))
+    }
+    if (resolved.length) out.set(k, resolved)
+  }
+  for (const project of projects) {
+    for (const parent of project.sessions) resolveParent(parent)
+    for (const anchor of project.subagentAnchors ?? []) resolveParent(anchor)
+  }
+  return out
+}
+
+/// Attribute a session's spend to the PRs it referenced, at TURN granularity.
+///
+/// Walk the turns in order carrying `current` = the PR set of the most recent
+/// turn that referenced any PR (seeded from `prRefsAtRangeStart` so a reference
+/// made before the report window still owns its in-range follow-up turns). Each
+/// turn's cost/savings are split evenly across a multi-PR set (a merge-sweep turn
+/// touching several PRs); calls are split by largest-remainder so they stay whole.
+/// Each contribution also records the models of its calls and the turn's task
+/// category, both weighted by the same split share. Turns before the first
+/// reference land in `unattributed` (genuine session overhead). `repoint` may
+/// swap one attributed turn's set (push evidence) without changing the carry.
+///
+/// Legacy fallback: a session whose transcript already expired keeps its
+/// session-level `prLinks` but has NO per-turn `prRefs`. With no turn boundaries
+/// to attribute by, split the whole session evenly across its prLinks, mark every
+/// portion `approx`, and carry the session's model union (its calls still name
+/// their models) but NO category breakdown, since none can be honestly assigned.
+export function attributeSessionPrSpend(session: AttributableSession, repoint?: (turnIndex: number, carried: string[]) => string[]): SessionPrAttribution {
+  const perUrl = new Map<string, PrContribution>()
+  const unattributed = { cost: 0, calls: 0, savingsUSD: 0 }
+
+  const hasTurnRefs = session.turns.some(t => t.prRefs?.length) || !!session.prRefsAtRangeStart?.length
+  if (!hasTurnRefs) {
+    const links = session.prLinks
+    if (links?.length) {
+      const legacyModels = new Map<string, number>()
+      for (const turn of session.turns) {
+        for (const call of turn.assistantCalls) {
+          if (call.model) addToMap(legacyModels, call.model, call.costUSD)
+        }
+      }
+      const share = 1 / links.length
+      const callAlloc = allocateEven(session.apiCalls, links.length)
+      links.forEach((url, i) => {
+        const e = ensureContribution(perUrl, url)
+        e.cost += session.totalCostUSD * share
+        e.calls += callAlloc[i]!
+        e.savingsUSD += session.totalSavingsUSD * share
+        e.approx = true
+        for (const [m, mc] of legacyModels) addToMap(e.models, m, mc * share)
+      })
+    }
+    return { perUrl, unattributed, turnPrs: [] }
+  }
+
+  let current: string[] | null = session.prRefsAtRangeStart?.length ? session.prRefsAtRangeStart : null
+  const turnPrs: Array<string[] | null> = []
+  for (const [i, turn] of session.turns.entries()) {
+    if (turn.prRefs?.length) current = turn.prRefs
+    const prs = current && repoint ? repoint(i, current) : current
+    turnPrs.push(prs)
+    const cost = turn.assistantCalls.reduce((s, c) => s + c.costUSD, 0)
+    const calls = behavioralCallCount(turn.assistantCalls)
+    const savings = turn.assistantCalls.reduce((s, c) => s + (c.savingsUSD ?? 0), 0)
+    // Cost/savings keep every call, so a supplementary-only turn (calls === 0)
+    // still attributes its spend here — only a genuinely empty turn is skipped.
+    if (cost === 0 && calls === 0 && savings === 0) continue
+    if (prs === null) {
+      unattributed.cost += cost
+      unattributed.calls += calls
+      unattributed.savingsUSD += savings
+      continue
+    }
+    const modelCostInTurn = new Map<string, number>()
+    for (const call of turn.assistantCalls) {
+      if (call.model) addToMap(modelCostInTurn, call.model, call.costUSD)
+    }
+    const share = 1 / prs.length
+    const callAlloc = allocateEven(calls, prs.length)
+    const startTs = turnStartTs(turn)
+    const endTs = turn.assistantCalls.at(-1)?.timestamp || startTs
+    prs.forEach((url, i) => {
+      const e = ensureContribution(perUrl, url)
+      if (startTs && (!e.firstTs || startTs < e.firstTs)) e.firstTs = startTs
+      if (endTs > e.lastTs) e.lastTs = endTs
+      e.cost += cost * share
+      e.calls += callAlloc[i]!
+      e.savingsUSD += savings * share
+      if (turn.category) addToMap(e.categories, turn.category, cost * share)
+      for (const [m, mc] of modelCostInTurn) addToMap(e.models, m, mc * share)
+    })
+  }
+  return { perUrl, unattributed, turnPrs }
+}
+
+/// PR-attribution totals. `attributedCost` is the sum of the per-PR rows;
+/// `unattributedCost` is pre-reference overhead not tied to any specific PR;
+/// `cost` = attributed + unattributed = the PR-linked spend INCLUDING folded
+/// subagent runs, so it exceeds the parents' own spend. `sessions` counts distinct
+/// PR-linked PARENT sessions ONLY (0-cost fold anchors are excluded); it is
+/// `subagentSessions` (folded subtrees: children plus descendants) that explains
+/// the extra spend.
+export type PrTotals = { cost: number; sessions: number; subagentSessions: number; attributedCost: number; unattributedCost: number }
+export type PrAttribution = { rows: PrRow[]; totals: PrTotals }
+
+/// Spend by pull request, at turn granularity, with subagent runs folded into the
+/// PR each was working on. Computed in ONE pass so `aggregateByPr` (rows) and
+/// `prLinkedTotals` (totals) never disagree; the payload builder should call this
+/// once and read both. Rows carry ATTRIBUTED cost/calls and ARE summable; `approx`
+/// marks legacy even-split rows; `models`/`categories` are the attributed
+/// breakdowns. Sorted by cost, descending.
+export function buildPrAttribution(projects: ProjectSummary[]): PrAttribution {
+  const byUrl = new Map<string, {
+    cost: number; savingsUSD: number; calls: number; approx: boolean
+    legacyCost: number
+    sessions: Set<string>; ownSessions: Set<string>; foldedRuns: number; firstStarted: string; lastEnded: string
+    models: Map<string, number>; categories: Map<string, number>
+  }>()
+  const attribution = resolveSubagentAttribution(projects)
+  const signals = new Map<string, PrSignals>()
+  const sig = (url: string): PrSignals => {
+    let s = signals.get(url)
+    if (!s) signals.set(url, s = { spend: [], openedMs: NaN, explicit: false, reviews: [] })
+    return s
+  }
+  // Opens first: a run can push branch B before B's PR is opened, possibly by
+  // another session, so every head must be known before attributing.
+  const linked = projects.flatMap(p => p.sessions.filter(s => s.prLinks?.length))
+  const turnCmds = new Map<SessionSummary, TurnCommands[]>()
+  for (const session of linked) {
+    const tc = turnCommands(session)
+    turnCmds.set(session, tc)
+    matchSessionCreates(session, tc, sig)
+  }
+  // ponytail: a head branch reused by two PRs maps to neither.
+  const heads = new Map<string, string | null>()
+  for (const [url, s] of signals) if (s.head) heads.set(s.head, heads.has(s.head) && heads.get(s.head) !== url ? null : url)
+  // Push evidence: the PRs (in the carried set's repo) whose head these branches are.
+  const headPrs = (branches: Iterable<string>, carried: string[]): string[] | null => {
+    if (!heads.size) return null
+    const repos = new Set(carried.map(u => prParts(u)?.repo))
+    const out = new Set<string>()
+    for (const b of branches) {
+      const u = heads.get(b)
+      if (u && repos.has(prParts(u)?.repo)) out.add(u)
+    }
+    return out.size ? [...out] : null
+  }
+  let attributedCost = 0
+  let unattributedCost = 0
+  let sessions = 0
+  let subagentSessions = 0
+
+  // Add one contribution (a parent turn's share, or a folded child's share) to a
+  // PR row. `sessionKey` is the contributing PARENT's identity, so a folded child
+  // does not inflate the row's distinct-session count beyond its parent. Empty
+  // timestamps (a 0-turn anchor) never widen the span; folded children pass their
+  // OWN activity span, which is what dates an anchor-only row.
+  const addTo = (
+    url: string, sessionKey: string, firstTs: string, lastTs: string,
+    cost: number, savings: number, calls: number, approx: boolean,
+    models: Map<string, number>, categories: Map<string, number>,
+    foldedRuns = 0,
+  ): void => {
+    if (cost === 0 && calls === 0 && savings === 0) return
+    const row = byUrl.get(url) ?? {
+      cost: 0, savingsUSD: 0, calls: 0, approx: false, legacyCost: 0,
+      sessions: new Set<string>(), ownSessions: new Set<string>(), foldedRuns: 0, firstStarted: firstTs, lastEnded: lastTs,
+      models: new Map<string, number>(), categories: new Map<string, number>(),
+    }
+    row.cost += cost
+    row.savingsUSD += savings
+    row.calls += calls
+    row.sessions.add(sessionKey)
+    if (foldedRuns) row.foldedRuns += foldedRuns
+    else row.ownSessions.add(sessionKey)
+    if (approx) { row.approx = true; row.legacyCost += cost }
+    for (const [m, mc] of models) addToMap(row.models, m, mc)
+    for (const [cat, cc] of categories) addToMap(row.categories, cat, cc)
+    if (firstTs && (!row.firstStarted || firstTs < row.firstStarted)) row.firstStarted = firstTs
+    if (lastTs && lastTs > row.lastEnded) row.lastEnded = lastTs
+    byUrl.set(url, row)
+  }
+
+  // Fold one parent's resolved children into rows + totals, ONCE per parent key: two
+  // duplicate parent sessions share a provider+sessionId key and the SAME resolved
+  // children, so folding for each would double-count. An unlinked child contributes
+  // nothing; a child with no active PR goes to unattributed (no row).
+  const foldedKeys = new Set<string>()
+  const foldChildren = (parent: SessionSummary): void => {
+    const key = providerSessionKey(parent)
+    if (foldedKeys.has(key)) return
+    foldedKeys.add(key)
+    const sessionKey = rowSessionKey(parent)
+    for (const rc of attribution.get(key) ?? []) {
+      if (rc.unlinked) continue
+      subagentSessions += rc.fold.foldedSessions
+      if (!rc.prSet?.length) { unattributedCost += rc.fold.cost; continue }
+      attributedCost += rc.fold.cost
+      const namedOne = rc.fold.named !== null && rc.fold.named !== 'multi'
+      const prs = (!namedOne && headPrs(rc.fold.branches, rc.prSet)) || rc.prSet
+      const share = 1 / prs.length
+      const callAlloc = allocateEven(rc.fold.calls, prs.length)
+      prs.forEach((url, i) => {
+        const models = new Map<string, number>()
+        for (const [m, mc] of rc.fold.models) models.set(m, mc * share)
+        const categories = new Map<string, number>()
+        for (const [cat, cc] of rc.fold.categories) categories.set(cat, cc * share)
+        addTo(url, sessionKey, rc.fold.firstTs, rc.fold.lastTs,
+          rc.fold.cost * share, rc.fold.savingsUSD * share, callAlloc[i]!, false, models, categories, rc.fold.foldedSessions)
+        foldSignals(sig(url), url, rc.fold, share, prs.length === 1)
+      })
+    }
+  }
+
+  for (const project of projects) {
+    for (const session of project.sessions) {
+      if (!session.prLinks?.length) continue
+      sessions += 1
+      const sessionKey = rowSessionKey(session)
+      const tc = turnCmds.get(session)!
+      const { perUrl, unattributed, turnPrs } = attributeSessionPrSpend(session, (i, carried) =>
+        (tc[i]!.pushed.length && headPrs(tc[i]!.pushed, carried)) || carried)
+      for (const [url, c] of perUrl) {
+        attributedCost += c.cost
+        addTo(url, sessionKey, c.firstTs || session.firstTimestamp, c.lastTs || session.lastTimestamp, c.cost, c.savingsUSD, c.calls, c.approx, c.models, c.categories)
+        if (c.approx) sig(url).spend.push({ ms: parseMs(session.firstTimestamp), cost: c.cost, review: false, legacy: true, run: { kind: 'session', key: sessionKey, description: null, models: c.models, at: session.firstTimestamp, link: 'carried' } })
+      }
+      turnSignals(session, sessionKey, tc, turnPrs, sig)
+      unattributedCost += unattributed.cost
+      foldChildren(session)
+    }
+    // Anchor parents: fold their children only. NOT counted in `sessions`, and no
+    // own spend (they have no in-range turns).
+    for (const anchor of project.subagentAnchors ?? []) {
+      if (!anchor.prLinks?.length) continue
+      foldChildren(anchor)
+    }
+  }
+
+  const scan = scanPrCommands(projects)
+  const byNumber = new Map<number, string[]>()
+  for (const url of byUrl.keys()) {
+    const pr = prParts(url)
+    if (pr) byNumber.set(pr.number, [...(byNumber.get(pr.number) ?? []), url])
+  }
+  const rows = [...byUrl.entries()]
+    .map(([url, r]) => {
+      // Collapse raw model names to short display names, summing costs that map
+      // to the same short name, then order by attributed cost (name asc breaks
+      // ties for a stable order). Keep every real model: `<synthetic>` is an
+      // internal accounting bucket, not a model a person chose or can act on.
+      // The desktop renders the rest as wrapping chips, so an opaque "+N" never
+      // hides which model did the work.
+      const shortCosts = new Map<string, number>()
+      for (const [raw, mc] of r.models) {
+        if (raw === '<synthetic>') continue
+        addToMap(shortCosts, modelRowKey(raw), mc)
+      }
+      const models = [...shortCosts.entries()]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .map(([name]) => name)
+      const categories = [...r.categories.entries()]
+        .map(([cat, cost]) => ({ name: CATEGORY_LABELS[cat as TaskCategory] ?? cat, cost }))
+      // Mixed row: live per-turn categories exist AND part of the row came from a
+      // legacy even-split (no turn data). Add a synthetic line for the legacy
+      // share so the expansion reconciles with the row cost instead of silently
+      // dropping it. A legacy-only row keeps no categories (it surfaces as "no
+      // per-turn detail"), so there is nothing to reconcile there.
+      if (categories.length > 0 && r.legacyCost > 0) {
+        categories.push({ name: 'Legacy estimate (no per-turn detail)', cost: r.legacyCost })
+      }
+      categories.sort((a, b) => b.cost - a.cost || a.name.localeCompare(b.name))
+      return {
+        url, label: shortenPrUrl(url),
+        cost: r.cost, savingsUSD: r.savingsUSD,
+        sessions: r.sessions.size, calls: r.calls,
+        firstStarted: r.firstStarted, lastEnded: r.lastEnded,
+        runs: r.ownSessions.size + r.foldedRuns,
+        approx: r.approx,
+        models,
+        ...(categories.length ? { categories } : {}),
+        ...rowSignals(url, signals.get(url), r.cost, scan, byNumber),
+      }
+    })
+    .sort((a, b) => b.cost - a.cost)
+
+  return { rows, totals: { cost: attributedCost + unattributedCost, sessions, subagentSessions, attributedCost, unattributedCost } }
+}
+
+type SpendRun = { kind: 'session' | 'subagent'; key: string; description: string | null; models: Map<string, number>; at: string; link: PrRunLink }
+
+type PrSignals = {
+  /// Each attributed share with its start time and run; `review` marks review
+  /// spend, `legacy` an even-split share with no turn data.
+  spend: Array<{ ms: number; cost: number; review: boolean; legacy?: boolean; run: SpendRun }>
+  openedMs: number
+  head?: string
+  draft?: boolean
+  explicit: boolean
+  reviews: PrReviewRun[]
+}
+
+function prParts(url: string): { repo: string; number: number } | null {
+  const m = GITHUB_PR_RE.exec(url)
+  return m ? { repo: `${m[1]}/${m[2]}`, number: Number(m[3]) } : null
+}
+
+function mentionsUrl(text: string, url: string): boolean {
+  for (let i = text.indexOf(url); i >= 0; i = text.indexOf(url, i + 1)) if (!/\d/.test(text[i + url.length] ?? '')) return true
+  return false
+}
+
+function topModel(models: Map<string, number>): string | null {
+  let best: [string, number] | null = null
+  for (const [m, c] of models) if (m !== '<synthetic>' && (!best || c > best[1])) best = [m, c]
+  return best ? modelRowKey(best[0]) : null
+}
+
+// A folded run reviewed this PR when it read it (by number, or read code under
+// a description naming it) and neither committed nor pushed. A run split
+// across PRs, or whose description names several, reviews none of them.
+function foldSignals(s: PrSignals, url: string, fold: ChildFold, share: number, single: boolean): void {
+  const cost = fold.cost * share
+  if (cost === 0 && fold.calls === 0) return
+  const pr = prParts(url)
+  const readThis = !!pr && single && fold.named !== 'multi' && (fold.readPrs.has(pr.number) || (fold.mentioned === pr.number && fold.readsCode))
+  const review = readThis && !fold.committed && !fold.pushed
+  const link: PrRunLink = pr && fold.mentioned === pr.number ? 'named'
+    : s.head && fold.branches.has(s.head) ? 'pushed-head'
+    : pr && fold.prNumbers.has(pr.number) ? 'gh-pr'
+    : 'carried'
+  s.spend.push({ ms: parseMs(fold.firstTs), cost, review, run: { kind: 'subagent', key: fold.agentId, description: fold.description || null, models: fold.models, at: fold.firstTs, link } })
+  if (review) s.reviews.push({ kind: 'agent', label: fold.agentType ?? 'subagent', model: topModel(fold.models), costUSD: cost, at: fold.firstTs, evidence: 'reads-pr' })
+  if (pr && (fold.prNumbers.has(pr.number) || fold.mentioned === pr.number)) s.explicit = true
+}
+
+// Pair each `gh pr create` in a turn with a PR first referenced in that turn
+// (its pr-link lands there): per repo, creates in call order against the new PR
+// numbers ascending, since GitHub numbers grow. A retried create for the same
+// head keeps only the last one. One call opening several PRs gets a pr-link for
+// the last one only.
+function matchCreates(cmds: Array<{ cmd: string; ms: number }>, fresh: string[], sig: (url: string) => PrSignals): void {
+  const creates = new Map<string, { ms: number; repo?: string; head?: string; draft: boolean }>()
+  cmds.forEach(c => ghPrCommands(c.cmd).forEach((g, j) => {
+    if (g.verb !== 'create') return
+    const head = createHead(g.args)
+    creates.set(head ?? `${c.ms}:${j}`, { ms: c.ms, ...(g.repo ? { repo: g.repo } : {}), ...(head ? { head } : {}), draft: /(?:^|\s)(?:--draft|-d)(?=\s|$)/.test(g.args) })
+  }))
+  if (!creates.size) return
+  const byRepo = new Map<string, Array<{ ms: number; head?: string; draft: boolean }>>()
+  for (const c of creates.values()) byRepo.set(c.repo ?? '', [...(byRepo.get(c.repo ?? '') ?? []), c])
+  let unclaimed = [...fresh].sort((a, b) => (prParts(a)?.number ?? 0) - (prParts(b)?.number ?? 0))
+  for (const repo of [...byRepo.keys()].sort().reverse()) {
+    const cs = byRepo.get(repo)!.sort((a, b) => a.ms - b.ms)
+    const us = unclaimed.filter(u => !repo || prParts(u)?.repo === repo)
+    const paired = us.length === cs.length ? cs : us.length === 1 ? cs.slice(-1) : null
+    if (!paired) continue
+    paired.forEach((c, k) => {
+      const s = sig(us[k]!)
+      if (Number.isNaN(s.openedMs) || c.ms < s.openedMs) { s.openedMs = c.ms; s.head = c.head; s.draft = c.draft }
+      s.explicit = true
+    })
+    unclaimed = unclaimed.filter(u => !us.includes(u))
+  }
+}
+
+type TurnCommands = { cmds: Array<{ cmd: string; ms: number }>; pushed: string[] }
+
+// Each turn's commands, and the branches it pushed by name (a top-level session
+// moves between checkouts too freely to resolve a bare push).
+function turnCommands(session: SessionSummary): TurnCommands[] {
+  return session.turns.map(turn => {
+    const cmds = turn.assistantCalls.flatMap(call => {
+      const list = callCommands(call)
+      if (!list.length) return []
+      const ms = parseMs(call.timestamp)
+      return list.map(cmd => ({ cmd, ms }))
+    })
+    return { cmds, pushed: cmds.flatMap(c => pushes(c.cmd).flat()) }
+  })
+}
+
+function matchSessionCreates(session: SessionSummary, tc: TurnCommands[], sig: (url: string) => PrSignals): void {
+  const seen = new Set(session.prRefsAtRangeStart ?? [])
+  session.turns.forEach((turn, i) => {
+    const fresh = (turn.prRefs ?? []).filter(u => !seen.has(u))
+    for (const u of fresh) seen.add(u)
+    if (fresh.length) matchCreates(tc[i]!.cmds, fresh, sig)
+  })
+}
+
+// Walk a parent's turns with the PR set each was attributed to: the share of
+// spend each PR carried, why it counts there, and `gh pr review <n>` posted for it.
+function turnSignals(session: SessionSummary, sessionKey: string, tc: TurnCommands[], turnPrs: Array<string[] | null>, sig: (url: string) => PrSignals): void {
+  session.turns.forEach((turn, i) => {
+    const prs = turnPrs[i]
+    if (!prs) return
+    const cost = turn.assistantCalls.reduce((n, c) => n + c.costUSD, 0)
+    if (cost === 0 && behavioralCallCount(turn.assistantCalls) === 0) return
+    const share = cost / prs.length
+    const at = turnStartTs(turn)
+    const { cmds, pushed } = tc[i]!
+    const gh = cmds.flatMap(c => ghPrCommands(c.cmd))
+    const named = new Set(cmds.flatMap(c => [...prNumbersIn(c.cmd)]))
+    const models = new Map<string, number>()
+    for (const c of turn.assistantCalls) if (c.model) addToMap(models, c.model, c.costUSD)
+    for (const url of prs) {
+      const s = sig(url)
+      const pr = prParts(url)
+      const posted = pr ? gh.find(g => g.verb === 'review' && g.number === pr.number && (!g.repo || g.repo === pr.repo)) : undefined
+      const mentioned = mentionsUrl(turn.userMessage, url)
+      const namesPr = !!pr && named.has(pr.number)
+      const link: PrRunLink = cmds.some(c => c.ms === s.openedMs) ? 'opened'
+        : namesPr || posted ? 'gh-pr'
+        : s.head && pushed.includes(s.head) ? 'pushed-head'
+        : mentioned ? 'named'
+        : 'carried'
+      s.spend.push({ ms: parseMs(at), cost: share, review: !!posted, run: { kind: 'session', key: sessionKey, description: null, models, at, link } })
+      if (posted) s.reviews.push({ kind: 'you', label: reviewVerdict(posted.args), model: topModel(models), costUSD: share, at, evidence: 'gh-pr-review' })
+      if (namesPr || mentioned) s.explicit = true
+    }
+  })
+}
+
+type PrCommandScan = {
+  pushes: Array<{ ms: number; branches: string[]; mentioned: number | null }>
+  events: Array<{ ms: number; number: number; repo?: string; verb: 'merge' | 'close' | 'ready' | 'reopen' }>
+}
+
+const STATE_EVENTS = new Set(['merge', 'close', 'ready', 'reopen'])
+
+// Every push and state change (merge, close, ready, reopen) in range, from every
+// session. A bare `git push` in a subagent run pushes the branch it last pushed
+// by name; a top-level session moves between checkouts too freely to assume that.
+function scanPrCommands(projects: ProjectSummary[]): PrCommandScan {
+  const out: PrCommandScan = { pushes: [], events: [] }
+  for (const project of projects) for (const session of project.sessions) {
+    const side = !!session.isSidechain
+    let mentioned: number | null | undefined
+    let upstream: string | undefined
+    for (const turn of session.turns) for (const call of turn.assistantCalls) {
+      const cmds = callCommands(call)
+      if (!cmds.length) continue
+      const ms = parseMs(call.timestamp)
+      if (Number.isNaN(ms)) continue
+      for (const cmd of cmds) {
+        for (const branches of pushes(cmd)) {
+          if (side && mentioned === undefined) mentioned = namedPrNumber(agentDescriptionOf(session))
+          if (side && branches.length) upstream = branches.at(-1)
+          out.pushes.push({ ms, branches: branches.length ? branches : upstream ? [upstream] : [], mentioned: mentioned ?? null })
+        }
+        for (const g of ghPrCommands(cmd)) {
+          if (STATE_EVENTS.has(g.verb) && g.number !== undefined) out.events.push({ ms, number: g.number, ...(g.repo ? { repo: g.repo } : {}), verb: g.verb as PrCommandScan['events'][number]['verb'] })
+        }
+      }
+    }
+  }
+  return out
+}
+
+// One runList entry per folded run, and per session and link reason.
+function runList(spend: PrSignals['spend']): PrRun[] {
+  const out: Array<PrRun & { models: Map<string, number> }> = []
+  const bySession = new Map<string, PrRun & { models: Map<string, number> }>()
+  for (const x of spend) {
+    const { key, models, ...run } = x.run
+    const k = `${key}${KEY_SEP}${run.link}`
+    const hit = run.kind === 'session' ? bySession.get(k) : undefined
+    if (hit) {
+      hit.costUSD += x.cost
+      if (run.at && (!hit.at || run.at < hit.at)) hit.at = run.at
+      for (const [m, c] of models) addToMap(hit.models, m, c)
+      continue
+    }
+    const entry = { ...run, model: null, costUSD: x.cost, models: new Map(models) }
+    if (run.kind === 'session') bySession.set(k, entry)
+    out.push(entry)
+  }
+  return out
+    .sort((a, b) => a.at.localeCompare(b.at))
+    .map(({ models, ...run }) => ({ ...run, model: topModel(models) }))
+}
+
+// ponytail: a bare PR number (a merge, or a run's description) is matched
+// against this report's rows only; two rows with that number in different repos
+// leave it unmatched.
+function rowSignals(url: string, s: PrSignals | undefined, cost: number, scan: PrCommandScan, byNumber: Map<number, string[]>): Pick<PrRow,
+  'linkEvidence' | 'openedAt' | 'followUpRounds' | 'followUpPushes' | 'oneShot' | 'reviewRuns' | 'reviewCostUSD' | 'mergedAt' | 'timeToMergeMs' | 'costSplit'
+  | 'carriedUSD' | 'runList' | 'state' | 'followUpAt'> {
+  const pr = prParts(url)
+  const isRow = (number: number, repo?: string): boolean => {
+    const hits = (byNumber.get(number) ?? []).filter(u => !repo || prParts(u)!.repo === repo)
+    return hits.length === 1 && hits[0] === url
+  }
+  const opened = s && !Number.isNaN(s.openedMs) ? s.openedMs : null
+  // Without the head branch (`--head "$br"`) the open's own pushes cannot be
+  // told apart, so it reads like a PR opened elsewhere: follow-ups only.
+  const tracked = opened !== null && !!s?.head
+  const pushMs = scan.pushes
+    .filter(p => (s?.head && p.branches.includes(s.head)) || (pr && p.mentioned === pr.number && isRow(pr.number)))
+    .map(p => p.ms)
+    .filter(ms => opened === null || ms > opened)
+  const starts = tracked || pushMs.length ? roundStarts(pushMs) : null
+  const followUpRounds = starts ? starts.length : null
+  const events = scan.events.filter(e => isRow(e.number, e.repo) && (opened === null || e.ms >= opened))
+  const merged = Math.min(Infinity, ...events.filter(e => e.verb === 'merge').map(e => e.ms))
+  const mergedMs = Number.isFinite(merged) ? merged : null
+  // A plain open says nothing about now (a merge by script is not seen), so
+  // only a draft open counts; a reopened draft stays a draft until `gh pr ready`.
+  let draft = opened !== null && !!s?.draft
+  let state: PrRow['state'] = draft ? 'draft' : null
+  for (const e of [...events].sort((a, b) => a.ms - b.ms)) {
+    if (e.verb === 'ready') draft = false
+    state = e.verb === 'merge' ? 'merged' : e.verb === 'close' ? 'closed' : draft ? 'draft' : 'open'
+  }
+  const spend = s?.spend ?? []
+  const reviewSpend = spend.filter(x => x.review)
+  const firstReview = Math.min(...reviewSpend.map(x => x.ms))
+  const reviewUSD = reviewSpend.reduce((n, x) => n + x.cost, 0)
+  const fixesUSD = spend.filter(x => !x.review && !x.legacy && x.ms >= firstReview).reduce((n, x) => n + x.cost, 0)
+  return {
+    linkEvidence: !spend.some(x => !x.legacy) ? null : s!.explicit || mergedMs !== null ? 'explicit' : 'pr-link-only',
+    openedAt: opened === null ? null : new Date(opened).toISOString(),
+    followUpRounds,
+    followUpPushes: pushMs.length,
+    oneShot: tracked ? followUpRounds === 0 : null,
+    reviewRuns: [...(s?.reviews ?? [])].sort((a, b) => a.at.localeCompare(b.at)),
+    reviewCostUSD: reviewUSD,
+    mergedAt: mergedMs === null ? null : new Date(mergedMs).toISOString(),
+    timeToMergeMs: opened !== null && mergedMs !== null && mergedMs > opened ? mergedMs - opened : null,
+    costSplit: { buildUSD: cost - reviewUSD - fixesUSD, reviewUSD, fixesUSD },
+    carriedUSD: spend.filter(x => x.run.link === 'carried').reduce((n, x) => n + x.cost, 0),
+    runList: runList(spend),
+    state,
+    followUpAt: (starts ?? []).map(ms => new Date(ms).toISOString()),
+  }
+}
+
+/// Spend attributed to each pull request (thin wrapper over buildPrAttribution).
+export function aggregateByPr(projects: ProjectSummary[]): PrRow[] {
+  return buildPrAttribution(projects).rows
+}
+
+/// Totals across every PR-linked session (thin wrapper over buildPrAttribution).
+export function prLinkedTotals(projects: ProjectSummary[]): PrTotals {
+  return buildPrAttribution(projects).totals
+}
+
+export type BranchRow = {
+  /// The git branch active for the attributed turns, or `null` for spend that
+  /// occurred before any branch was observed within a branch-bearing session.
+  branch: string | null
+  cost: number
+  calls: number
+  sessions: number
+}
+
+/// Per-branch spend, carrying each session's last-seen git branch forward across
+/// its turns. The cache stores a turn's branch only when it CHANGES, so a report
+/// must reconstruct each turn's branch from the last stored value — this walks a
+/// session's turns in order and does exactly that.
+///
+/// Only sessions that EVER observed a branch participate: a provider that never
+/// captures branch data (only Claude does today) would otherwise pile all of its
+/// spend into one `null` bucket that dwarfs every real branch. Within a
+/// participating session, turns before the first observed branch are attributed
+/// to a single explicit `null` row the caller can label honestly.
+///
+/// A session that switches branches counts toward EACH branch it touched (like
+/// the by-PR by-reference attribution), so rows must never be summed into a grand
+/// total. Sorted by cost, descending.
+export function aggregateByBranch(projects: ProjectSummary[]): BranchRow[] {
+  const byBranch = new Map<string | null, { cost: number; calls: number; sessions: Set<string> }>()
+  for (const project of projects) {
+    for (const session of project.sessions) {
+      // Participate when the session observed a branch anywhere in its full
+      // transcript (`everHadBranch`, set pre-date-filter) — falling back to the
+      // turns in hand for producers/fixtures that don't set the flag. A session
+      // that never observed a branch (every non-Claude provider) is skipped so
+      // it can't pile into the null bucket.
+      if (!session.everHadBranch && !session.turns.some(turn => turn.gitBranch)) continue
+      let current: string | null = null
+      for (const turn of session.turns) {
+        if (turn.gitBranch) current = turn.gitBranch
+        // Raw gate: a supplementary-only turn still carries cost to attribute,
+        // even though it adds no behavioral calls.
+        if (turn.assistantCalls.length === 0) continue
+        const turnCost = turn.assistantCalls.reduce((sum, call) => sum + call.costUSD, 0)
+        const row = byBranch.get(current) ?? { cost: 0, calls: 0, sessions: new Set<string>() }
+        row.cost += turnCost
+        row.calls += behavioralCallCount(turn.assistantCalls)
+        row.sessions.add(session.sessionId)
+        byBranch.set(current, row)
+      }
+    }
+  }
+  return [...byBranch.entries()]
+    .map(([branch, d]) => ({ branch, cost: d.cost, calls: d.calls, sessions: d.sessions.size }))
+    .sort((a, b) => b.cost - a.cost)
+}

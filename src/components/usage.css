@@ -1,0 +1,298 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+.usage-workspace .desktop-content-inner {
+  max-width: var(--lumi-dashboard-max-width);
+  padding: 40px 24px 24px;
+}
+.usage-workspace:has(.usage-page--detail) {
+  overflow: hidden;
+}
+.usage-workspace:has(.usage-page--detail) .desktop-content-inner {
+  height: 100%;
+  min-height: 0;
+}
+.usage-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+}
+.usage-page > * {
+  min-width: 0;
+}
+.usage-page--detail,
+.usage-session-detail,
+.usage-records-panel,
+.usage-session-records {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+.usage-session-detail > .usage-detail-header,
+.usage-records-panel > .ui-data-panel-heading,
+.usage-session-records > div:last-child:not(.usage-record-table-scroll) {
+  flex: none;
+}
+.usage-session-records {
+  gap: 12px;
+}
+.usage-records-preview {
+  height: var(--lumi-data-table-height);
+  flex: none;
+}
+.usage-toolbar,
+.usage-section-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.usage-section-heading {
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.usage-software-tabs {
+  display: flex;
+  flex: 1 1 240px;
+  min-width: 0;
+  margin-block: calc(-1 * max(4px, var(--lumi-shadow-scroll-gutter)));
+}
+.usage-date-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  /* Match the software tabs so a wrapped last row retains the same shadow gutter. */
+  padding-block: max(4px, var(--lumi-shadow-scroll-gutter));
+  margin-block: calc(-1 * max(4px, var(--lumi-shadow-scroll-gutter)));
+}
+.usage-custom-dates {
+  flex-basis: 100%;
+}
+.usage-custom-dates .ui-field {
+  min-width: 160px;
+}
+.usage-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+.usage-analysis-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 16px;
+}
+.usage-chart-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: var(--lumi-dashboard-analysis-height);
+}
+.usage-chart-panel .ui-stacked-chart {
+  flex: 1;
+  gap: 8px;
+}
+.usage-ranking-panel {
+  display: flex;
+  flex-direction: column;
+}
+.usage-ranking-panel .ui-data-panel-footer {
+  margin-top: auto;
+}
+.usage-ranking-panel .ui-data-panel-heading > .ui-data-text {
+  font-size: var(--lumi-text-label);
+}
+.usage-ranking-scroll {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 2px;
+  margin: -2px;
+}
+.usage-log-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.usage-search {
+  position: relative;
+  width: 280px;
+  max-width: 100%;
+}
+.usage-search > svg {
+  position: absolute;
+  left: 12px;
+  top: calc((var(--lumi-control-height) - 16px) / 2);
+  pointer-events: none;
+}
+.usage-search .ui-input {
+  padding-inline-start: 36px;
+  width: 100%;
+}
+.usage-session-filters {
+  margin-bottom: 16px;
+}
+.usage-session-filters .ui-select {
+  width: auto;
+}
+.usage-cell-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.usage-session-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 180px;
+}
+.usage-session-cell > svg {
+  flex: none;
+}
+.usage-session-cell > .usage-cell-stack {
+  gap: 0;
+}
+.usage-detail-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+}
+.usage-detail-title {
+  flex: 1 1 240px;
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+.usage-session-name {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.usage-token-pair {
+  display: inline-flex;
+  gap: 8px;
+  white-space: nowrap;
+}
+.usage-detail-values {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 24px;
+}
+.usage-detail-values > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+.usage-detail-values dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.usage-record-table-scroll {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+}
+.usage-record-table {
+  --usage-record-columns: 232px minmax(120px, 1fr) repeat(5, 84px) 72px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 8px 0;
+  flex: 1;
+  min-width: 980px;
+}
+.usage-record-list {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  align-content: start;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior-y: contain;
+}
+.usage-record-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: var(--usage-record-columns);
+  align-items: center;
+  gap: 16px;
+  min-height: var(--lumi-control-height);
+  min-width: 0;
+  white-space: nowrap;
+}
+.usage-record-header {
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.usage-record-model,
+.usage-record-time {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.usage-record-empty {
+  grid-column: 1 / -1;
+}
+.usage-record-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.usage-session-trigger {
+  display: grid;
+  width: 100%;
+  text-align: left;
+}
+.usage-session-trigger .ui-button-content {
+  width: 100%;
+  min-width: 0;
+}
+.usage-session-heading {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+}
+.usage-session-heading strong {
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 1050px) {
+  .usage-date-actions {
+    width: 100%;
+  }
+  .usage-date-actions > .ui-choices {
+    flex: 1;
+  }
+  .usage-analysis-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 780px) {
+  .usage-metrics {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .usage-date-actions > .ui-choices {
+    flex-basis: 100%;
+  }
+  .usage-detail-values {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .usage-ranking-panel .ui-data-panel-footer {
+    margin-top: 12px;
+  }
+}
+
+.usage-page > .ui-dashboard-toolbar {
+  /* Keep shadow room at the toolbar edges; wrapped rows share their gutters. */
+  padding-block: max(4px, var(--lumi-shadow-scroll-gutter));
+  margin-bottom: calc(-1 * max(4px, var(--lumi-shadow-scroll-gutter)));
+}
+.usage-log-actions .ui-select {
+  width: auto;
+}

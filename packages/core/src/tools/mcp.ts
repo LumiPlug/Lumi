@@ -51,11 +51,15 @@ interface Session {
   users: number
   connected: boolean
   invalid: boolean
+  idleTimer?: ReturnType<typeof setTimeout>
 }
 
 export class McpConnections {
   private sessions = new Map<string, Session>()
-  constructor(private readonly changed: (definition: CapabilityDefinition) => void) {}
+  constructor(
+    private readonly changed: (definition: CapabilityDefinition) => void,
+    private readonly idleTimeoutMs = 5 * 60_000,
+  ) {}
   private async connect(
     def: CapabilityDefinition,
     watch = true,
@@ -164,6 +168,7 @@ export class McpConnections {
     }
   }
   private async closeSession(session: Session): Promise<void> {
+    clearTimeout(session.idleTimer)
     session.controller.abort()
     await session.client.then((c) => c.close()).catch(() => {})
   }
@@ -214,6 +219,8 @@ export class McpConnections {
       session = created
       this.sessions.set(key, session)
     }
+    clearTimeout(session.idleTimer)
+    session.idleTimer = undefined
     session.users++
     try {
       const client = await waitFor(session.client, signal)
@@ -289,6 +296,14 @@ export class McpConnections {
       if (!session.users && (!session.connected || session.invalid)) {
         if (this.sessions.get(key) === session) this.sessions.delete(key)
         await this.closeSession(session)
+      } else if (!session.users && this.sessions.get(key) === session) {
+        const idle = session
+        idle.idleTimer = setTimeout(() => {
+          if (idle.users || this.sessions.get(key) !== idle) return
+          this.sessions.delete(key)
+          void this.closeSession(idle).catch(() => {})
+        }, this.idleTimeoutMs)
+        idle.idleTimer.unref()
       }
     }
   }

@@ -37,8 +37,31 @@
   --lumi-shadow-floating-heavy:
     0 16px 40px var(--lumi-shadow-heavy-color), 0 6px 16px var(--lumi-shadow-heavy-color);
   --lumi-shadow-focus-heavy: 0 4px 14px color-mix(in srgb, var(--accent) 24%, transparent);
+  --lumi-choice-selected-shadow-opacity: 1;
   --lumi-icon-glow-blur-heavy: 8px;
   --lumi-icon-glow-offset-heavy: 6px;
+  --lumi-nav-marker-width: 4px;
+  --lumi-nav-marker-height: 20px;
+  --lumi-nav-marker-gap: 2px;
+  --lumi-nav-beam-length: 44px;
+  --lumi-nav-beam-height: 44px;
+  --lumi-nav-beam-fill: linear-gradient(
+    to right,
+    color-mix(
+      in srgb,
+      var(--lumi-nav-light-color) var(--lumi-nav-beam-source-strength),
+      transparent
+    ),
+    color-mix(in srgb, var(--lumi-nav-light-color) var(--lumi-nav-beam-mid-strength), transparent)
+      52%,
+    transparent
+  );
+  --lumi-nav-marker-highlight: 0 0 8px
+    color-mix(
+      in srgb,
+      var(--lumi-nav-light-color) var(--lumi-nav-marker-glow-strength),
+      transparent
+    );
   --lumi-control-height: 36px;
   --lumi-icon-size-small: 20px;
   --lumi-search-width: 240px;
@@ -60,6 +83,15 @@
   --lumi-loading-breathe: 1800ms;
   --lumi-file-tree-width: 240px;
   --lumi-text-page: 26px;
+  --lumi-text-metric: 32px;
+  --lumi-leading-metric: 40px;
+  --lumi-dashboard-metric-height: 144px;
+  --lumi-dashboard-analysis-height: 320px;
+  --lumi-dashboard-plot-height: 200px;
+  --lumi-dashboard-max-width: 1600px;
+  --lumi-data-table-height: 420px;
+  --lumi-distribution-ring-size: 88px;
+  --lumi-distribution-ring-width: 300px;
   --lumi-leading-page: 36px;
   --lumi-text-section: 18px;
   --lumi-leading-section: 27px;
@@ -110,6 +142,9 @@
   --panel: var(--lumi-surface-3);
   --hover: var(--lumi-surface-4);
   --input: var(--lumi-surface-2);
+  --lumi-card-bg: var(--input);
+  --lumi-card-border-hover: var(--accent);
+  --lumi-dashboard-surface: var(--bg);
   --line: var(--lumi-outline);
   --text: var(--lumi-on-canvas);
   --secondary: var(--lumi-on-surface-muted);
@@ -147,10 +182,20 @@
 }
 
 /* Theme thumbnails use the same palette regardless of the selected app theme. */
+:root,
+[data-preview-theme='dark'] {
+  --lumi-nav-icon-color: var(--lumi-primary);
+  --lumi-nav-light-color: var(--lumi-primary);
+  --lumi-nav-beam-source-strength: 44%;
+  --lumi-nav-beam-mid-strength: 18%;
+  --lumi-nav-marker-glow-strength: 50%;
+}
+
 [data-preview-theme='dark'] {
   --bg: var(--lumi-surface-1);
   --content-card: var(--lumi-canvas);
   --input: var(--lumi-surface-2);
+  --lumi-card-bg: var(--input);
   --line: var(--lumi-outline);
   --text: var(--lumi-on-canvas);
   --accent: var(--lumi-primary);
@@ -162,6 +207,7 @@
   color-scheme: light;
   --lumi-shadow-color: rgb(38 38 41 / 12%);
   --lumi-shadow-heavy-color: rgb(38 38 41 / 24%);
+  --lumi-choice-selected-shadow-opacity: 0.4;
   /* ANSI terminal palette, shared by all terminal output surfaces. */
   --lumi-terminal-0: #24292f;
   --lumi-terminal-1: #b42318;
@@ -179,19 +225,27 @@
   --lumi-terminal-13: #a475f9;
   --lumi-terminal-14: #1b7c83;
   --lumi-terminal-15: #ffffff;
-  --bg: #f0f0ee;
-  --content-card: #fff;
-  --panel: #f7f7f5;
-  --hover: #eaeae6;
-  --input: #f1f1ee;
-  --line: #ddddd7;
-  --text: #262629;
-  --secondary: #64646d;
-  --quiet: #6c6c75;
-  --accent: #875600;
-  --accent-bg: #f7ecd8;
-  --button: #edb344;
-  --button-text: #291b05;
+  --bg: #f8f9fa;
+  --content-card: #f8f9fa;
+  --panel: #fff;
+  --hover: #f4f4f6;
+  --input: #f1f3f5;
+  --lumi-card-bg: #fff;
+  --lumi-card-border-hover: #d1d5db;
+  --lumi-dashboard-surface: #fff;
+  --line: #e5e7eb;
+  --text: #0f1117;
+  --secondary: #4b5563;
+  --quiet: #6b7280;
+  --accent: #b45309;
+  --accent-bg: #fef3c7;
+  --lumi-nav-icon-color: #b87500;
+  --lumi-nav-light-color: #f59e0b;
+  --lumi-nav-beam-source-strength: 20%;
+  --lumi-nav-beam-mid-strength: 6%;
+  --lumi-nav-marker-glow-strength: 35%;
+  --button: #d97706;
+  --button-text: #0f1117;
   --lumi-tool-terminal-bg: #eee8ff;
   --lumi-tool-terminal-text: #58418d;
   --lumi-tool-http-bg: #e1effa;
@@ -217,5 +271,5 @@
   --lumi-operational: #047857;
   --lumi-protocol: #075985;
   --lumi-error: #b42318;
-  --lumi-primary-hover: #e2a631;
+  --lumi-primary-hover: #f59e0b;
 }

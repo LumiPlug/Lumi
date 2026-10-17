@@ -58,3 +58,6 @@ Desktop.ini
 # Generated homepage delivery artifacts
 /templates/html-home/output/
 /.impeccable/
+
+# Rebuilt from the pinned MIT CodeBurn readers
+/packages/core/vendor/codeburn/reader.cjs

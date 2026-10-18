@@ -12,6 +12,8 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
+    // Integration tests spawn real processes; avoid contention on small hosted runners.
+    maxWorkers: process.env.CI ? 1 : undefined,
     exclude: ['**/node_modules/**', '**/vendor/**'],
     include: ['packages/**/*.test.ts', 'src/lib/**/*.test.{ts,tsx}'],
     reporters: ['default'],

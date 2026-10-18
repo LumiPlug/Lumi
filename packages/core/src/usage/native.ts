@@ -57,6 +57,7 @@ const MAX_BYTES = 64 * 1024 * 1024
 const MAX_SCAN_BYTES = 128 * 1024 * 1024
 const MAX_RECORDS = 100000
 const MAX_LINE = 4 * 1024 * 1024
+const CACHE_SETTLE_MS = 2000
 
 /** Read-only, bounded sources. The cache contains counters/explicit titles, never raw JSON. */
 export class NativeUsageCollector {
@@ -122,6 +123,7 @@ export class NativeUsageCollector {
           try {
             const stat = await safeStat(filename)
             let stamp = `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`
+            let latestChange = Math.max(stat.mtimeMs, stat.ctimeMs)
             if (root.sqlite) {
               // SQLite may open these companions itself; reject redirected sidecars too.
               try {
@@ -132,12 +134,15 @@ export class NativeUsageCollector {
               try {
                 const wal = await safeStat(filename + '-wal')
                 stamp += `:${wal.ino}:${wal.size}:${wal.mtimeMs}:${wal.ctimeMs}`
+                latestChange = Math.max(latestChange, wal.mtimeMs, wal.ctimeMs)
               } catch (error) {
                 if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
               }
             }
             const cached = this.cache.get(filename)
-            let result = cached?.stamp === stamp ? cached.result : undefined
+            // Coarse filesystem clocks can give rapid same-size rewrites identical stamps.
+            const settled = Date.now() - latestChange > CACHE_SETTLE_MS
+            let result = settled && cached?.stamp === stamp ? cached.result : undefined
             if (!result) {
               if (!root.sqlite && (stat.size > MAX_BYTES || bytes + stat.size > MAX_SCAN_BYTES)) {
                 problem('limit')

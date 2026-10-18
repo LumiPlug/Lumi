@@ -10,6 +10,7 @@ import { UsageCollector } from './collector'
 import { NativeUsageCollector, nativeUsageRoots } from './native'
 import { nativeRecord, parseNativeLine } from './native-adapters'
 import { UsageService } from './service'
+import * as discovery from './discovery'
 
 const at = '2026-10-18T03:00:00.000Z'
 const period = { start: '2026-10-18T00:00:00Z', end: '2026-10-19T00:00:00Z', timezone: 'UTC' }
@@ -258,6 +259,20 @@ describe('four local sources in the Lumi pipeline', () => {
     } finally {
       qoder.db.close()
     }
+  })
+  it('rereads recent same-size rewrites even when filesystem timestamps collide', async () => {
+    const { service, write } = await setup()
+    const filename = await write('workbuddy', 'project/session.jsonl', [buddy('a')])
+    const stamp = Date.now()
+    const original = discovery.safeStat
+    vi.spyOn(discovery, 'safeStat').mockImplementation(async (name) => {
+      const stat = await original(name)
+      return name === filename ? Object.assign(stat, { mtimeMs: stamp, ctimeMs: stamp }) : stat
+    })
+    await service.scan()
+    await fs.writeFile(filename, JSON.stringify(buddy('b')) + '\n')
+    await service.scan()
+    expect(service.query(period).totals.total).toBe(240)
   })
   it('persists history across file deletion, rotation, collector restart and source absence', async () => {
     const { service, write, roots, database } = await setup()

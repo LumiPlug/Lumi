@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
-import { Fragment, useId, useState } from 'react'
+import { Fragment, useId, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { Card } from './Field'
 import { IconButton, SurfaceButton } from './controls'
+import { useAnimatedValues } from './data-motion'
 
 export type DataTone = 'accent' | 'success' | 'protocol' | 'neutral'
 export function DataText({
@@ -124,23 +125,59 @@ export interface RankingRow {
   label: string
   icon?: ReactNode
   value: string
+  numericValue?: number | null
+  formatValue?: (value: number | null) => string
   share: number | null
   tone: DataTone
   detail?: string
   onSelect?: () => void
 }
+function RankingNumber({ current, final }: { current: string; final: string }) {
+  return (
+    <span className="ui-animated-number">
+      <span className="ui-animated-number-value" aria-hidden="true">
+        {current}
+      </span>
+      <span className="ui-animated-number-measure" aria-hidden="true">
+        {final}
+      </span>
+      <span className="sr-only">{final}</span>
+    </span>
+  )
+}
 export function RankingList({
   rows,
   label,
   compact = false,
+  animate = false,
 }: {
   rows: RankingRow[]
   label: string
   compact?: boolean
+  animate?: boolean
 }) {
+  const element = useRef<HTMLUListElement>(null)
+  const targets = useMemo(
+    () =>
+      Object.fromEntries(
+        rows.flatMap((row) => [
+          [JSON.stringify([row.key, 'share']), row.share],
+          [JSON.stringify([row.key, 'value']), row.numericValue ?? null],
+        ]),
+      ),
+    [rows],
+  )
+  const display = useAnimatedValues(targets, animate, element)
   return (
-    <ul className={`ui-ranking${compact ? ' ui-ranking--compact' : ''}`} aria-label={label}>
+    <ul
+      ref={element}
+      className={`ui-ranking${compact ? ' ui-ranking--compact' : ''}`}
+      aria-label={label}
+    >
       {rows.map((row) => {
+        const share = display[JSON.stringify([row.key, 'share'])] ?? null
+        const finalPercent = row.share === null ? '未知' : `${(row.share * 100).toFixed(1)}%`
+        const percent = share === null ? '未知' : `${(share * 100).toFixed(1)}%`
         const content = (
           <>
             <span className="ui-ranking-heading">
@@ -148,9 +185,18 @@ export function RankingList({
                 {row.icon ?? <i className="ui-data-dot" aria-hidden="true" />}
                 {row.label}
               </span>
-              <strong>{row.value}</strong>
+              <strong>
+                {animate && row.numericValue !== undefined && row.formatValue ? (
+                  <RankingNumber
+                    current={row.formatValue(display[JSON.stringify([row.key, 'value'])] ?? null)}
+                    final={row.value}
+                  />
+                ) : (
+                  row.value
+                )}
+              </strong>
               <DataText muted mono>
-                {row.share === null ? '未知' : `${(row.share * 100).toFixed(1)}%`}
+                {animate ? <RankingNumber current={percent} final={finalPercent} /> : finalPercent}
               </DataText>
             </span>
             {row.detail && <DataText muted>{row.detail}</DataText>}
@@ -163,7 +209,7 @@ export function RankingList({
               aria-valuenow={row.share === null ? undefined : Math.round(row.share * 100)}
               aria-valuetext={row.share === null ? '未知' : undefined}
             >
-              <span style={{ width: `${Math.max(0, Math.min(1, row.share ?? 0)) * 100}%` }} />
+              <span style={{ transform: `scaleX(${Math.max(0, Math.min(1, share ?? 0))})` }} />
             </span>
           </>
         )

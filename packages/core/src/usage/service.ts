@@ -17,7 +17,9 @@ import { codexSessionMeta, cursorRecord, hash, parseLine, type ParserState } fro
 import { discover, safeStat, standardRoots, type UsageRoot } from './discovery'
 import { readCodexSessionNames } from './session-names'
 import { sessionsCsv } from './csv'
-import { CodeburnCollector } from './codeburn'
+import type { CodeburnCollector } from './codeburn'
+import { UsageCollector } from './collector'
+import { mergeNativeRecord } from './native-adapters'
 import type { Cache } from '../../vendor/codeburn/reader.cjs'
 interface Checkpoint {
   offset: number
@@ -40,7 +42,15 @@ function add(target: UsageTotals, record: UsageRecord) {
   target.count++
   if (record.quality !== 'reported' && record.quality !== 'estimated') return
   if (record.quality === 'estimated') target.estimatedCount = (target.estimatedCount ?? 0) + 1
-  if (record.reader === 'codeburn') target.inputIncludesCache = false
+  if (record.reader === 'codeburn' || record.reader === 'native') {
+    const includesCache = record.reader === 'codeburn' ? false : record.inputIncludesCache
+    target.inputIncludesCache =
+      target.inputIncludesCache === undefined
+        ? includesCache
+        : target.inputIncludesCache === includesCache
+          ? target.inputIncludesCache
+          : null
+  }
   for (const key of ['input', 'output', 'total', 'cacheRead', 'cacheWrite'] as const)
     if (record[key] !== null) target[key] = (target[key] ?? 0) + record[key]!
 }
@@ -60,7 +70,7 @@ export class UsageService {
     this.codeburn =
       collector ??
       (roots === undefined
-        ? new CodeburnCollector(this.state<Cache>('codeburn-cache') ?? undefined)
+        ? new UsageCollector(this.state<Cache>('codeburn-cache') ?? undefined)
         : null)
   }
   get paused(): boolean {
@@ -146,14 +156,29 @@ export class UsageService {
       if (this.paused || this.stopped) return
       // Only a complete source read may replace legacy IDs or remove reconciled rollups.
       // A failed refresh preserves its last good snapshot, never a mixed accounting generation.
-      if (result.complete && result.status.state !== 'absent') {
+      if (
+        (result.complete || result.persistence === 'upsert') &&
+        result.status.state !== 'absent'
+      ) {
         this.db.exec('BEGIN IMMEDIATE')
         try {
-          this.db.prepare('DELETE FROM usage_records WHERE software=?').run(provider.name)
+          if (result.persistence !== 'upsert')
+            this.db.prepare('DELETE FROM usage_records WHERE software=?').run(provider.name)
           const insert = this.db.prepare(
-            'INSERT INTO usage_records (id,software,time,model,data) VALUES (?,?,?,?,?)',
+            'INSERT INTO usage_records (id,software,time,model,data) VALUES (?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET time=excluded.time,model=excluded.model,data=excluded.data',
           )
-          for (const record of result.records)
+          const previous =
+            result.persistence === 'upsert'
+              ? this.db.prepare('SELECT data FROM usage_records WHERE id=?')
+              : null
+          for (let record of result.records) {
+            if (result.persistence === 'upsert') {
+              const old = previous!.get(record.id)
+              record = mergeNativeRecord(
+                old ? (JSON.parse(old.data as string) as UsageRecord) : undefined,
+                record,
+              )
+            }
             insert.run(
               record.id,
               record.software,
@@ -161,6 +186,7 @@ export class UsageService {
               record.model,
               JSON.stringify(record),
             )
+          }
           this.db.exec('COMMIT')
         } catch (error) {
           this.db.exec('ROLLBACK')

@@ -43,14 +43,26 @@ export const usageSoftwareNames = {
   'vercel-gateway': 'Vercel AI Gateway',
   zcode: 'ZCode',
   zed: 'Zed',
+  qoder: 'Qoder',
+  qoderwork: 'QoderWork',
+  workbuddy: 'WorkBuddy',
+  qwenwork: '千问办公',
 } as const
+/** Lumi-owned readers supplement the fixed upstream CodeBurn registry. */
+export const nativeUsageSoftwareIds = ['qoder', 'qoderwork', 'workbuddy', 'qwenwork'] as const
+export type NativeUsageSoftware = (typeof nativeUsageSoftwareIds)[number]
 export type UsageSoftware = keyof typeof usageSoftwareNames
-export const usageSoftwareIds = Object.keys(usageSoftwareNames) as UsageSoftware[]
+/** Complete Lumi registry, including both upstream and native readers. */
+export const allUsageSoftwareIds = Object.keys(usageSoftwareNames) as UsageSoftware[]
+/** Original CodeBurn registry; retained for upstream adapters and existing consumers. */
+export const usageSoftwareIds = allUsageSoftwareIds.filter(
+  (software) => !(nativeUsageSoftwareIds as readonly string[]).includes(software),
+)
 export type UsageQuality = 'reported' | 'estimated' | 'missing' | 'context_snapshot'
 /** input includes cache for Codex; excludes cache for Claude; unknown for Cursor. */
 export interface UsageRecord {
   id: string
-  reader?: 'codeburn'
+  reader?: 'codeburn' | 'native'
   requestCount?: number
   counterBasis?: 'initial' | 'delta' | 'reset' | 'response' | 'last'
   software: UsageSoftware

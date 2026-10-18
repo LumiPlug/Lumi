@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 import type { UsageGroup, UsageTotals, UsageSoftware, UsageReport } from '@lumiplug/shared'
-import { usageSoftwareIds } from '@lumiplug/shared'
+import { allUsageSoftwareIds } from '@lumiplug/shared'
 import { localDate } from './usage'
 import type { BarDay } from '../components/ui/StackedBars'
 
@@ -10,7 +10,7 @@ export function detectedUsageSoftware(
   const found = new Set<UsageSoftware>()
   for (const source of report?.sources ?? [])
     if (source.state !== 'absent') found.add(source.software)
-  return usageSoftwareIds.filter((key) => found.has(key))
+  return allUsageSoftwareIds.filter((key) => found.has(key))
 }
 export function usageTrend(
   report: UsageReport | null,

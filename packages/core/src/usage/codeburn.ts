@@ -64,6 +64,8 @@ export interface CollectedProvider {
   status: UsageSource
   records: UsageRecord[]
   complete: boolean
+  /** Local request ledgers survive source rotation/retention; upstream uses reconciliation. */
+  persistence?: 'upsert'
 }
 /** The same full-file cache/reconciliation path as CodeBurn, retained only in memory. */
 export class CodeburnCollector {

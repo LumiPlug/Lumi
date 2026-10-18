@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-import { usageSoftwareIds } from '@lumiplug/shared'
+import { allUsageSoftwareIds } from '@lumiplug/shared'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   UsageSession,
@@ -26,6 +26,7 @@ import {
   Input,
   Tabs,
   MetricPair,
+  AnimatedNumber,
   ProviderGlyph,
   DistributionRing,
   Pagination,
@@ -60,7 +61,7 @@ import { usageLogos } from '../assets/clients/logos'
 import UsageSessionDetail from './UsageSessionDetail'
 import './usage.css'
 const tones = Object.fromEntries(
-  usageSoftwareIds.map((name, index) => [
+  allUsageSoftwareIds.map((name, index) => [
     name,
     (['accent', 'success', 'protocol', 'neutral'] as const)[index % 4],
   ]),
@@ -530,13 +531,13 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
               <MetricPair
                 first={{
                   label: '输入 Token',
-                  value: compactTokens(totals.input),
+                  value: <AnimatedNumber value={totals.input} format={compactTokens} />,
                   exact: tokenNumber(totals.input),
                   tone: 'accent',
                 }}
                 second={{
                   label: '输出 Token',
-                  value: compactTokens(totals.output),
+                  value: <AnimatedNumber value={totals.output} format={compactTokens} />,
                   exact: tokenNumber(totals.output),
                   tone: 'protocol',
                 }}
@@ -550,13 +551,13 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
               <MetricPair
                 first={{
                   label: '缓存读取 Token',
-                  value: compactTokens(totals.cacheRead),
+                  value: <AnimatedNumber value={totals.cacheRead} format={compactTokens} />,
                   exact: tokenNumber(totals.cacheRead),
                   tone: 'success',
                 }}
                 second={{
                   label: '缓存写入 Token',
-                  value: compactTokens(totals.cacheWrite),
+                  value: <AnimatedNumber value={totals.cacheWrite} format={compactTokens} />,
                   exact: tokenNumber(totals.cacheWrite),
                   tone: 'success',
                 }}
@@ -565,7 +566,11 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
             <MetricCard
               label="活跃设备"
               tone="protocol"
-              badge={<Badge aria-label={`${clients} 款软件有记录`}>{clients}</Badge>}
+              badge={
+                <Badge aria-label={`${clients} 款软件有记录`}>
+                  <AnimatedNumber value={clients} />
+                </Badge>
+              }
             >
               <DistributionRing
                 label="设备 Token 占比"
@@ -583,6 +588,7 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
           <div className="usage-analysis-grid">
             <DataPanel className="usage-chart-panel">
               <StackedBars
+                animate
                 appearance="dashboard"
                 title={software === 'vercel-gateway' ? '用量趋势（按日 · UTC）' : '用量趋势'}
                 label={preset === '1' && software !== 'vercel-gateway' ? '每小时用量' : '每日用量'}
@@ -631,6 +637,7 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
             >
               <div className="usage-ranking-scroll">
                 <RankingList
+                  animate
                   compact
                   label={rankTab === 'software' ? '软件排行' : '模型明细'}
                   rows={
@@ -640,6 +647,9 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
                           label: usageNames[row.key],
                           icon: <ClientLogo software={row.key} />,
                           value: `${row.estimatedCount ? '≈ ' : ''}${compactTokens(row.total)}`,
+                          numericValue: row.total,
+                          formatValue: (value) =>
+                            `${row.estimatedCount ? '≈ ' : ''}${compactTokens(value)}`,
                           share: tokenShare(row.total, totals.total),
                           tone: tones[row.key],
                         }))
@@ -649,6 +659,9 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
                             label: row.model ?? '未知模型',
                             icon: <ClientLogo software={row.software} />,
                             value: `${row.estimatedCount ? '≈ ' : ''}${compactTokens(row.total)}`,
+                            numericValue: row.total,
+                            formatValue: (value) =>
+                              `${row.estimatedCount ? '≈ ' : ''}${compactTokens(value)}`,
                             share: tokenShare(row.total, totals.total),
                             tone: tones[row.software],
                           }))

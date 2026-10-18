@@ -5,6 +5,7 @@ import {
   StackedBars,
   MetricCard,
   MetricPair,
+  AnimatedNumber,
   ProviderGlyph,
   DistributionRing,
   DateRangeCalendar,
@@ -315,6 +316,7 @@ export default function UiComponentsPage({
   const closeCalendar = useCallback(() => setCalendarOpen(false), [])
   const [calendarRange, setCalendarRange] = useState({ start: '2026-10-01', end: '2026-10-17' })
   const [previewRingRevision, setPreviewRingRevision] = useState(0)
+  const [previewDataChanged, setPreviewDataChanged] = useState(false)
   const [checked, setChecked] = useState(false)
   const [switchOn, setSwitchOn] = useState(true)
   const [listCategory, setListCategory] = useState('all')
@@ -349,9 +351,10 @@ export default function UiComponentsPage({
       </div>
       <DemoRow
         title="用量仪表盘"
-        description="合成示例 · 共用统计卡、彩色排行和可展开语义表格；业务传入实际数据。"
+        description="合成示例 · 更新数据可核对数字、趋势与排行动画；快速重复点击验证中断接续，减少动态效果时直接落位。"
       >
         <div style={{ display: 'grid', gap: 16, width: '100%' }}>
+          <Button onClick={() => setPreviewDataChanged((value) => !value)}>更新合成数据</Button>
           <MetricCard
             label="总 Token 吞吐"
             value="40.5K"
@@ -393,8 +396,14 @@ export default function UiComponentsPage({
           </Card>
           <MetricCard label="双数值统计示例">
             <MetricPair
-              first={{ label: '输入 Token', value: '32.4K' }}
-              second={{ label: '输出 Token', value: '8.1K' }}
+              first={{
+                label: '输入 Token',
+                value: <AnimatedNumber value={previewDataChanged ? 64800 : 32400} />,
+              }}
+              second={{
+                label: '输出 Token',
+                value: <AnimatedNumber value={previewDataChanged ? 20250 : 8100} />,
+              }}
             />
           </MetricCard>
           <MetricCard label="设备占比示例" badge={<Badge>2</Badge>}>
@@ -430,10 +439,63 @@ export default function UiComponentsPage({
           />
           <DataPanel title="软件排行">
             <RankingList
+              animate
               label="软件排行示例"
               rows={[
-                { key: 'sample', label: '示例软件', value: '40.5K', share: 0.68, tone: 'accent' },
+                {
+                  key: 'sample',
+                  label: '示例软件',
+                  value: previewDataChanged ? '85.05K' : '40.5K',
+                  numericValue: previewDataChanged ? 85050 : 40500,
+                  formatValue: (value) =>
+                    value === null
+                      ? '未知'
+                      : new Intl.NumberFormat('en', {
+                          notation: 'compact',
+                          maximumFractionDigits: 2,
+                        }).format(value),
+                  share: previewDataChanged ? 0.92 : 0.68,
+                  tone: 'accent',
+                },
                 { key: 'zero', label: '零数据软件', value: '0', share: 0, tone: 'protocol' },
+              ]}
+            />
+          </DataPanel>
+          <DataPanel title="模型明细">
+            <RankingList
+              animate
+              label="模型明细示例"
+              rows={[
+                {
+                  key: 'model-a',
+                  label: '示例模型 A',
+                  value: previewDataChanged ? '34.02K' : '30.38K',
+                  numericValue: previewDataChanged ? 34020 : 30375,
+                  formatValue: (value) =>
+                    value === null
+                      ? '未知'
+                      : new Intl.NumberFormat('en', {
+                          notation: 'compact',
+                          maximumFractionDigits: 2,
+                        }).format(value),
+                  share: previewDataChanged ? 0.4 : 0.75,
+                  tone: 'accent',
+                },
+                {
+                  key: 'model-b',
+                  label: '示例模型 B',
+                  value: previewDataChanged ? '51.03K' : '10.13K',
+                  numericValue: previewDataChanged ? 51030 : 10125,
+                  formatValue: (value) =>
+                    value === null
+                      ? '未知'
+                      : new Intl.NumberFormat('en', {
+                          notation: 'compact',
+                          maximumFractionDigits: 2,
+                        }).format(value),
+                  share: previewDataChanged ? 0.6 : 0.25,
+                  tone: 'protocol',
+                },
               ]}
             />
           </DataPanel>
@@ -461,12 +523,13 @@ export default function UiComponentsPage({
             onPageChange={setPreviewUsagePage}
           />
           <StackedBars
+            animate
             appearance="dashboard"
             title="每日用量"
             series={[{ key: 'sample', label: '示例软件', tone: 'accent' }]}
             days={[
-              { date: '2026-10-15', values: { sample: 12000 } },
-              { date: '2026-10-16', values: { sample: 40500 } },
+              { date: '2026-10-15', values: { sample: previewDataChanged ? 52000 : 12000 } },
+              { date: '2026-10-16', values: { sample: previewDataChanged ? 31000 : 40500 } },
             ]}
             showHint={false}
             onSelect={() => setChartDetail(true)}

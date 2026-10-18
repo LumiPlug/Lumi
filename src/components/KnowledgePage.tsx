@@ -442,15 +442,15 @@ export default function KnowledgePage({
     : !current?.revision
       ? '等待构建'
       : null
-  const visibleLibraries = libraries
-    .filter((item) =>
-      tab === 'archived'
-        ? item.archived
-        : !item.archived && (tab !== 'pending' || !!item.build || !item.revision),
-    )
-    .filter((item) =>
-      `${item.name} ${item.description} ${item.branch}`.toLowerCase().includes(query.toLowerCase()),
-    )
+  const unarchived = libraries.filter((item) => !item.archived)
+  const categories = {
+    all: unarchived,
+    pending: unarchived.filter((item) => !!item.build || !item.revision),
+    archived: libraries.filter((item) => item.archived),
+  }
+  const visibleLibraries = categories[tab].filter((item) =>
+    `${item.name} ${item.description} ${item.branch}`.toLowerCase().includes(query.toLowerCase()),
+  )
   return (
     <section
       className={`knowledge-page${view ? '' : ' knowledge-page--list'}`}
@@ -478,11 +478,18 @@ export default function KnowledgePage({
                 label="知识库分类"
                 value={tab}
                 onValueChange={setTab}
-                items={[
-                  { value: 'all', label: '全部', id: 'kb-all', panelId: 'kb-grid' },
-                  { value: 'pending', label: '待处理', id: 'kb-pending', panelId: 'kb-grid' },
-                  { value: 'archived', label: '已归档', id: 'kb-archived', panelId: 'kb-grid' },
-                ]}
+                items={(['all', 'pending', 'archived'] as const).map((value) => {
+                  const label = { all: '全部', pending: '待处理', archived: '已归档' }[value]
+                  const count = categories[value].length
+                  return {
+                    value,
+                    label,
+                    count,
+                    id: `kb-${value}`,
+                    panelId: 'kb-grid',
+                    accessibleLabel: `${label}，${count} 个知识库`,
+                  }
+                })}
               />
               <Button
                 variant="primary"

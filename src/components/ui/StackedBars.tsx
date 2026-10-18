@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import { useSurfaceDepth } from './SurfaceEffects'
 import { Button } from './controls'
 import { BarChart3 } from 'lucide-react'
+import { useAnimatedValues } from './data-motion'
 export interface BarSeries {
   key: string
   label: string
@@ -24,6 +25,7 @@ export function StackedBars({
   showHint = true,
   appearance = 'default',
   title,
+  animate = false,
 }: {
   series: BarSeries[]
   days: BarDay[]
@@ -32,6 +34,7 @@ export function StackedBars({
   showHint?: boolean
   appearance?: 'default' | 'dashboard'
   title?: string
+  animate?: boolean
 }) {
   const container = useRef<HTMLDivElement>(null)
   const svg = useRef<SVGSVGElement>(null)
@@ -72,6 +75,21 @@ export function StackedBars({
   const seriesClass = (s: BarSeries) =>
     s.tone ? `ui-chart-tone--${s.tone}` : `ui-chart-series-${series.indexOf(s) % 3}`
   const selected = days.find((d) => d.date === hover)
+  const targetHeights = useMemo(
+    () =>
+      Object.fromEntries(
+        days.flatMap((day) =>
+          visible.map((s) => [
+            JSON.stringify([day.date, s.key]),
+            day.values[s.key] === null
+              ? null
+              : ((day.values[s.key] ?? 0) / maximum) * (height - 36),
+          ]),
+        ),
+      ),
+    [days, visible, maximum, height],
+  )
+  const animatedHeights = useAnimatedValues(targetHeights, animate, container)
   useLayoutEffect(() => {
     if (!selected || !svg.current || !tooltip.current) return
     const plot = svg.current.getBoundingClientRect(),
@@ -188,7 +206,7 @@ export function StackedBars({
                   height={height - 24}
                 />
                 {visible.map((s) => {
-                  const h = ((day.values[s.key] ?? 0) / maximum) * (height - 36)
+                  const h = animatedHeights[JSON.stringify([day.date, s.key])] ?? 0
                   bottom -= h
                   return (
                     <rect

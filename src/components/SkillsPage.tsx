@@ -314,7 +314,13 @@ export default function SkillsPage({ active, coreReady }: { active: boolean; cor
       filters.installed.client,
     ).filter((option) => option.value !== 'Lumi'),
     { value: 'archived', label: '已归档' },
-  ]
+  ].map((item) => ({
+    ...item,
+    count:
+      item.value === 'archived'
+        ? archived.length
+        : filterInstalledSkills(installed, '', item.value).length,
+  }))
   const category = tab === 'archived' ? 'archived' : filter.client
   const categoryId = (value: string) => `skills-category-${encodeURIComponent(value)}`
   const selectCategory = (value: string) => {
@@ -344,6 +350,7 @@ export default function SkillsPage({ active, coreReady }: { active: boolean; cor
                 ...item,
                 id: categoryId(item.value),
                 panelId: 'skills-panel',
+                accessibleLabel: `${item.label}，${item.count} 个技能`,
               }))}
               onValueChange={selectCategory}
               buttonRef={(element, index) => {

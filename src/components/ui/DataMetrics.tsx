@@ -4,13 +4,39 @@ import { Button } from './controls'
 import { paginationItems } from './pagination'
 import type { CSSProperties } from 'react'
 import type { DataTone } from './DataDashboard'
+import type { ReactNode } from 'react'
+import { useAnimatedValues } from './data-motion'
+
+export function AnimatedNumber({
+  value,
+  format = (number) => (number === null ? '未知' : Math.round(number).toLocaleString()),
+  animate = true,
+}: {
+  value: number | null
+  format?: (value: number | null) => string
+  animate?: boolean
+}) {
+  const element = useRef<HTMLSpanElement>(null)
+  const display = useAnimatedValues({ value }, animate, element)
+  return (
+    <span ref={element} className="ui-animated-number">
+      <span className="ui-animated-number-value" aria-hidden="true">
+        {format(display.value ?? null)}
+      </span>
+      <span className="ui-animated-number-measure" aria-hidden="true">
+        {format(value)}
+      </span>
+      <span className="sr-only">{format(value)}</span>
+    </span>
+  )
+}
 
 export function MetricPair({
   first,
   second,
 }: {
-  first: { label: string; value: string; exact?: string; tone?: DataTone }
-  second: { label: string; value: string; exact?: string; tone?: DataTone }
+  first: { label: string; value: ReactNode; exact?: string; tone?: DataTone }
+  second: { label: string; value: ReactNode; exact?: string; tone?: DataTone }
 }) {
   return (
     <div className="ui-metric-pair">

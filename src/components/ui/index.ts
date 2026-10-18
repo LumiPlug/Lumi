@@ -48,7 +48,7 @@ export {
   ExpandableTable,
 } from './DataDashboard'
 export type { DataTone, DataColumn, RankingRow } from './DataDashboard'
-export { MetricPair, DistributionRing, Pagination } from './DataMetrics'
+export { AnimatedNumber, MetricPair, DistributionRing, Pagination } from './DataMetrics'
 export type { RingItem } from './DataMetrics'
 
 export { DateRangeCalendar } from './DateRangeCalendar'

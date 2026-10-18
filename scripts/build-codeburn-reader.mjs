@@ -26,7 +26,8 @@ const result = await build({
         build.onLoad(
           { filter: /[/\\](cache-dir|cursor-cache|codex-cache|antigravity|vercel-gateway)\.ts$/ },
           async ({ path: filename }) => {
-            let contents = await readFile(filename, 'utf8')
+            // Git may check out CRLF on Windows; multiline adaptations must match on every host.
+            let contents = (await readFile(filename, 'utf8')).replace(/\r\n/g, '\n')
             if (filename.endsWith('cache-dir.ts')) {
               contents = contents.replace(
                 "process.env['CODEBURN_CACHE_DIR']",

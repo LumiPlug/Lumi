@@ -6,6 +6,8 @@
 
 在现有 CodeBurn 固定版本之上增加 Lumi 自有采集组合层，不修改 vendor、不新增进程或远端接口。Qoder 读取标准 SharedClientCache SQLite 的 chat_message/token_info；QoderWork 读取 ~/.qoderwork/projects 的 assistant/message.usage；WorkBuddy 读取 ~/.workbuddy/projects 的 providerData.rawUsage（兼容 message 与 function_call，用 providerData.messageId 去重）；千问办公独立标识 qwenwork，读取 ~/.qwenworkcn/logs/sessions 下 segments 的 model.response.completed，忽略 turn.finished 及上下文快照。所有来源转换成现有 UsageRecord，经 UsageService 的 SQLite 事务、宿主 query/sessions/export 与现有 UI 流转。
 
+CodeBurn 构建适配层在源码替换前统一 CRLF/LF，确保 Windows 检出时网关失败仍上报解析问题并保留上次成功快照，不因换行差异退化成空结果。
+
 共享注册表保留 `usageSoftwareIds` 的原有 CodeBurn 43 个来源边界；`allUsageSoftwareIds` 包含这 43 个来源和 4 个 Lumi 自有来源，供完整采集校验与业务界面使用。原上游测试文件保持不变，新增来源在独立 native 测试中验证。
 
 本地日志采用有界发现、完整行读取及仅含归一化记录的内存元数据缓存；持久层按软件/会话/请求哈希 upsert，日志轮转或删除不抹掉已采集历史。失败不清空历史，暂停/关闭取消扫描。SQLite 只读且感知 WAL；不读取凭据或持久化正文。输入已含缓存的来源先扣除已报告缓存读取，缓存拆分缺失时保留 inputIncludesCache=true；未知不填零，总计独立按来源已知口径计算。全零且可能受记录开关影响的 QoderWork/千问办公事件标记 missing_usage，不作为真实零用量。QODER_EXPOSE_TOKEN_USAGE / QODERCN_EXPOSE_TOKEN_USAGE 由用户在目标软件环境开启并重启后才可能产生新数据，Lumi 不自动改 shell、登录环境或目标应用配置。当前四款的路径及字段以 macOS 为实机验证基线，其他平台采用标准用户数据目录并以样例验证，不宣称完成各版本实机覆盖。

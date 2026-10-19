@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale, translateKnown } from '../i18n'
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import type { ReactNode, RefObject } from 'react'
@@ -29,6 +30,8 @@ export function useToast(): ShowToast {
 }
 
 export default function ToastProvider({ children }: { children: ReactNode }) {
+  useLocale()
+
   const [viewports, setViewports] = useState<HTMLElement[]>([])
   const registerViewport = useCallback((host: HTMLElement) => {
     setViewports((current) => [...current.filter((item) => item !== host), host])
@@ -121,11 +124,11 @@ export default function ToastProvider({ children }: { children: ReactNode }) {
                     <path d="M12 8v5m0 3h.01" />
                   )}
                 </svg>
-                <span className="toast-message">{toast.message}</span>
+                <span className="toast-message">{translateKnown(toast.message)}</span>
                 <SurfaceButton
                   type="button"
                   className="toast-close"
-                  aria-label="关闭提示"
+                  aria-label={t('关闭提示')}
                   onClick={() => {
                     setToast((current) =>
                       current?.id === toast.id ? { ...current, closing: true } : current,

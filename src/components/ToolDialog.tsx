@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale } from '../i18n'
 import type { ReactNode } from 'react'
 import { Modal } from './ui'
 
@@ -13,9 +14,11 @@ export default function ToolDialog({
   busy?: boolean
   compact?: boolean
 }) {
+  useLocale()
+
   return (
     <Modal
-      title="工具"
+      title={t('工具')}
       titleId="tool-dialog-title"
       header={null}
       initialFocusSelector="#tool-dialog-title"

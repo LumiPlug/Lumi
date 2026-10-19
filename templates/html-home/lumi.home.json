@@ -1,8 +1,8 @@
 {
   "formatVersion": 2,
   "template": "lumi-html-home",
-  "lumiVersion": "0.1.4",
-  "sdkVersion": "0.1.4",
+  "lumiVersion": "0.1.5",
+  "sdkVersion": "0.1.5",
   "bridgeVersion": 1,
   "projectId": "00000000-0000-4000-8000-000000000001",
   "name": "我的主页",

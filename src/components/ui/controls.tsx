@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale } from '../../i18n'
 import { useId, useRef, useLayoutEffect, useImperativeHandle } from 'react'
 import { revealInputEnd } from './input-viewport'
 import type {
@@ -20,7 +21,7 @@ export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 export function Button({
   variant = 'secondary',
   loading = false,
-  loadingLabel = '处理中…',
+  loadingLabel = t('处理中…'),
   icon,
   children,
   className = '',
@@ -29,6 +30,8 @@ export function Button({
   onClick,
   ...props
 }: ButtonProps) {
+  useLocale()
+
   return (
     <button
       {...props}
@@ -75,6 +78,8 @@ export function IconButton({
   glow?: boolean
   loadingAnimation?: 'none' | 'spin'
 }) {
+  useLocale()
+
   return (
     <Button
       {...props}
@@ -82,7 +87,7 @@ export function IconButton({
       loadingLabel=""
       aria-busy={loading || props['aria-busy']}
       disabled={disabled || loading}
-      aria-label={loading ? `${label}，处理中` : label}
+      aria-label={loading ? t('{v0}，处理中', { v0: label }) : label}
       className={`ui-icon-button${iconSize === 'small' ? ' ui-icon-button--small' : ''}${loading && loadingAnimation === 'spin' ? ' ui-icon-button--spinning' : ''} ui-tone--${tone}${glow ? ' ui-icon-button--glow' : ''} ${className}`}
     >
       {children}
@@ -101,6 +106,8 @@ export function Input({
   onBlur,
   ...props
 }: InputHTMLAttributes<HTMLInputElement> & { ref?: Ref<HTMLInputElement>; revealEnd?: boolean }) {
+  useLocale()
+
   const element = useRef<HTMLInputElement>(null)
   useImperativeHandle(ref, () => element.current!, [])
   const frame = useRef<number | null>(null)
@@ -136,6 +143,8 @@ export function Select({
   className = '',
   ...props
 }: SelectHTMLAttributes<HTMLSelectElement> & { ref?: Ref<HTMLSelectElement> }) {
+  useLocale()
+
   return <select {...props} className={`ui-input ui-select ${className}`} />
 }
 export function Textarea({
@@ -147,6 +156,8 @@ export function Textarea({
   ref?: Ref<HTMLTextAreaElement>
   showCount?: boolean
 }) {
+  useLocale()
+
   const countId = useId()
   const counting = showCount && props.maxLength !== undefined && typeof props.value === 'string'
   const textarea = (
@@ -164,7 +175,7 @@ export function Textarea({
     <div className="ui-counted-textarea">
       {textarea}
       <span id={countId} className="ui-textarea-count">
-        剩余 {Math.max(0, props.maxLength! - String(props.value).length)} 字
+        {t('剩余 {v0} 字', { v0: Math.max(0, props.maxLength! - String(props.value).length) })}
       </span>
     </div>
   ) : (
@@ -179,6 +190,8 @@ export function Checkbox({
   label: ReactNode
   ref?: Ref<HTMLInputElement>
 }) {
+  useLocale()
+
   return (
     <label className={`ui-checkbox ${className}`}>
       <input {...props} type="checkbox" />
@@ -196,6 +209,8 @@ export function Switch({
   label: ReactNode
   ref?: Ref<HTMLInputElement>
 }) {
+  useLocale()
+
   return (
     <label className={`ui-switch ${className}`}>
       <input {...props} type="checkbox" role="switch" />
@@ -216,6 +231,8 @@ export function ChoiceCard({
   description: ReactNode
   selected: boolean
 }) {
+  useLocale()
+
   return (
     <button
       {...props}
@@ -254,6 +271,8 @@ export function SurfaceButton({
   onClick,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & { ref?: Ref<HTMLButtonElement> }) {
+  useLocale()
+
   return (
     <button
       {...props}
@@ -276,6 +295,8 @@ export function NavigationButton({
   icon: ReactNode
   current: boolean
 }) {
+  useLocale()
+
   return (
     <SurfaceButton
       {...props}

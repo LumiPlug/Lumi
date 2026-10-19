@@ -27,6 +27,7 @@ import type {
 declare global {
   interface Window {
     readonly __LUMI_HOST_NONCE__?: string
+    readonly __LUMI_LOCALE__?: string
   }
 }
 export function hostInvoke<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {

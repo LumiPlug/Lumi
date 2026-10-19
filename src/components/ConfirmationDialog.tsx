@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale } from '../i18n'
 import { useRef } from 'react'
 import type { ReactNode } from 'react'
 import { Button, Modal } from './ui'
@@ -6,7 +7,7 @@ export default function ConfirmationDialog({
   title,
   children,
   confirmLabel,
-  cancelLabel = '取消',
+  cancelLabel = t('取消'),
   busy = false,
   disabled = false,
   danger = false,
@@ -23,6 +24,8 @@ export default function ConfirmationDialog({
   confirm: () => void
   cancel: () => void
 }) {
+  useLocale()
+
   const cancelButton = useRef<HTMLButtonElement>(null)
   return (
     <Modal

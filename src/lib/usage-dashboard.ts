@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, getLocale } from '../i18n'
 import type { UsageGroup, UsageTotals, UsageSoftware, UsageReport } from '@lumiplug/shared'
 import { allUsageSoftwareIds } from '@lumiplug/shared'
 import { localDate } from './usage'
@@ -27,13 +28,13 @@ export function usageTrend(
     buckets.set(group.key, values)
   }
   const end = new Date(range.end)
-  const formatter = new Intl.DateTimeFormat('zh-CN', {
+  const formatter = new Intl.DateTimeFormat(getLocale(), {
     timeZone: range.timezone,
     hour: '2-digit',
     minute: '2-digit',
     hourCycle: 'h23',
   })
-  const full = new Intl.DateTimeFormat('zh-CN', {
+  const full = new Intl.DateTimeFormat(getLocale(), {
     timeZone: range.timezone,
     month: '2-digit',
     day: '2-digit',
@@ -95,7 +96,7 @@ export function dashboardTotals(
 }
 
 export function compactTokens(value: number | null | undefined): string {
-  if (value == null) return '未知'
+  if (value == null) return t('未知')
   return new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 2 }).format(
     value,
   )
@@ -105,7 +106,7 @@ export function tokenShare(value: number | null, total: number | null): number |
   return total > 0 ? value / total : 0
 }
 export function percentLabel(value: number | null): string {
-  return value === null ? '未知' : `${(value * 100).toFixed(1)}%`
+  return value === null ? t('未知') : `${(value * 100).toFixed(1)}%`
 }
 export function cacheRatio(
   group: Pick<UsageTotals, 'input' | 'cacheRead' | 'cacheWrite' | 'inputIncludesCache'> & {

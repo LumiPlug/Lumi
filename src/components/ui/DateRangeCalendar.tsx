@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale, formatMonth } from '../../i18n'
 import { useLayoutEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import { createPortal } from 'react-dom'
@@ -23,6 +24,8 @@ export function DateRangeCalendar({
   onApply: (start: string, end: string) => void
   onClose: () => void
 }) {
+  useLocale()
+
   const depth = useSurfaceDepth()
   const panel = useRef<HTMLDivElement>(null)
   const [month, setMonth] = useState(() => new Date(`${start}T12:00:00`))
@@ -117,17 +120,17 @@ export function DateRangeCalendar({
       ref={panel}
       role="dialog"
       aria-modal="true"
-      aria-label="选择日期范围"
+      aria-label={t('选择日期范围')}
       className="ui-tooltip ui-range-calendar"
       data-ui-depth={depth}
       style={{ ...position, visibility: position ? 'visible' : 'hidden' }}
     >
       <div className="ui-range-calendar-nav">
-        <IconButton label="上个月" onClick={() => moveMonth(-1)}>
+        <IconButton label={t('上个月')} onClick={() => moveMonth(-1)}>
           <ChevronLeft />
         </IconButton>
-        <span>选择开始和结束日期</span>
-        <IconButton label="下个月" onClick={() => moveMonth(1)}>
+        <span>{t('选择开始和结束日期')}</span>
+        <IconButton label={t('下个月')} onClick={() => moveMonth(1)}>
           <ChevronRight />
         </IconButton>
       </div>
@@ -137,12 +140,10 @@ export function DateRangeCalendar({
           const gridStart = new Date(first)
           gridStart.setDate(1 - ((first.getDay() + 6) % 7))
           return (
-            <section key={offset} aria-label={`${first.getFullYear()}年${first.getMonth() + 1}月`}>
-              <strong>
-                {first.getFullYear()} 年 {first.getMonth() + 1} 月
-              </strong>
+            <section key={offset} aria-label={formatMonth(first)}>
+              <strong>{formatMonth(first)}</strong>
               <div className="ui-range-calendar-grid">
-                {['一', '二', '三', '四', '五', '六', '日'].map((label) => (
+                {[t('一'), t('二'), t('三'), t('四'), t('五'), t('六'), t('日')].map((label) => (
                   <span key={label} aria-hidden="true">
                     {label}
                   </span>
@@ -210,12 +211,12 @@ export function DateRangeCalendar({
       <div className="ui-range-calendar-footer">
         <span aria-live="polite">
           {draft.start} — {draft.end}
-          {choosingEnd ? ' · 选择结束日期' : ''}
+          {choosingEnd ? t(' · 选择结束日期') : ''}
         </span>
         <div>
-          <Button onClick={onClose}>取消</Button>
+          <Button onClick={onClose}>{t('取消')}</Button>
           <Button variant="primary" onClick={() => onApply(draft.start, draft.end)}>
-            应用日期
+            {t('应用日期')}
           </Button>
         </div>
       </div>

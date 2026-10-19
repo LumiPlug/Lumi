@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale, getLocale } from '../i18n'
 import { useRetainWindowState } from '../lib/window-retention'
 import {
   Button,
@@ -37,9 +38,24 @@ import { completeTaskSnapshot, refreshRunState } from '../lib/run-task-refresh'
 import './tools.css'
 type Tab = 'basic' | 'config' | 'history'
 const detailTabs: { id: Tab; label: string }[] = [
-  { id: 'basic', label: '基本配置' },
-  { id: 'config', label: '工具配置' },
-  { id: 'history', label: '运行记录' },
+  {
+    id: 'basic',
+    get label() {
+      return t('基本配置')
+    },
+  },
+  {
+    id: 'config',
+    get label() {
+      return t('工具配置')
+    },
+  },
+  {
+    id: 'history',
+    get label() {
+      return t('运行记录')
+    },
+  },
 ]
 function DetailSurface({
   modal,
@@ -52,6 +68,8 @@ function DetailSurface({
   close: () => void
   children: React.ReactNode
 }) {
+  useLocale()
+
   return modal ? (
     <ToolDialog close={close} busy={busy}>
       {children}
@@ -63,14 +81,14 @@ function DetailSurface({
 
 const statusLabel = (d: Pick<CapabilityDefinition, 'status' | 'enabled' | 'archived'>) =>
   d.archived
-    ? '已归档'
+    ? t('已归档')
     : d.status === 'draft'
-      ? '草稿'
+      ? t('草稿')
       : d.status === 'disabled'
-        ? '已停用'
+        ? t('已停用')
         : d.enabled
-          ? '已启用'
-          : '未启用'
+          ? t('已启用')
+          : t('未启用')
 export default function ToolsPage({
   active,
   coreReady,
@@ -82,6 +100,8 @@ export default function ToolsPage({
   registerLeave: (guard: (leave: () => void) => void) => void
   openSettings: () => void
 }) {
+  useLocale()
+
   const showToast = useToast()
   const [items, setItems] = useState<CapabilitySummary[]>([])
   const [selected, setSelected] = useState<CapabilityDefinition | null>(null)
@@ -207,7 +227,7 @@ export default function ToolsPage({
   }, [selected?.id, loading, creating])
   async function select(id: string, intent: 'config' | 'run' | 'review' = 'config') {
     if (intent === 'run') {
-      await openRun(id, items.find((item) => item.id === id)?.name ?? '工具运行')
+      await openRun(id, items.find((item) => item.id === id)?.name ?? t('工具运行'))
       return
     }
     if (!selected)
@@ -291,7 +311,7 @@ export default function ToolsPage({
       def.tools.push({
         ...structuredClone(def.tools[0]!),
         name: 'start',
-        description: '启动后台命令，持续运行直到停止或应用退出。',
+        description: t('启动后台命令，持续运行直到停止或应用退出。'),
         outputSchema: {
           type: 'object',
           properties: { taskId: { type: 'string' }, status: { type: 'string' } },
@@ -364,12 +384,12 @@ export default function ToolsPage({
   function validDraft() {
     if (!draft) return false
     if (detailsRef.current?.querySelector('[aria-invalid="true"]')) {
-      invalid('请先修正标记的输入或 JSON。', '')
+      invalid(t('请先修正标记的输入或 JSON。'), '')
       return false
     }
     const settings = draft.runner.settings
     if (settings.type === 'terminal' && !settings.command?.trim()) {
-      invalid('请填写 Shell 命令。', 'runner.settings.command')
+      invalid(t('请填写 Shell 命令。'), 'runner.settings.command')
       return false
     }
     if (
@@ -378,7 +398,7 @@ export default function ToolsPage({
       !validResponseFilter(settings.responseFilter)
     ) {
       invalid(
-        '返回规则的叶值须为有效正则，数组须包含一个元素模板。',
+        t('返回规则的叶值须为有效正则，数组须包含一个元素模板。'),
         'runner.settings.responseFilter',
       )
       return false
@@ -389,7 +409,7 @@ export default function ToolsPage({
       ((settings.body && Object.keys(settings.body).length) ||
         draft.tools.some((t) => t.fields.some((f) => f.binding?.location === 'body')))
     ) {
-      invalid('GET 和 DELETE 请使用 Query 查询参数。', 'runner.settings.method')
+      invalid(t('GET 和 DELETE 请使用 Query 查询参数。'), 'runner.settings.method')
       return false
     }
     if (settings.type === 'terminal') {
@@ -399,7 +419,7 @@ export default function ToolsPage({
         ) ?? -1
       if (bad >= 0) {
         invalid(
-          '变量名须以字母开头，仅包含字母、数字、下划线，不能使用保留名称。',
+          t('变量名须以字母开头，仅包含字母、数字、下划线，不能使用保留名称。'),
           `tools[0].fields[${bad}].key`,
         )
         return false
@@ -408,7 +428,7 @@ export default function ToolsPage({
     const validation = validateCapabilityDefinition(draft)
     if (!validation.valid) {
       invalid(
-        '请检查标记字段：名称不能为空，公开标识和参数须符合格式。',
+        t('请检查标记字段：名称不能为空，公开标识和参数须符合格式。'),
         validation.issues[0]?.path,
       )
       return false
@@ -417,7 +437,7 @@ export default function ToolsPage({
   }
   function nextStep() {
     if (!draft?.name.trim() || draft.name.length > 64 || /\p{Cc}/u.test(draft.name)) {
-      invalid('请填写工具名称。')
+      invalid(t('请填写工具名称。'))
       return
     }
     setWizardStep(1)
@@ -439,7 +459,7 @@ export default function ToolsPage({
         if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password)
           throw new Error()
       } catch {
-        invalid('请填写有效的 HTTP 或 HTTPS 地址。', 'runner.settings.url')
+        invalid(t('请填写有效的 HTTP 或 HTTPS 地址。'), 'runner.settings.url')
         return
       }
     }
@@ -453,7 +473,7 @@ export default function ToolsPage({
           definition: draft,
           expectedVersion: selected?.version ?? 0,
         }),
-      '已保存为草稿，审阅并启用后可调用',
+      t('已保存为草稿，审阅并启用后可调用'),
     )
     if (result) {
       setSaveConfirm(false)
@@ -471,7 +491,7 @@ export default function ToolsPage({
     if (!draft) return
     const result = await action(
       () => toolsRequest<CapabilityTool[]>('discover', { definition: draft }),
-      '已读取真实操作，请保存草稿后审阅并启用',
+      t('已读取真实操作，请保存草稿后审阅并启用'),
     )
     if (result) setDraft({ ...draft, tools: result })
   }
@@ -484,7 +504,7 @@ export default function ToolsPage({
           expectedVersion: selected.version,
           expectedUpdatedAt: selected.updatedAt,
         }),
-      '已授权并启用；AI 客户端可刷新工具目录',
+      t('已授权并启用；AI 客户端可刷新工具目录'),
     )
     if (result) {
       setSelected(result)
@@ -504,8 +524,8 @@ export default function ToolsPage({
           expectedUpdatedAt: selected.updatedAt,
         }),
       selected.archived
-        ? '已恢复为草稿，请审阅并启用'
-        : '已归档，配置和执行记录已保留；已有任务可单独停止',
+        ? t('已恢复为草稿，请审阅并启用')
+        : t('已归档，配置和执行记录已保留；已有任务可单独停止'),
     )
     if (result) {
       setSelected(result)
@@ -526,7 +546,7 @@ export default function ToolsPage({
   async function taskAction(kind: 'stop' | 'restart', id: string) {
     const result = await action(
       () => toolsRequest<ToolTask>(kind, { id }),
-      kind === 'stop' ? '已请求停止任务' : '已提交新的运行任务',
+      kind === 'stop' ? t('已请求停止任务') : t('已提交新的运行任务'),
     )
     if (result) {
       setTasks((current) => [result, ...current.filter((t) => t.id !== result.id)])
@@ -548,7 +568,7 @@ export default function ToolsPage({
     archived: archived.length,
   }
   const typeLabel = (kind: string) =>
-    kind === 'all' ? '全部' : kind === 'archived' ? '已归档' : kind.toUpperCase()
+    kind === 'all' ? t('全部') : kind === 'archived' ? t('已归档') : kind.toUpperCase()
   const visible = collection.filter(
     (i) =>
       (type === 'all' || type === 'archived' || type === i.runnerType) &&
@@ -560,13 +580,13 @@ export default function ToolsPage({
   const history = tasks.find((t) => t.id === historyTask)
   return (
     <section className="tools-page" hidden={!active}>
-      <h1 className="sr-only">工具</h1>
+      <h1 className="sr-only">{t('工具')}</h1>
       <div className="tools-overview" hidden={detailOpen && !creating}>
         <header className="tools-toolbar ui-list-toolbar">
           <div className="tools-toolbar-heading ui-list-toolbar-heading">
             <Tabs
               className="tools-type-tabs ui-list-toolbar-tabs"
-              label="工具类型"
+              label={t('工具类型')}
               value={type}
               onValueChange={setType}
               items={(['all', 'terminal', 'http', 'mcp', 'archived'] as const).map((kind) => ({
@@ -575,7 +595,10 @@ export default function ToolsPage({
                 id: `tools-type-${kind}`,
                 count: typeCounts[kind],
                 panelId: 'tools-list-panel',
-                accessibleLabel: `${typeLabel(kind)}，${typeCounts[kind]} 个工具`,
+                accessibleLabel: t('{v0}，{v1} 个工具', {
+                  v0: typeLabel(kind),
+                  v1: typeCounts[kind],
+                }),
               }))}
             />
             <Button
@@ -585,35 +608,35 @@ export default function ToolsPage({
               disabled={!coreReady || busy}
               onClick={() => guard(newTool)}
             >
-              新增工具
+              {t('新增工具')}
             </Button>
           </div>
           <div className="tools-filters ui-list-toolbar-filters">
             <Input
               className="ui-list-toolbar-search"
-              aria-label="搜索工具"
-              placeholder="搜索工具…"
+              aria-label={t('搜索工具')}
+              placeholder={t('搜索工具…')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
             <Select
-              aria-label="授权状态"
+              aria-label={t('授权状态')}
               disabled={type === 'archived'}
               value={status}
               onChange={(e) => setStatus(e.target.value)}
             >
-              <option value="all">全部状态</option>
-              <option value="draft">草稿</option>
-              <option value="ready">已启用</option>
-              <option value="disabled">已停用</option>
+              <option value="all">{t('全部状态')}</option>
+              <option value="draft">{t('草稿')}</option>
+              <option value="ready">{t('已启用')}</option>
+              <option value="disabled">{t('已停用')}</option>
             </Select>
             <IconButton
               type="button"
               className="tool-button tools-refresh"
-              label="刷新工具"
-              title="刷新工具"
+              label={t('刷新工具')}
+              title={t('刷新工具')}
               disabled={!coreReady || busy}
-              onClick={() => void action(() => refresh(false), '工具列表已刷新')}
+              onClick={() => void action(() => refresh(false), t('工具列表已刷新'))}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path
@@ -631,11 +654,11 @@ export default function ToolsPage({
           <Card density="compact" className="tools-service">
             <span>
               {coreReady
-                ? '内容可能未更新，请刷新重试。'
-                : '服务未连接，连接后可保存、授权和运行。'}
+                ? t('内容可能未更新，请刷新重试。')
+                : t('服务未连接，连接后可保存、授权和运行。')}
             </span>
             <Button type="button" className="tool-button" onClick={() => guard(openSettings)}>
-              到设置查看服务
+              {t('到设置查看服务')}
             </Button>
           </Card>
         )}
@@ -660,7 +683,11 @@ export default function ToolsPage({
                   <SurfaceButton
                     type="button"
                     className="tools-card-open"
-                    aria-label={`查看 ${item.name}，${statusLabel(item)}，${item.toolCount} 个操作`}
+                    aria-label={t('查看 {v0}，{v1}，{v2} 个操作', {
+                      v0: item.name,
+                      v1: statusLabel(item),
+                      v2: item.toolCount,
+                    })}
                     aria-describedby={dateId}
                     disabled={!coreReady || busy}
                     onClick={() => guard(() => void select(item.id))}
@@ -686,8 +713,8 @@ export default function ToolsPage({
                       type="button"
                       className={`tool-button tools-card-action action-${item.archived ? 'view' : item.enabled ? 'run' : 'review'}`}
                       disabled={!coreReady || busy}
-                      label={`${item.archived ? '查看' : item.enabled ? '运行' : '审阅'} ${item.name}（${statusLabel(item)}）`}
-                      title={`${item.archived ? '查看' : item.enabled ? '运行' : '审阅'} ${item.name}（${statusLabel(item)}）`}
+                      label={`${item.archived ? t('查看') : item.enabled ? t('运行') : t('审阅')} ${item.name}（${statusLabel(item)}）`}
+                      title={`${item.archived ? t('查看') : item.enabled ? t('运行') : t('审阅')} ${item.name}（${statusLabel(item)}）`}
                       onClick={() =>
                         guard(
                           () =>
@@ -726,13 +753,13 @@ export default function ToolsPage({
                     </IconButton>
                   </div>
                   <p className="ui-resource-description tools-row-description">
-                    {item.description || '点击配置，让自己和 AI 一起使用'}
+                    {item.description || t('点击配置，让自己和 AI 一起使用')}
                   </p>
                   <div className="ui-resource-meta tools-card-identity">
                     <Badge className="tool-kind-tag" data-tool-kind={item.runnerType}>
                       {item.runnerType.toUpperCase()}
                     </Badge>
-                    <span id={dateId} title="Lumi 工具创建时间（本机时区）">
+                    <span id={dateId} title={t('Lumi 工具创建时间（本机时区）')}>
                       {added.dateTime ? (
                         <time dateTime={added.dateTime}>{added.text}</time>
                       ) : (
@@ -746,8 +773,10 @@ export default function ToolsPage({
           </div>
           {!visible.length && (
             <div className="tools-empty">
-              <strong>{items.length ? '没有匹配的工具' : '还没有工具'}</strong>
-              <p>{items.length ? '修改搜索或筛选条件。' : '创建一个工具，供自己和 AI 使用。'}</p>
+              <strong>{items.length ? t('没有匹配的工具') : t('还没有工具')}</strong>
+              <p>
+                {items.length ? t('修改搜索或筛选条件。') : t('创建一个工具，供自己和 AI 使用。')}
+              </p>
               {items.length > 0 && (
                 <Button
                   type="button"
@@ -758,7 +787,7 @@ export default function ToolsPage({
                     setStatus('all')
                   }}
                 >
-                  清除筛选
+                  {t('清除筛选')}
                 </Button>
               )}
             </div>
@@ -771,7 +800,7 @@ export default function ToolsPage({
             className={`tools-detail${creating ? '' : ' tools-subpage'}`}
             ref={detailsRef}
             tabIndex={-1}
-            aria-label="工具详情"
+            aria-label={t('工具详情')}
           >
             <div className="tools-detail-header">
               {!creating && (
@@ -779,8 +808,8 @@ export default function ToolsPage({
                   type="button"
                   disabled={busy}
                   onClick={() => guard(closeDetail)}
-                  label="返回工具列表"
-                  title="返回工具列表"
+                  label={t('返回工具列表')}
+                  title={t('返回工具列表')}
                 >
                   <ArrowLeft size={18} />
                 </IconButton>
@@ -789,23 +818,23 @@ export default function ToolsPage({
                 <h2 id={creating ? 'tool-dialog-title' : 'tool-detail-title'} tabIndex={-1}>
                   {creating
                     ? wizardStep === 0
-                      ? '新增工具'
-                      : `配置 ${draft?.runner.type.toUpperCase()}`
-                    : (selected?.name ?? '加载详情…')}
+                      ? t('新增工具')
+                      : t('配置 {v0}', { v0: draft?.runner.type.toUpperCase() })
+                    : (selected?.name ?? t('加载详情…'))}
                 </h2>
                 {creating && (
                   <p className="tool-help">
-                    {wizardStep === 0 ? '1 / 2 · 名称与类型' : '2 / 2 · 工具配置'}
+                    {wizardStep === 0 ? t('1 / 2 · 名称与类型') : t('2 / 2 · 工具配置')}
                   </p>
                 )}
                 {selected && (
                   <p className="tool-help">
                     {selected.namespace} · {statusLabel(selected)} · v{selected.version} ·{' '}
                     {selected.source === 'ai'
-                      ? 'AI 草稿'
+                      ? t('AI 草稿')
                       : selected.source === 'import'
-                        ? '导入'
-                        : '本机创建'}
+                        ? t('导入')
+                        : t('本机创建')}
                   </p>
                 )}
               </div>
@@ -822,7 +851,7 @@ export default function ToolsPage({
                     }
                     onClick={() => void openRun(selected.id, selected.name)}
                   >
-                    运行
+                    {t('运行')}
                   </Button>
                   <Button
                     variant={!selected.archived && dirty ? 'primary' : 'secondary'}
@@ -835,9 +864,9 @@ export default function ToolsPage({
                     }
                     aria-busy={busy}
                     data-busy={busy}
-                    aria-label={busy ? '处理中…' : '保存'}
+                    aria-label={busy ? t('处理中…') : t('保存')}
                   >
-                    保存
+                    {t('保存')}
                   </Button>
                   {!selected.enabled && !selected.archived && (
                     <Button
@@ -847,7 +876,7 @@ export default function ToolsPage({
                       disabled={busy || !coreReady || dirty}
                       onClick={requestReview}
                     >
-                      启用
+                      {t('启用')}
                     </Button>
                   )}
                   <Button
@@ -856,7 +885,7 @@ export default function ToolsPage({
                     disabled={busy || !coreReady || dirty}
                     onClick={() => void archive()}
                   >
-                    {selected.archived ? '恢复' : '归档'}
+                    {selected.archived ? t('恢复') : t('归档')}
                   </Button>
                 </div>
               )}
@@ -864,7 +893,7 @@ export default function ToolsPage({
                 <IconButton
                   type="button"
                   className="tool-button tools-close"
-                  label="关闭工具弹窗"
+                  label={t('关闭工具弹窗')}
                   disabled={busy}
                   onClick={() => guard(closeDetail)}
                 >
@@ -885,7 +914,7 @@ export default function ToolsPage({
             {!creating && selected && (
               <Tabs
                 className="tools-tabs"
-                label="工具详情页面"
+                label={t('工具详情页面')}
                 value={tab}
                 items={detailTabs.map(({ id, label }) => ({
                   value: id,
@@ -912,7 +941,7 @@ export default function ToolsPage({
             )}
             <div className="tools-detail-scroll" aria-busy={busy || loading}>
               {loading ? (
-                <p className="tool-help">正在读取配置…</p>
+                <p className="tool-help">{t('正在读取配置…')}</p>
               ) : (
                 <>
                   {def && (
@@ -927,17 +956,17 @@ export default function ToolsPage({
                       }}
                     >
                       <span id="tool-validation-error" className="sr-only">
-                        请检查标记字段，名称不能为空，JSON 须符合格式。
+                        {t('请检查标记字段，名称不能为空，JSON 须符合格式。')}
                       </span>
                       {conflict && (
                         <Card density="compact" className="tools-conflict">
-                          <p>配置已在其他入口更新，当前输入已保留。</p>
+                          <p>{t('配置已在其他入口更新，当前输入已保留。')}</p>
                           <Button
                             type="button"
                             className="tool-button"
                             onClick={() => guard(() => void select(selected!.id))}
                           >
-                            查看最新版本
+                            {t('查看最新版本')}
                           </Button>
                         </Card>
                       )}
@@ -946,7 +975,7 @@ export default function ToolsPage({
                           <ToolIdentity definition={def} disabled={busy} change={changeDraft}>
                             {creating && wizardStep === 0 && (
                               <div className="tools-create-type">
-                                <h3>选择连接方式</h3>
+                                <h3>{t('选择连接方式')}</h3>
                                 <div className="tools-kind-options">
                                   {(['terminal', 'http', 'mcp'] as RunnerType[]).map((kind) => (
                                     <ChoiceCard
@@ -954,10 +983,10 @@ export default function ToolsPage({
                                       label={kind.toUpperCase()}
                                       description={
                                         kind === 'terminal'
-                                          ? '运行本机命令'
+                                          ? t('运行本机命令')
                                           : kind === 'http'
-                                            ? '请求接口'
-                                            : '连接上游工具服务'
+                                            ? t('请求接口')
+                                            : t('连接上游工具服务')
                                       }
                                       selected={draft?.runner.type === kind}
                                       disabled={busy}
@@ -1021,13 +1050,13 @@ export default function ToolsPage({
                     >
                       {taskStale && (
                         <p className="tool-help" role="status">
-                          运行记录更新中断，正在重新连接。
+                          {t('运行记录更新中断，正在重新连接。')}
                         </p>
                       )}
                       {!tasks.length ? (
                         <div className="tools-empty">
-                          <strong>尚未运行</strong>
-                          <p>运行后可在这里查看状态、结果和日志。</p>
+                          <strong>{t('尚未运行')}</strong>
+                          <p>{t('运行后可在这里查看状态、结果和日志。')}</p>
                           <Button
                             type="button"
                             className="tool-button"
@@ -1036,23 +1065,27 @@ export default function ToolsPage({
                             }
                             onClick={() => void openRun(selected.id, selected.name)}
                           >
-                            打开运行
+                            {t('打开运行')}
                           </Button>
                         </div>
                       ) : (
-                        tasks.map((t) => (
+                        tasks.map((task) => (
                           <SurfaceButton
                             type="button"
-                            className={`tools-history-row${historyTask === t.id ? ' is-selected' : ''}`}
-                            key={t.id}
-                            onClick={() => setHistoryTask(t.id)}
+                            className={`tools-history-row${historyTask === task.id ? ' is-selected' : ''}`}
+                            key={task.id}
+                            onClick={() => setHistoryTask(task.id)}
                           >
-                            <strong>{t.operation}</strong>
-                            <time>{new Date(t.startedAt).toLocaleString()}</time>
+                            <strong>{task.operation}</strong>
+                            <time>{new Date(task.startedAt).toLocaleString(getLocale())}</time>
                             <span>
-                              {taskStatusLabel[t.status]} ·{' '}
-                              {t.source === 'manual' ? '手动' : t.source === 'ai' ? 'AI' : '工作台'}{' '}
-                              · v{t.version}
+                              {taskStatusLabel[task.status]} ·{' '}
+                              {task.source === 'manual'
+                                ? t('手动')
+                                : task.source === 'ai'
+                                  ? 'AI'
+                                  : t('工作台')}{' '}
+                              · v{task.version}
                             </span>
                           </SurfaceButton>
                         ))
@@ -1064,7 +1097,7 @@ export default function ToolsPage({
                               disabled={busy || !coreReady}
                               onClick={() => void openRun(selected.id, selected.name, history.id)}
                             >
-                              独立窗口查看
+                              {t('独立窗口查看')}
                             </Button>
                           </div>
                           <TaskResult
@@ -1095,7 +1128,7 @@ export default function ToolsPage({
                     })
                   }
                 >
-                  取消
+                  {t('取消')}
                 </Button>
                 {creating && wizardStep === 1 && (
                   <Button
@@ -1107,7 +1140,7 @@ export default function ToolsPage({
                       detailsRef.current?.querySelector<HTMLElement>('#tool-dialog-title')?.focus()
                     }}
                   >
-                    上一步
+                    {t('上一步')}
                   </Button>
                 )}
                 {(!creating || wizardStep === 1) && (
@@ -1118,11 +1151,11 @@ export default function ToolsPage({
                     className="primary-button"
                     loading={busy}
                     disabled={busy || !coreReady}
-                    aria-label={busy ? '处理中…' : '保存为草稿'}
+                    aria-label={busy ? t('处理中…') : t('保存为草稿')}
                     aria-busy={busy}
                     data-busy={busy}
                   >
-                    保存为草稿
+                    {t('保存为草稿')}
                   </Button>
                 )}
                 {creating && wizardStep === 0 && (
@@ -1133,7 +1166,7 @@ export default function ToolsPage({
                     className="primary-button"
                     disabled={busy}
                   >
-                    下一步
+                    {t('下一步')}
                   </Button>
                 )}
               </div>
@@ -1143,9 +1176,9 @@ export default function ToolsPage({
       )}
       {active && pending && (
         <ConfirmationDialog
-          title="放弃未保存的修改？"
-          cancelLabel="继续编辑"
-          confirmLabel="放弃修改"
+          title={t('放弃未保存的修改？')}
+          cancelLabel={t('继续编辑')}
+          confirmLabel={t('放弃修改')}
           danger
           cancel={() => setPending(null)}
           confirm={() => {
@@ -1157,47 +1190,53 @@ export default function ToolsPage({
             next()
           }}
         >
-          <p>有未保存的修改，离开会丢弃这些输入。</p>
+          <p>{t('有未保存的修改，离开会丢弃这些输入。')}</p>
         </ConfirmationDialog>
       )}
       {active && saveConfirm && draft && (
         <ConfirmationDialog
-          title={creating ? '保存工具草稿？' : '保存工具配置？'}
-          confirmLabel={creating ? '保存为草稿' : '保存配置'}
+          title={creating ? t('保存工具草稿？') : t('保存工具配置？')}
+          confirmLabel={creating ? t('保存为草稿') : t('保存配置')}
           busy={busy}
           disabled={!coreReady}
           cancel={() => setSaveConfirm(false)}
           confirm={() => void save(true)}
         >
-          <p>保存「{draft.name}」的当前配置。</p>
+          <p>
+            {t('保存「')}
+            {draft.name}
+            {t('」的当前配置。')}
+          </p>
           <p>
             {selected?.enabled
-              ? '保存后将暂停此工具的新调用，需重新授权；已有任务继续运行。'
-              : '配置将保存为草稿，授权并启用后才可调用。'}
+              ? t('保存后将暂停此工具的新调用，需重新授权；已有任务继续运行。')
+              : t('配置将保存为草稿，授权并启用后才可调用。')}
           </p>
         </ConfirmationDialog>
       )}
       {active && review && selected && (
         <ConfirmationDialog
-          title="授权并启用工具？"
-          confirmLabel="授权并启用"
+          title={t('授权并启用工具？')}
+          confirmLabel={t('授权并启用')}
           busy={busy}
           disabled={!coreReady || dirty}
           cancel={() => setReview(false)}
           confirm={() => void enable()}
         >
           <p>
-            {selected.name} · {selected.description || '未填写用途说明'}
+            {selected.name} · {selected.description || t('未填写用途说明')}
           </p>
-          <p>请审阅连接配置、全部操作、公开参数和固定值。启用后，你和 AI 都能执行这些操作。</p>
+          <p>
+            {t('请审阅连接配置、全部操作、公开参数和固定值。启用后，你和 AI 都能执行这些操作。')}
+          </p>
           <p>
             {selected.runner.type === 'terminal'
-              ? '允许执行配置中的 Shell 命令；未指定目录时使用用户主目录。'
+              ? t('允许执行配置中的 Shell 命令；未指定目录时使用用户主目录。')
               : selected.runner.type === 'http'
-                ? '允许向已配置地址发送请求；请求可能修改目标服务的数据。'
-                : '允许调用上游服务的全部已发现操作；这些操作可能产生外部效果。'}
+                ? t('允许向已配置地址发送请求；请求可能修改目标服务的数据。')
+                : t('允许调用上游服务的全部已发现操作；这些操作可能产生外部效果。')}
           </p>
-          <p>工具名及公开说明会提供给 AI。启用不会自动运行。</p>
+          <p>{t('工具名及公开说明会提供给 AI。启用不会自动运行。')}</p>
         </ConfirmationDialog>
       )}
     </section>

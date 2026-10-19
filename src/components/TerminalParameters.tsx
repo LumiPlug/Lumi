@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale } from '../i18n'
 import { useContext, useEffect, useId, useRef, useState } from 'react'
 import type { ReactNode, Ref, HTMLAttributes } from 'react'
 import type { CapabilityField, JsonValue } from '@lumiplug/shared'
@@ -23,6 +24,8 @@ export function TerminalParameterTable({
   actions?: boolean
   viewportRef?: Ref<HTMLDivElement>
 } & HTMLAttributes<HTMLDivElement>) {
+  useLocale()
+
   return (
     <Card density="flush" className="tools-parameter-surface">
       <div
@@ -30,12 +33,12 @@ export function TerminalParameterTable({
         ref={viewportRef}
         className="ui-field-row-viewport tools-parameter-viewport"
         role="region"
-        aria-label="外部参数配置表"
+        aria-label={t('外部参数配置表')}
         tabIndex={0}
       >
         <table
           className={`tools-parameter-table${actions ? '' : ' tools-parameter-table--run'}`}
-          aria-label="外部参数"
+          aria-label={t('外部参数')}
         >
           <colgroup>
             <col className="tools-parameter-option" />
@@ -47,12 +50,14 @@ export function TerminalParameterTable({
           </colgroup>
           <thead>
             <tr>
-              {['外部可见', '参数名', '参数值', '描述', '必填'].map((label) => (
+              {[t('外部可见'), t('参数名'), t('参数值'), t('描述'), t('必填')].map((label) => (
                 <th
                   key={label}
                   scope="col"
                   className={
-                    ['外部可见', '必填'].includes(label) ? 'tools-parameter-centered' : undefined
+                    [t('外部可见'), t('必填')].includes(label)
+                      ? 'tools-parameter-centered'
+                      : undefined
                   }
                 >
                   <FieldTitle label={label} />
@@ -60,7 +65,7 @@ export function TerminalParameterTable({
               ))}
               {actions && (
                 <th scope="col">
-                  <span className="sr-only">删除</span>
+                  <span className="sr-only">{t('删除')}</span>
                 </th>
               )}
             </tr>
@@ -83,6 +88,8 @@ function ValueInput({
   disabled: boolean
   change: (value: JsonValue | undefined) => void
 }) {
+  useLocale()
+
   const value = parameterDefaultText(field)
   const [text, setText] = useState(value)
   const [invalid, setInvalid] = useState(false)
@@ -99,7 +106,7 @@ function ValueInput({
   return (
     <>
       <Input
-        aria-label={`参数 ${index + 1} 参数值`}
+        aria-label={t('参数 {v0} 参数值', { v0: index + 1 })}
         data-validation={`tools[0].fields[${index}].${field.aiVisible ? 'schema.default' : 'value'}`}
         type={field.aiVisible ? 'text' : 'password'}
         value={text}
@@ -121,7 +128,7 @@ function ValueInput({
       />
       {invalid && (
         <span id={errorId} className="tool-error">
-          参数值格式与参数类型不符。
+          {t('参数值格式与参数类型不符。')}
         </span>
       )}
     </>
@@ -138,6 +145,8 @@ export function TerminalParameters({
   change: (fields: CapabilityField[]) => void
   disabled?: boolean
 }) {
+  useLocale()
+
   const addId = useId()
   const viewport = useRef<HTMLDivElement>(null)
   const nextId = useRef(0)
@@ -167,12 +176,14 @@ export function TerminalParameters({
   }
   return (
     <FieldGroup
-      label="外部参数"
-      hint="命令通过 $参数名 读取（Windows 使用 %参数名%）。公开参数值和说明会提供给 AI，请勿填写凭据。"
+      label={t('外部参数')}
+      hint={t(
+        '命令通过 $参数名 读取（Windows 使用 %参数名%）。公开参数值和说明会提供给 AI，请勿填写凭据。',
+      )}
       action={
         !disabled && (
           <Button id={addId} onClick={add}>
-            添加参数
+            {t('添加参数')}
           </Button>
         )
       }
@@ -226,9 +237,9 @@ export function TerminalParameters({
                       <Button
                         variant="text"
                         className="tools-parameter-order"
-                        title="拖动排序；方向键调整，Home／End 移至首尾，Escape 取消拖动"
+                        title={t('拖动排序；方向键调整，Home／End 移至首尾，Escape 取消拖动')}
                         data-parameter-handle={id}
-                        aria-label={`排序参数 ${index + 1}：${field.key}`}
+                        aria-label={t('排序参数 {v0}：{v1}', { v0: index + 1, v1: field.key })}
                         aria-pressed={order.movingId === id}
                         aria-keyshortcuts="ArrowUp ArrowDown Home End"
                         disabled={disabled || fields.length < 2}
@@ -241,7 +252,7 @@ export function TerminalParameters({
                   </div>
                   <Checkbox
                     label={null}
-                    aria-label={`参数 ${index + 1} 外部可见`}
+                    aria-label={t('参数 {v0} 外部可见', { v0: index + 1 })}
                     checked={field.aiVisible}
                     disabled={disabled}
                     onChange={(event) =>
@@ -252,7 +263,7 @@ export function TerminalParameters({
               </td>
               <td>
                 <Input
-                  aria-label={`参数 ${index + 1} 参数名`}
+                  aria-label={t('参数 {v0} 参数名', { v0: index + 1 })}
                   data-validation={`tools[0].fields[${index}].key`}
                   value={field.key}
                   disabled={disabled}
@@ -286,7 +297,7 @@ export function TerminalParameters({
               </td>
               <td>
                 <Input
-                  aria-label={`参数 ${index + 1} 描述`}
+                  aria-label={t('参数 {v0} 描述', { v0: index + 1 })}
                   value={field.schema.description ?? ''}
                   disabled={disabled}
                   onChange={(event) =>
@@ -300,7 +311,7 @@ export function TerminalParameters({
               <td className="tools-parameter-centered">
                 <Switch
                   label={null}
-                  aria-label={`参数 ${index + 1} 必填`}
+                  aria-label={t('参数 {v0} 必填', { v0: index + 1 })}
                   checked={field.required}
                   disabled={disabled}
                   onChange={(event) => update(index, { ...field, required: event.target.checked })}
@@ -310,7 +321,7 @@ export function TerminalParameters({
                 <div className="tools-parameter-icon-slot">
                   <span hidden={!active}>
                     <IconButton
-                      label={`删除参数 ${field.key || index + 1}`}
+                      label={t('删除参数 {v0}', { v0: field.key || index + 1 })}
                       disabled={disabled}
                       onClick={() => {
                         const nextFocus = rowIds.current[index + 1] ?? rowIds.current[index - 1]

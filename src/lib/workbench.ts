@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t } from '../i18n'
 
 import type { McpConnectionInfo } from '@lumiplug/shared'
 import type { PromptType } from './mcp'
@@ -8,8 +9,24 @@ export type WorkbenchStep = 'connection' | 'templates' | 'later'
 export const workbenchStorageKey = 'lumi.workbench.setup'
 export const workbenchTemplateEvent = 'lumi:workbench-template'
 export const workbenchTemplates: { id: WorkbenchTemplate; label: string; description: string }[] = [
-  { id: 'assistant', label: '工作助手', description: '重点、待办与项目进展' },
-  { id: 'features', label: '功能入口', description: '常用工具与快捷操作' },
+  {
+    id: 'assistant',
+    get label() {
+      return t('工作助手')
+    },
+    get description() {
+      return t('重点、待办与项目进展')
+    },
+  },
+  {
+    id: 'features',
+    get label() {
+      return t('功能入口')
+    },
+    get description() {
+      return t('常用工具与快捷操作')
+    },
+  },
 ]
 
 export function readSavedWorkbenchSetup(): WorkbenchSetup {

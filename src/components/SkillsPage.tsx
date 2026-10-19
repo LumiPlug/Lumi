@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale } from '../i18n'
 import { useRetainWindowState } from '../lib/window-retention'
 import { IconButton, Input, Button, Tabs, SurfaceButton, Card, Badge, Modal, Field } from './ui'
 
@@ -26,6 +27,8 @@ const emptyInventory: SkillInventory = {
 }
 
 function ActionIcon({ action }: { action: 'archive' | 'restore' | 'refresh' | 'close' }) {
+  useLocale()
+
   return (
     <svg
       aria-hidden="true"
@@ -67,6 +70,8 @@ function SkillCard({
   onOpen: (trigger: HTMLButtonElement) => void
   archiveAction?: { archived: boolean; pending: boolean; disabled: boolean; onClick: () => void }
 }) {
+  useLocale()
+
   const addedTimeId = useId()
   return (
     <Card
@@ -78,7 +83,7 @@ function SkillCard({
       <SurfaceButton
         className="skill-card-open"
         type="button"
-        aria-label={`查看 ${name} 详情`}
+        aria-label={t('查看 {v0} 详情', { v0: name })}
         aria-describedby={addedTimeId}
         onClick={(event) => onOpen(event.currentTarget)}
       >
@@ -88,7 +93,7 @@ function SkillCard({
           </span>
         </span>
         <span className="ui-resource-description skill-description">
-          {description || '此技能未提供描述'}
+          {description || t('此技能未提供描述')}
         </span>
         <span className="ui-resource-meta skill-card-date">
           <Badge
@@ -96,7 +101,7 @@ function SkillCard({
             data-source={skillSourceKey(clients[0] ?? '')}
             title={clients.join(' · ')}
           >
-            {clients[0] || '本机'}
+            {clients[0] || t('本机')}
             {clients.length > 1 ? ` +${clients.length - 1}` : ''}
           </Badge>
           <span id={addedTimeId} title={addedTime.description}>
@@ -116,8 +121,8 @@ function SkillCard({
           type="button"
           disabled={archiveAction.disabled}
           aria-busy={archiveAction.pending}
-          label={`${archiveAction.pending ? '正在保存' : archiveAction.archived ? '恢复' : '归档'} ${name}`}
-          title={archiveAction.archived ? '恢复' : '归档'}
+          label={`${archiveAction.pending ? t('正在保存') : archiveAction.archived ? t('恢复') : t('归档')} ${name}`}
+          title={archiveAction.archived ? t('恢复') : t('归档')}
           onClick={archiveAction.onClick}
         >
           <ActionIcon action={archiveAction.archived ? 'restore' : 'archive'} />
@@ -128,6 +133,8 @@ function SkillCard({
 }
 
 export default function SkillsPage({ active, coreReady }: { active: boolean; coreReady: boolean }) {
+  useLocale()
+
   const [tab, setTab] = useState<Tab>('installed')
   const [detail, setDetail] = useState<SkillDetail | null>(null)
   const detailTrigger = useRef<HTMLButtonElement | null>(null)
@@ -187,13 +194,15 @@ export default function SkillsPage({ active, coreReady }: { active: boolean; cor
         if (manual)
           showToast(
             next.issues.length
-              ? `扫描完成，${next.issues.length} 处未能完整读取，已保留可用技能`
-              : `扫描完成，发现 ${next.skills.filter((item) => item.present).length} 个技能`,
+              ? t('扫描完成，{v0} 处未能完整读取，已保留可用技能', { v0: next.issues.length })
+              : t('扫描完成，发现 {v0} 个技能', {
+                  v0: next.skills.filter((item) => item.present).length,
+                }),
             next.issues.length ? 'error' : 'success',
           )
       } catch {
         setFailed(true)
-        showToast('扫描失败，请检查 Core 连接后重新扫描', 'error')
+        showToast(t('扫描失败，请检查 Core 连接后重新扫描'), 'error')
       } finally {
         scanLock.current = false
         setScanning(false)
@@ -226,17 +235,17 @@ export default function SkillsPage({ active, coreReady }: { active: boolean; cor
       showToast(
         skill.archived
           ? skill.managed && skill.present && skill.metadataValid
-            ? '已恢复，MCP 可搜索和读取此技能'
+            ? t('已恢复，MCP 可搜索和读取此技能')
             : skill.present
-              ? '已恢复到已安装'
-              : '已移出归档，源文件尚未找到'
+              ? t('已恢复到已安装')
+              : t('已移出归档，源文件尚未找到')
           : skill.managed
-            ? '已归档，MCP 已停止提供此技能'
-            : '已归档，原软件仍可使用此技能',
+            ? t('已归档，MCP 已停止提供此技能')
+            : t('已归档，原软件仍可使用此技能'),
         'success',
       )
     } catch {
-      showToast('归档状态保存失败，请检查 Core 连接后重试', 'error')
+      showToast(t('归档状态保存失败，请检查 Core 连接后重试'), 'error')
     } finally {
       mutationLock.current = false
       setPending(null)
@@ -246,7 +255,7 @@ export default function SkillsPage({ active, coreReady }: { active: boolean; cor
   async function importSkill(skill?: InstalledSkill) {
     if (mutationLock.current || scanLock.current || !coreReady) return
     if (!skill && !importPath.trim()) {
-      const message = '请输入包含 SKILL.md 的完整本地目录'
+      const message = t('请输入包含 SKILL.md 的完整本地目录')
       setImportError(message)
       showToast(message, 'error')
       importInput.current?.focus()
@@ -269,7 +278,7 @@ export default function SkillsPage({ active, coreReady }: { active: boolean; cor
       requestAnimationFrame(() =>
         categoryButtons.current.get('Lumi')?.focus({ preventScroll: true }),
       )
-      showToast('已导入 Lumi，外部 AI 可通过 MCP 搜索和读取；原文件已保留', 'success')
+      showToast(t('已导入 Lumi，外部 AI 可通过 MCP 搜索和读取；原文件已保留'), 'success')
     } catch (error) {
       const message = skillImportFailure(error)
       showToast(message, 'error')
@@ -289,7 +298,7 @@ export default function SkillsPage({ active, coreReady }: { active: boolean; cor
     try {
       await openSkillSource(url)
     } catch {
-      showToast('无法打开来源，请检查系统默认浏览器', 'error')
+      showToast(t('无法打开来源，请检查系统默认浏览器'), 'error')
     } finally {
       setOpening(null)
     }
@@ -307,13 +316,13 @@ export default function SkillsPage({ active, coreReady }: { active: boolean; cor
   const updateFilter = (patch: Partial<typeof filter>) =>
     setFilters((previous) => ({ ...previous, [tab]: { ...previous[tab], ...patch } }))
   const sourceOptions = [
-    { value: 'all', label: '全部来源' },
-    { value: 'Lumi', label: 'Lumi 托管' },
+    { value: 'all', label: t('全部来源') },
+    { value: 'Lumi', label: t('Lumi 托管') },
     ...skillClientOptions(
       clients.filter((client) => client !== 'Lumi'),
       filters.installed.client,
     ).filter((option) => option.value !== 'Lumi'),
-    { value: 'archived', label: '已归档' },
+    { value: 'archived', label: t('已归档') },
   ].map((item) => ({
     ...item,
     count:
@@ -344,13 +353,13 @@ export default function SkillsPage({ active, coreReady }: { active: boolean; cor
           <div className="ui-list-toolbar-heading">
             <Tabs
               className="skills-source-tabs ui-list-toolbar-tabs"
-              label="技能分类"
+              label={t('技能分类')}
               value={category}
               items={sourceOptions.map((item) => ({
                 ...item,
                 id: categoryId(item.value),
                 panelId: 'skills-panel',
-                accessibleLabel: `${item.label}，${item.count} 个技能`,
+                accessibleLabel: t('{v0}，{v1} 个技能', { v0: item.label, v1: item.count }),
               }))}
               onValueChange={selectCategory}
               buttonRef={(element, index) => {
@@ -366,15 +375,15 @@ export default function SkillsPage({ active, coreReady }: { active: boolean; cor
                 setImportDialog(true)
               }}
             >
-              导入目录
+              {t('导入目录')}
             </Button>
           </div>
           <div className="ui-list-toolbar-filters">
             <Input
               className="skills-search ui-list-toolbar-search"
-              aria-label="搜索技能"
+              aria-label={t('搜索技能')}
               type="search"
-              placeholder="名称、用途、软件或路径"
+              placeholder={t('名称、用途、软件或路径')}
               value={filter.query}
               onChange={(event) => updateFilter({ query: event.target.value })}
             />
@@ -382,9 +391,9 @@ export default function SkillsPage({ active, coreReady }: { active: boolean; cor
               className="skill-icon-button skill-refresh-button"
               type="button"
               disabled={busy || !coreReady}
-              label={scanning ? '正在扫描技能' : '重新扫描技能'}
+              label={scanning ? t('正在扫描技能') : t('重新扫描技能')}
               aria-busy={scanning}
-              title={scanning ? '扫描中…' : '重新扫描'}
+              title={scanning ? t('扫描中…') : t('重新扫描')}
               onClick={() => void scan(true)}
             >
               <ActionIcon action="refresh" />
@@ -398,12 +407,17 @@ export default function SkillsPage({ active, coreReady }: { active: boolean; cor
           tabIndex={0}
           aria-busy={scanning}
         >
-          <div className="skills-list-scroll" tabIndex={0} role="region" aria-label="技能列表内容">
+          <div
+            className="skills-list-scroll"
+            tabIndex={0}
+            role="region"
+            aria-label={t('技能列表内容')}
+          >
             {(!coreReady || failed) && (
               <div className="skills-connection-note">
                 {!coreReady
-                  ? '本机扫描需要 Lumi 桌面应用及可用的 Core 连接。'
-                  : '本次扫描未完成。已有列表已保留，请重新扫描。'}
+                  ? t('本机扫描需要 Lumi 桌面应用及可用的 Core 连接。')
+                  : t('本次扫描未完成。已有列表已保留，请重新扫描。')}
               </div>
             )}
             <div className="skills-grid">
@@ -427,27 +441,31 @@ export default function SkillsPage({ active, coreReady }: { active: boolean; cor
               ))}
               {scanning && !inventory.scannedAt && (
                 <div className="empty-state" role="status">
-                  <strong>正在扫描本机技能…</strong>
-                  <p>读取标准技能目录，完成后将在此显示。</p>
+                  <strong>{t('正在扫描本机技能…')}</strong>
+                  <p>{t('读取标准技能目录，完成后将在此显示。')}</p>
                 </div>
               )}
               {count === 0 && !(scanning && !inventory.scannedAt) && (
                 <div className="empty-state">
                   <strong>
                     {total > 0
-                      ? '没有匹配的技能'
+                      ? t('没有匹配的技能')
                       : tab === 'archived'
-                        ? '还没有归档的技能'
-                        : '尚未发现技能'}
+                        ? t('还没有归档的技能')
+                        : t('尚未发现技能')}
                   </strong>
                   <p>
                     {total > 0
-                      ? '试试其他关键词或软件来源。'
+                      ? t('试试其他关键词或软件来源。')
                       : tab === 'archived'
-                        ? '在软件分类的技能卡片中选择“归档”，可将技能收起到这里。'
+                        ? t('在软件分类的技能卡片中选择“归档”，可将技能收起到这里。')
                         : filter.client === 'Lumi'
-                          ? '选择“导入目录”，或打开已扫描技能的详情并选择“导入 Lumi”。托管后可通过 MCP 使用。'
-                          : '重新扫描本机技能，在详情中选择“导入 Lumi”，或选择“导入目录”安装本地技能。'}
+                          ? t(
+                              '选择“导入目录”，或打开已扫描技能的详情并选择“导入 Lumi”。托管后可通过 MCP 使用。',
+                            )
+                          : t(
+                              '重新扫描本机技能，在详情中选择“导入 Lumi”，或选择“导入目录”安装本地技能。',
+                            )}
                   </p>
                   {total > 0 ? (
                     <Button
@@ -457,7 +475,7 @@ export default function SkillsPage({ active, coreReady }: { active: boolean; cor
                         updateFilter({ query: '', client: 'all' })
                       }}
                     >
-                      清除筛选
+                      {t('清除筛选')}
                     </Button>
                   ) : tab === 'archived' ? (
                     <Button
@@ -465,7 +483,7 @@ export default function SkillsPage({ active, coreReady }: { active: boolean; cor
                       type="button"
                       onClick={() => selectCategory('all')}
                     >
-                      查看本机技能
+                      {t('查看本机技能')}
                     </Button>
                   ) : null}
                 </div>
@@ -487,24 +505,24 @@ export default function SkillsPage({ active, coreReady }: { active: boolean; cor
       )}
       {importDialog && (
         <Modal
-          title="导入技能到 Lumi"
+          title={t('导入技能到 Lumi')}
           onClose={() => setImportDialog(false)}
           busy={pending !== null}
           initialFocus={importInput}
           actions={(close) => (
             <>
               <Button disabled={pending !== null} onClick={close}>
-                取消
+                {t('取消')}
               </Button>
               <Button
                 variant="primary"
                 loading={pending === 'import-directory'}
-                loadingLabel="导入中…"
+                loadingLabel={t('导入中…')}
                 disabled={!coreReady}
                 type="submit"
                 form="skill-import-form"
               >
-                导入 Lumi
+                {t('导入 Lumi')}
               </Button>
             </>
           )}
@@ -517,9 +535,11 @@ export default function SkillsPage({ active, coreReady }: { active: boolean; cor
             }}
           >
             <Field
-              label="技能目录"
+              label={t('技能目录')}
               controlWidth="wide"
-              description="填写包含 SKILL.md 的完整本地目录。复制说明和附件到 Lumi，保留原文件；导入后可通过 MCP 搜索和读取。"
+              description={t(
+                '填写包含 SKILL.md 的完整本地目录。复制说明和附件到 Lumi，保留原文件；导入后可通过 MCP 搜索和读取。',
+              )}
             >
               <Input
                 ref={importInput}

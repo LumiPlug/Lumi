@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale } from '../i18n'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { UsageRecord, UsageReport, UsageSession } from '@lumiplug/shared'
 import { ChevronDown, ChevronRight } from 'lucide-react'
@@ -21,6 +22,8 @@ export function UsageSessionHeading({
   panelId: string
   onToggle: () => void
 }) {
+  useLocale()
+
   const Chevron = expanded ? ChevronDown : ChevronRight
   return (
     <Button
@@ -48,6 +51,8 @@ export default function UsageSessionCard({
   filter: Record<string, unknown>
   revision: number
 }) {
+  useLocale()
+
   const panelId = useId()
   const [expanded, setExpanded] = useState(false)
   return (
@@ -76,6 +81,8 @@ export function UsageSessionRecords({
   revision: number
   onSummary?: (summary: UsageSessionSummary | null) => void
 }) {
+  useLocale()
+
   const toast = useToast()
   const [records, setRecords] = useState<UsageRecord[]>([])
   const [loading, setLoading] = useState(true)
@@ -107,7 +114,7 @@ export function UsageSessionRecords({
       .catch(() => {
         if (cancelled) return
         setFailed(true)
-        toast('会话记录读取失败，请重试。', 'error')
+        toast(t('会话记录读取失败，请重试。'), 'error')
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -126,7 +133,7 @@ export function UsageSessionRecords({
       setRecords((rows) => [...rows, ...value.records])
       setMore(value.truncated)
     } catch {
-      if (current.current === request) toast('会话记录读取失败，请重试。', 'error')
+      if (current.current === request) toast(t('会话记录读取失败，请重试。'), 'error')
     } finally {
       paging.current = false
       if (current.current === request) setLoading(false)
@@ -141,13 +148,13 @@ export function UsageSessionRecords({
         empty={
           loading ? (
             <span role="status">
-              <DataText muted>正在读取…</DataText>
+              <DataText muted>{t('正在读取…')}</DataText>
             </span>
           ) : failed ? (
-            <Button onClick={() => setRetry((value) => value + 1)}>重试读取</Button>
+            <Button onClick={() => setRetry((value) => value + 1)}>{t('重试读取')}</Button>
           ) : (
             <span role="status">
-              <DataText muted>当前筛选范围内暂无会话记录。</DataText>
+              <DataText muted>{t('当前筛选范围内暂无会话记录。')}</DataText>
             </span>
           )
         }
@@ -155,7 +162,7 @@ export function UsageSessionRecords({
       {more && (
         <div>
           <Button loading={loading} onClick={() => void loadMore()}>
-            加载更多会话记录
+            {t('加载更多会话记录')}
           </Button>
         </div>
       )}

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale } from '../../i18n'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import cytoscape from 'cytoscape'
 import type { Core, EdgeSingular, StylesheetStyle } from 'cytoscape'
@@ -9,13 +10,27 @@ import { Segmented } from './choice'
 import { advanceGraphFlow } from '../../lib/graph-motion'
 
 export const relationLabels: Record<KnowledgeEdge['type'], string> = {
-  contains: '包含',
-  explains: '说明',
-  references: '引用',
-  depends_on: '依赖',
-  calls: '调用',
-  implements: '实现',
-  related_to: '相关',
+  get contains() {
+    return t('包含')
+  },
+  get explains() {
+    return t('说明')
+  },
+  get references() {
+    return t('引用')
+  },
+  get depends_on() {
+    return t('依赖')
+  },
+  get calls() {
+    return t('调用')
+  },
+  get implements() {
+    return t('实现')
+  },
+  get related_to() {
+    return t('相关')
+  },
 }
 export function GraphView({
   nodes,
@@ -32,6 +47,8 @@ export function GraphView({
   active?: boolean
   truncated?: boolean
 }) {
+  useLocale()
+
   const holder = useRef<HTMLDivElement>(null),
     legend = useRef<HTMLDivElement>(null),
     graph = useRef<Core | null>(null),
@@ -261,7 +278,8 @@ export function GraphView({
     const connections = related.edges()
     const media = matchMedia('(prefers-reduced-motion: reduce)')
     const speed =
-      parseFloat(getComputedStyle(holder.current!).getPropertyValue('--lumi-graph-flow-speed')) || 10
+      parseFloat(getComputedStyle(holder.current!).getPropertyValue('--lumi-graph-flow-speed')) ||
+      10
     let frame = 0
     const stop = () => {
       cancelAnimationFrame(frame)
@@ -310,21 +328,21 @@ export function GraphView({
   }, [active, mode])
   const list = mode === 'list' || failed
   return (
-    <section className="ui-graph" aria-label="知识关系">
+    <section className="ui-graph" aria-label={t('知识关系')}>
       <div className="ui-graph-toolbar">
         <Segmented
-          label="知识关系视图"
+          label={t('知识关系视图')}
           value={list ? 'list' : 'graph'}
           onValueChange={setMode}
           items={[
-            { value: 'graph', label: '图谱', disabled: failed },
-            { value: 'list', label: '关系清单' },
+            { value: 'graph', label: t('图谱'), disabled: failed },
+            { value: 'list', label: t('关系清单') },
           ]}
         />
         <div className="ui-graph-actions" hidden={list}>
           <IconButton
-            label="缩小图谱"
-            title="缩小"
+            label={t('缩小图谱')}
+            title={t('缩小')}
             onClick={() => {
               const cy = graph.current
               if (cy) cy.zoom(cy.zoom() / 1.2)
@@ -333,8 +351,8 @@ export function GraphView({
             <ZoomOut size={18} />
           </IconButton>
           <IconButton
-            label="放大图谱"
-            title="放大"
+            label={t('放大图谱')}
+            title={t('放大')}
             onClick={() => {
               const cy = graph.current
               if (cy) cy.zoom(cy.zoom() * 1.2)
@@ -342,21 +360,22 @@ export function GraphView({
           >
             <ZoomIn size={18} />
           </IconButton>
-          <IconButton label="适应图谱" title="适应窗口" onClick={() => fit.current()}>
+          <IconButton label={t('适应图谱')} title={t('适应窗口')} onClick={() => fit.current()}>
             <Maximize size={18} />
           </IconButton>
         </div>
       </div>
       <div className="ui-graph-viewport" hidden={list} onPointerLeave={() => setHoveredId(null)}>
         <div className="ui-graph-canvas" ref={holder} aria-hidden="true" />
-        <div className="ui-graph-legend" ref={legend} aria-label="节点类型">
-          <span data-kind="project">项目</span>
-          <span data-kind="module">模块</span>
-          <span data-kind="concept">概念</span>
-          <span data-kind="symbol">符号</span>
+        <div className="ui-graph-legend" ref={legend} aria-label={t('节点类型')}>
+          <span data-kind="project">{t('项目')}</span>
+          <span data-kind="module">{t('模块')}</span>
+          <span data-kind="concept">{t('概念')}</span>
+          <span data-kind="symbol">{t('符号')}</span>
           {(truncated || visibleNodes.length < nodes.length) && (
             <span>
-              已显示 {visibleNodes.length}/{nodes.length} 节点
+              {t('已显示 ')}
+              {visibleNodes.length}/{nodes.length} {t(' 节点')}
             </span>
           )}
         </div>
@@ -379,7 +398,7 @@ export function GraphView({
                     <li key={edge.id}>
                       <span>
                         {relationLabels[edge.type]}
-                        {edge.evidenceKind === 'inferred' ? ' · 推断' : ''}
+                        {edge.evidenceKind === 'inferred' ? t(' · 推断') : ''}
                       </span>
                       <SurfaceButton className="ui-graph-link" onClick={() => onSelect(edge.to)}>
                         {nodes.find((node) => node.id === edge.to)?.label ?? edge.to}

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t } from '../i18n'
 import type {
   CapabilityDefinition,
   CapabilityField,
@@ -46,7 +47,7 @@ export function runResultMarkdown(text: string): string {
         ? item.map((child, index) => [String(index + 1), child] as const)
         : Object.entries(item)
       if (!entries.length) {
-        rows.push(`${path.length ? `**${escape(path.join(' / '))}**\n\n` : ''}无内容`)
+        rows.push(t('{v0}无内容', { v0: path.length ? `**${escape(path.join(' / '))}**\n\n` : '' }))
         return
       }
       for (const [key, child] of entries) {
@@ -57,11 +58,11 @@ export function runResultMarkdown(text: string): string {
     }
     const content =
       item === null
-        ? '空值'
+        ? t('空值')
         : item === true
-          ? '是'
+          ? t('是')
           : item === false
-            ? '否'
+            ? t('否')
             : typeof item === 'object'
               ? JSON.stringify(item)
               : String(item)
@@ -70,7 +71,7 @@ export function runResultMarkdown(text: string): string {
     )
   }
   visit(value, [], 0)
-  return rows.join('\n\n') + (limited ? '\n\n内容较长，其余内容请查看原始数据。' : '')
+  return rows.join('\n\n') + (limited ? t('\n\n内容较长，其余内容请查看原始数据。') : '')
 }
 /** Execution evidence only: a remote final response belongs to the result stage. */
 export function runLogText(task: ToolTask): string {
@@ -122,7 +123,7 @@ export function prepareRunInputs(tool: CapabilityTool, values: RunValues): RunIn
         field.schema.type === 'string' ? text : (JSON.parse(text) as JsonValue),
       ])
     } catch {
-      return { ok: false, key: field.key, message: '请填写有效的 JSON 参数。' }
+      return { ok: false, key: field.key, message: t('请填写有效的 JSON 参数。') }
     }
   }
   const args = Object.fromEntries(entries) as JsonObject
@@ -137,12 +138,12 @@ export function runParameterPreview(
     .filter((f) => f.aiVisible)
     .map((field) => {
       const source = Object.hasOwn(values, field.key)
-        ? '本次输入'
+        ? t('本次输入')
         : field.schema.default !== undefined
-          ? '工具默认值'
+          ? t('工具默认值')
           : field.required
-            ? '未填写（必填）'
-            : '未提供'
+            ? t('未填写（必填）')
+            : t('未提供')
       return {
         key: field.key,
         source,
@@ -170,7 +171,7 @@ export function safeRunAddress(address: string): string {
       address
         .split(/[?#]/)[0]!
         .replace(/(\/\/)[^/@]+@/, '$1')
-        .replace(/\/(token|secret|api[_-]?key)\/[^/]+/gi, '/$1/…') || '尚未配置'
+        .replace(/\/(token|secret|api[_-]?key)\/[^/]+/gi, '/$1/…') || t('尚未配置')
     )
   }
 }
@@ -183,23 +184,32 @@ export function runTargetDetails(
   const runner = definition.runner.settings
 
   if (runner.type === 'terminal')
-    return [['工作目录', !runner.cwd || runner.cwd === '.' ? '用户主目录（默认）' : runner.cwd]]
+    return [
+      [t('工作目录'), !runner.cwd || runner.cwd === '.' ? t('用户主目录（默认）') : runner.cwd],
+    ]
   if (runner.type === 'http')
     return [
-      ['请求方式', runner.method],
-      ['请求地址', safeRunAddress(runner.url)],
+      [t('请求方式'), runner.method],
+      [t('请求地址'), safeRunAddress(runner.url)],
     ]
   const selected = definition.tools.find((tool) => tool.name === operation)
   return [
     [
-      runner.transport === 'stdio' ? '本机连接' : '访问地址',
+      runner.transport === 'stdio' ? t('本机连接') : t('访问地址'),
       runner.transport === 'stdio'
-        ? `本机进程（stdio） · ${runner.command?.split(/[\\/]/).at(-1) || '尚未配置'}`
+        ? t('本机进程（stdio） · {v0}', {
+            v0: runner.command?.split(/[\\/]/).at(-1) || t('尚未配置'),
+          })
         : safeRunAddress(runner.url ?? ''),
     ],
-    ['工具名称', runner.toolName || '全部工具'],
+    [t('工具名称'), runner.toolName || t('全部工具')],
     ...(definition.tools.length > 1
-      ? [['本次调用', selected?.upstreamName ?? selected?.name ?? '待选择'] as [string, string]]
+      ? [
+          [t('本次调用'), selected?.upstreamName ?? selected?.name ?? t('待选择')] as [
+            string,
+            string,
+          ],
+        ]
       : []),
   ]
 }
@@ -219,7 +229,7 @@ export function prepareManualInputs(
       fixedParameters[field.key] =
         field.schema.type === 'string' ? values[field.key]! : JSON.parse(values[field.key]!)
     } catch {
-      return { ok: false, key: field.key, message: '请填写有效的 JSON 参数。' }
+      return { ok: false, key: field.key, message: t('请填写有效的 JSON 参数。') }
     }
   }
   return { ...publicInputs, fixedParameters }

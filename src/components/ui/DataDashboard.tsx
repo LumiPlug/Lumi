@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale } from '../../i18n'
 import { Fragment, useId, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
@@ -18,6 +19,8 @@ export function DataText({
   muted?: boolean
   mono?: boolean
 }) {
+  useLocale()
+
   return (
     <span
       className={`ui-data-text${tone ? ` ui-tone--${tone} ui-data-text--tone` : ''}${muted ? ' ui-data-text--muted' : ''}${mono ? ' ui-data-text--mono' : ''}`}
@@ -47,6 +50,8 @@ export function MetricCard({
   tone?: DataTone
   highlight?: boolean
 }) {
+  useLocale()
+
   return (
     <Card className={`ui-metric ui-tone--${tone}${highlight ? ' ui-metric--highlight' : ''}`}>
       <div className="ui-metric-heading">
@@ -88,6 +93,8 @@ export function DataPanel({
   children: ReactNode
   className?: string
 }) {
+  useLocale()
+
   return (
     <Card className={`ui-data-panel ${className}`}>
       {(title || actions) && (
@@ -113,6 +120,8 @@ export function DashboardToolbar({
   children: ReactNode
   bare?: boolean
 }) {
+  useLocale()
+
   if (bare) return <div className="ui-dashboard-toolbar ui-dashboard-toolbar--bare">{children}</div>
   return (
     <Card density="compact" className="ui-dashboard-toolbar">
@@ -133,6 +142,8 @@ export interface RankingRow {
   onSelect?: () => void
 }
 function RankingNumber({ current, final }: { current: string; final: string }) {
+  useLocale()
+
   return (
     <span className="ui-animated-number">
       <span className="ui-animated-number-value" aria-hidden="true">
@@ -156,6 +167,8 @@ export function RankingList({
   compact?: boolean
   animate?: boolean
 }) {
+  useLocale()
+
   const element = useRef<HTMLUListElement>(null)
   const targets = useMemo(
     () =>
@@ -176,8 +189,8 @@ export function RankingList({
     >
       {rows.map((row) => {
         const share = display[JSON.stringify([row.key, 'share'])] ?? null
-        const finalPercent = row.share === null ? '未知' : `${(row.share * 100).toFixed(1)}%`
-        const percent = share === null ? '未知' : `${(share * 100).toFixed(1)}%`
+        const finalPercent = row.share === null ? t('未知') : `${(row.share * 100).toFixed(1)}%`
+        const percent = share === null ? t('未知') : `${(share * 100).toFixed(1)}%`
         const content = (
           <>
             <span className="ui-ranking-heading">
@@ -203,11 +216,11 @@ export function RankingList({
             <span
               className="ui-ranking-track"
               role="meter"
-              aria-label={`${row.label}占比`}
+              aria-label={t('{v0}占比', { v0: row.label })}
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={row.share === null ? undefined : Math.round(row.share * 100)}
-              aria-valuetext={row.share === null ? '未知' : undefined}
+              aria-valuetext={row.share === null ? t('未知') : undefined}
             >
               <span style={{ transform: `scaleX(${Math.max(0, Math.min(1, share ?? 0))})` }} />
             </span>
@@ -243,7 +256,7 @@ export function ExpandableTable<T>({
   rowName,
   renderExpanded,
   onRowOpen,
-  empty = '暂无会话',
+  empty = t('暂无会话'),
   busy = false,
   fixedHeight = false,
 }: {
@@ -259,6 +272,8 @@ export function ExpandableTable<T>({
   | { renderExpanded: (row: T) => ReactNode; onRowOpen?: never }
   | { onRowOpen: (row: T) => void; renderExpanded?: never }
 )) {
+  useLocale()
+
   const id = useId()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   function toggle(key: string) {
@@ -289,7 +304,7 @@ export function ExpandableTable<T>({
               </th>
             ))}
             <th scope="col">
-              <span className="sr-only">{onRowOpen ? '查看详情' : '展开记录'}</span>
+              <span className="sr-only">{onRowOpen ? t('查看详情') : t('展开记录')}</span>
             </th>
           </tr>
         </thead>
@@ -325,7 +340,7 @@ export function ExpandableTable<T>({
                   ))}
                   <td>
                     <IconButton
-                      label={`${onRowOpen ? '查看' : open ? '收起' : '展开'}${rowName(row)}${onRowOpen ? '的明细' : ''}`}
+                      label={`${onRowOpen ? t('查看') : open ? t('收起') : t('展开')}${rowName(row)}${onRowOpen ? t('的明细') : ''}`}
                       aria-expanded={onRowOpen ? undefined : open}
                       aria-controls={onRowOpen ? undefined : panelId}
                       onClick={activate}
@@ -341,7 +356,7 @@ export function ExpandableTable<T>({
                         id={panelId}
                         role="region"
                         tabIndex={0}
-                        aria-label={`${rowName(row)}的具体记录`}
+                        aria-label={t('{v0}的具体记录', { v0: rowName(row) })}
                       >
                         {open && renderExpanded(row)}
                       </div>
@@ -354,7 +369,7 @@ export function ExpandableTable<T>({
           {!rows.length && (
             <tr>
               <td className="ui-data-table-empty" colSpan={columns.length + 1}>
-                {busy ? '正在读取…' : empty}
+                {busy ? t('正在读取…') : empty}
               </td>
             </tr>
           )}

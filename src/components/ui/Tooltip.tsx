@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale } from '../../i18n'
 import { useId, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
@@ -15,6 +16,8 @@ export function Tooltip({
   children: ReactNode
   icon?: 'info' | 'help'
 }) {
+  useLocale()
+
   const depth = useSurfaceDepth()
   const id = useId()
   const trigger = useRef<HTMLButtonElement>(null)
@@ -80,7 +83,7 @@ export function Tooltip({
       <IconButton
         ref={trigger}
         className="ui-tooltip-trigger"
-        label={`${label}${icon === 'help' ? '输入提示' : '说明'}`}
+        label={icon === 'help' ? t('{v0}输入提示', { v0: label }) : t('{v0}说明', { v0: label })}
         tone="accent"
         glow
         aria-describedby={target ? id : undefined}

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale } from '../i18n'
 import type { CapabilityDefinition, JsonValue } from '@lumiplug/shared'
 import { Field, Input, InputHint, Select, Textarea } from './ui'
 import type { Ref } from 'react'
@@ -28,12 +29,14 @@ export default function RunConfigurationFields({
   disabled: boolean
   section?: 'all' | 'connection' | 'values'
 }) {
+  useLocale()
+
   const set = (key: string, value: unknown) => change({ ...s, [key]: value } as typeof s)
   const address = (value: string) => (
     <div className="tool-run-connection-item">
-      <InputHint label={s.type === 'http' ? '请求地址' : 'MCP地址'} hint={value}>
+      <InputHint label={s.type === 'http' ? t('请求地址') : t('MCP地址')} hint={value}>
         <Input
-          aria-label={s.type === 'http' ? '请求地址（固定）' : 'MCP地址（固定）'}
+          aria-label={s.type === 'http' ? t('请求地址（固定）') : t('MCP地址（固定）')}
           readOnly
           value={value}
           title={value}
@@ -48,14 +51,14 @@ export default function RunConfigurationFields({
         <>
           {section !== 'values' && (
             <Field
-              label="请求："
+              label={t('请求：')}
               inline
               controlWidth="wide"
               className="tool-field tool-run-connection"
             >
-              <div className="tool-run-connection-controls" role="group" aria-label="请求目标">
+              <div className="tool-run-connection-controls" role="group" aria-label={t('请求目标')}>
                 <div className="tool-run-connection-item tool-run-connection-method">
-                  <Input aria-label="请求方式（固定）" readOnly value={s.method} />
+                  <Input aria-label={t('请求方式（固定）')} readOnly value={s.method} />
                 </div>
                 {address(safeRunAddress(s.url))}
               </div>
@@ -64,7 +67,7 @@ export default function RunConfigurationFields({
           {section !== 'connection' && (
             <KeyValues
               layout="parameters"
-              label="请求头"
+              label={t('请求头')}
               value={s.fixedHeaders}
               fixedKeys
               change={(v) => set('fixedHeaders', v)}
@@ -80,7 +83,7 @@ export default function RunConfigurationFields({
                   [key]: next as JsonValue,
                 })
               return typeof value === 'string' ? (
-                <RunParameterRow key={key} label={`正文参数 ${key}`} multiline>
+                <RunParameterRow key={key} label={t('正文参数 {v0}', { v0: key })} multiline>
                   <Textarea
                     rows={3}
                     value={value}
@@ -91,7 +94,7 @@ export default function RunConfigurationFields({
               ) : (
                 <JsonEditor
                   key={key}
-                  label={`正文参数 ${key}`}
+                  label={t('正文参数 {v0}', { v0: key })}
                   layout="parameters"
                   value={value}
                   disabled={disabled}
@@ -113,23 +116,23 @@ export default function RunConfigurationFields({
               <div
                 className="tool-run-connection-controls tool-run-connection-controls--mcp"
                 role="group"
-                aria-label="MCP连接及工具"
+                aria-label={t('MCP连接及工具')}
               >
                 {address(
                   s.transport === 'stdio'
-                    ? `stdio · ${s.command?.split(/[\\/]/).at(-1) || '尚未配置'}`
+                    ? `stdio · ${s.command?.split(/[\\/]/).at(-1) || t('尚未配置')}`
                     : safeRunAddress(s.url ?? ''),
                 )}
                 {onOperationChange ? (
                   <Select
-                    aria-label="MCP工具"
+                    aria-label={t('MCP工具')}
                     ref={operationRef}
                     value={operation ?? ''}
                     disabled={disabled}
                     title={operations?.find((tool) => tool.name === operation)?.upstreamName ?? ''}
                     onChange={(event) => onOperationChange(event.target.value)}
                   >
-                    <option value="">请选择工具（可留空）</option>
+                    <option value="">{t('请选择工具（可留空）')}</option>
                     {operations?.map((tool) => (
                       <option key={tool.name} value={tool.name}>
                         {tool.upstreamName ?? tool.name}
@@ -137,7 +140,11 @@ export default function RunConfigurationFields({
                     ))}
                   </Select>
                 ) : (
-                  <Input aria-label="MCP工具（本次运行）" readOnly value={operationName ?? ''} />
+                  <Input
+                    aria-label={t('MCP工具（本次运行）')}
+                    readOnly
+                    value={operationName ?? ''}
+                  />
                 )}
               </div>
             </Field>
@@ -145,7 +152,7 @@ export default function RunConfigurationFields({
           {section !== 'connection' && (
             <KeyValues
               layout="parameters"
-              label="请求头"
+              label={t('请求头')}
               value={s.headers ?? {}}
               fixedKeys
               change={(v) => set('headers', v)}

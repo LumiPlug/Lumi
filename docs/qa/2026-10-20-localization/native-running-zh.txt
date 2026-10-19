@@ -1,0 +1,29 @@
+Window: " QA Tool · 运行", App: Lumi Localization QA.
+0 standard window  QA Tool · 运行, Secondary Actions: Raise
+	1 scroll area
+		2 HTML content Description: Lumi, URL: tauri://localhost/index.html?runTool=477587ad-cd44-46be-b85a-bb1bc9446072
+			3 container QA Tool
+				4 heading QA Tool, Value: 2
+					5 text QA Tool
+				6 heading 配置 已配置, Value: 3
+					7 button (collapsed) 配置 已配置, Secondary Actions: Expand
+				8 heading 执行 运行中, Value: 3
+					9 container
+						10 text 执行 运行中
+				11 container 执行
+					12 button 复制日志
+					13 container 运行内容
+						14 text 原始日志 QA output
+				15 button 停止运行
+	16 close button
+	17 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	18 minimize button
+19 menu bar
+	20 Lumi Localization QA
+	21 File
+	22 Edit
+	23 View
+	24 Window
+	25 Help
+
+The focused UI element is 2 HTML content Description: Lumi, URL: tauri://localhost/index.html?runTool=477587ad-cd44-46be-b85a-bb1bc9446072

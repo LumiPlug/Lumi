@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale } from '../i18n'
 import { useState, type Ref } from 'react'
 import { Button, Field, Input, InputHint } from './ui'
 import { hostInvoke } from '../lib/tauri'
@@ -26,6 +27,8 @@ export function TerminalWorkingDirectory({
   inlineDescription?: boolean
   inputHint?: boolean
 }) {
+  useLocale()
+
   const [picking, setPicking] = useState(false)
   const showToast = useToast()
   async function pick() {
@@ -35,7 +38,7 @@ export function TerminalWorkingDirectory({
       const path = await hostInvoke<string | null>('choose_tool_directory')
       if (path) change(path)
     } catch {
-      showToast('无法打开文件夹选择器，请手动输入目录。', 'error')
+      showToast(t('无法打开文件夹选择器，请手动输入目录。'), 'error')
     } finally {
       setPicking(false)
       onPickingChange?.(false)
@@ -50,22 +53,26 @@ export function TerminalWorkingDirectory({
       value={value}
       readOnly={readOnly}
       disabled={disabled || picking}
-      placeholder="留空使用用户主目录"
+      placeholder={t('留空使用用户主目录')}
       onChange={(event) => change(event.target.value)}
     />
   )
   return (
     <Field
-      label="工作目录"
+      label={t('工作目录')}
       optional
       inline
       controlWidth="wide"
       className="tool-field"
       hint={
-        inlineDescription || inputHint ? undefined : '可手动输入或选择文件夹，留空使用用户主目录。'
+        inlineDescription || inputHint
+          ? undefined
+          : t('可手动输入或选择文件夹，留空使用用户主目录。')
       }
       description={
-        inlineDescription && !inputHint ? '可手动输入或选择文件夹，留空使用用户主目录。' : undefined
+        inlineDescription && !inputHint
+          ? t('可手动输入或选择文件夹，留空使用用户主目录。')
+          : undefined
       }
       error={error}
       action={
@@ -73,16 +80,16 @@ export function TerminalWorkingDirectory({
           <Button
             disabled={disabled || picking}
             loading={picking}
-            loadingLabel="选择中…"
+            loadingLabel={t('选择中…')}
             onClick={() => void pick()}
           >
-            选择文件夹
+            {t('选择文件夹')}
           </Button>
         )
       }
     >
       {inputHint ? (
-        <InputHint label="工作目录" hint="可手动输入或选择文件夹，留空使用用户主目录。">
+        <InputHint label={t('工作目录')} hint={t('可手动输入或选择文件夹，留空使用用户主目录。')}>
           {input}
         </InputHint>
       ) : (

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale, getLocale } from '../../i18n'
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useSurfaceDepth } from './SurfaceEffects'
@@ -21,7 +22,7 @@ export function StackedBars({
   series,
   days,
   onSelect,
-  label = '按日用量',
+  label = t('按日用量'),
   showHint = true,
   appearance = 'default',
   title,
@@ -36,6 +37,8 @@ export function StackedBars({
   title?: string
   animate?: boolean
 }) {
+  useLocale()
+
   const container = useRef<HTMLDivElement>(null)
   const svg = useRef<SVGSVGElement>(null)
   const tooltip = useRef<HTMLDivElement>(null)
@@ -125,7 +128,7 @@ export function StackedBars({
             {title}
           </h2>
         )}
-        <div className="ui-chart-legend" aria-label="图例开关">
+        <div className="ui-chart-legend" aria-label={t('图例开关')}>
           {series.map((s) => (
             <Button
               key={s.key}
@@ -152,8 +155,8 @@ export function StackedBars({
           <text x="0" y="14" className="ui-chart-label">
             {visible.length === 0 ||
             days.some((day) => visible.some((s) => day.values[s.key] != null))
-              ? `${reportedMaximum.toLocaleString()} Token`
-              : '暂无已报告用量'}
+              ? `${reportedMaximum.toLocaleString(getLocale())} Token`
+              : t('暂无已报告用量')}
           </text>
           {appearance === 'dashboard' &&
             [0, 1, 2, 3].map((i) => (
@@ -172,14 +175,16 @@ export function StackedBars({
               x = index * column + (column - barWidth) / 2
             let bottom = height
             const description = series
-              .map((s) => `${s.label} ${day.values[s.key]?.toLocaleString() ?? '未知'}`)
+              .map(
+                (s) => `${s.label} ${day.values[s.key]?.toLocaleString(getLocale()) ?? t('未知')}`,
+              )
               .join('，')
             return (
               <g
                 key={day.date}
                 role="button"
                 tabIndex={0}
-                aria-label={`${day.date}，${description}，查看明细`}
+                aria-label={t('{v0}，{v1}，查看明细', { v0: day.date, v1: description })}
                 aria-describedby={hover === day.date ? tooltipId : undefined}
                 className="ui-chart-day"
                 onFocus={() => setHover(day.date)}
@@ -251,13 +256,15 @@ export function StackedBars({
             {visible.map((s) => (
               <div key={s.key} className="ui-chart-tooltip-row">
                 <span>{s.label}</span>
-                <span>{selected.values[s.key]?.toLocaleString() ?? '未知'} Token</span>
+                <span>
+                  {selected.values[s.key]?.toLocaleString(getLocale()) ?? t('未知')} Token
+                </span>
               </div>
             ))}
           </div>,
           container.current?.closest('dialog') ?? document.body,
         )}
-      {showHint && <p className="ui-chart-detail">悬停或聚焦柱形查看详情，点击日期筛选。</p>}
+      {showHint && <p className="ui-chart-detail">{t('悬停或聚焦柱形查看详情，点击日期筛选。')}</p>}
     </div>
   )
 }

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale } from '../../i18n'
 import { useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight, FileText, Folder } from 'lucide-react'
 import { SurfaceButton } from './controls'
@@ -13,13 +14,15 @@ export function TreeView({
   items,
   selectedId,
   onSelect,
-  label = '知识目录',
+  label = t('知识目录'),
 }: {
   items: TreeItem[]
   selectedId: string | null
   onSelect: (id: string) => void
   label?: string
 }) {
+  useLocale()
+
   const [expandedItems, setExpandedItems] = useState(new Map<string, boolean>())
   const [focused, setFocused] = useState<string | null>(null)
   const buttons = useRef(new Map<string, HTMLButtonElement>())

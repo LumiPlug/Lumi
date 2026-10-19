@@ -1,0 +1,71 @@
+Window: "Lumi", App: Lumi Localization QA.
+0 standard window Lumi, Secondary Actions: Raise
+	1 scroll area
+		2 HTML content Description: Lumi, URL: tauri://localhost
+			3 container
+				4 link Skip to main content, Value: tauri://localhost#main-content
+				5 container Lumi navigation
+					6 image Lumi
+					7 container Main navigation
+						8 button Workbench
+						9 button Tools
+						10 button Skills
+						11 button Knowledge
+						12 button AI Usage
+					13 container Other pages
+						14 button Settings
+				15 container
+					16 heading Settings, Value: 1
+						17 text Settings
+					18 text Adjust appearance, manage MCP connections and local services.
+				19 container Appearance
+					20 heading Appearance, Value: 2
+						21 text Appearance
+					22 container Theme
+						23 toggle button Dark theme, Value: on
+						24 toggle button Light theme, Value: off
+				25 container 语言 / Language
+					26 heading 语言 / Language, Value: 2
+						27 text 语言 / Language
+					28 pop up button 语言 / Language, Value: English
+				29 container MCP connection
+					30 heading MCP connection, Value: 2
+						31 text MCP connection
+					32 text Configuration persists across restarts. The token changes only when manually refreshed.
+					33 button Copy MCP HTTP configuration
+					34 button Refresh token
+					35 button View MCP connection details
+				36 container MCP port
+					37 heading MCP port, Value: 2
+						38 text MCP port
+					39 container
+						40 text Default  38491 . Restart Lumi after saving to apply changes.
+					41 container
+						42 text Port number
+						43 text field (settable) Port number, Value: 55427
+						44 button (disabled) Save port
+				45 container Homepage development prompt
+					46 heading Homepage development prompt, Value: 2
+						47 text Homepage development prompt
+					48 pop up button Homepage template, Value: Work assistant
+					49 button Copy prompt
+				50 container Core
+					51 heading Core, Value: 2
+						52 text Core
+					53 description list
+						54 container
+							55 text Connection status Connected
+						56 text Version
+						57 text 0.1.4
+	58 close button
+	59 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	60 minimize button
+61 menu bar
+	62 Lumi Localization QA
+	63 File
+	64 Edit
+	65 View
+	66 Window
+	67 Help
+
+The focused UI element is 28 pop up button 语言 / Language, Value: English

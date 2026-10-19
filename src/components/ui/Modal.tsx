@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale } from '../../i18n'
 import { useId, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode, RefObject } from 'react'
 import { createPortal } from 'react-dom'
@@ -9,7 +10,7 @@ import { useSurfaceDepth } from './SurfaceEffects'
 export function Modal({
   title,
   placement = 'center',
-  closeLabel = '关闭预览',
+  closeLabel = t('关闭预览'),
   children,
   actions,
   onClose,
@@ -44,6 +45,8 @@ export function Modal({
   dismissOnBackdrop?: boolean
   requestClose?: () => void
 }) {
+  useLocale()
+
   const depth = useSurfaceDepth()
   const dialog = useRef<HTMLDialogElement>(null)
   const heading = useRef<HTMLHeadingElement>(null)

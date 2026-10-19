@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { translateKnown, t, useLocale, getLocale } from '../i18n'
 import {
   Button,
   Select,
@@ -50,13 +51,27 @@ import { refreshRunState } from '../lib/run-task-refresh'
 import { terminalOutputText } from '../lib/terminal-output'
 
 export const taskStatusLabel: Record<ToolTask['status'], string> = {
-  running: '运行中',
-  stopping: '正在停止',
-  completed: '已完成',
-  failed: '失败',
-  cancelled: '已取消',
-  timed_out: '超时',
-  interrupted: '已中断',
+  get running() {
+    return t('运行中')
+  },
+  get stopping() {
+    return t('正在停止')
+  },
+  get completed() {
+    return t('已完成')
+  },
+  get failed() {
+    return t('失败')
+  },
+  get cancelled() {
+    return t('已取消')
+  },
+  get timed_out() {
+    return t('超时')
+  },
+  get interrupted() {
+    return t('已中断')
+  },
 }
 const taskActive = (task: ToolTask) => ['running', 'stopping'].includes(task.status)
 function resultText(result: ToolTask['result']): string {
@@ -102,6 +117,8 @@ function TaskActions({
   close?: () => void
   unavailable?: boolean
 }) {
+  useLocale()
+
   return (
     <>
       {taskActive(task) ? (
@@ -113,7 +130,7 @@ function TaskActions({
             if (event.detail < 2) stop()
           }}
         >
-          {task.status === 'stopping' ? '正在停止…' : '停止'}
+          {task.status === 'stopping' ? t('正在停止…') : t('停止')}
         </Button>
       ) : (
         <>
@@ -124,7 +141,7 @@ function TaskActions({
               disabled={busy}
               onClick={modify}
             >
-              修改参数
+              {t('修改参数')}
             </Button>
           )}
           <Button
@@ -137,7 +154,7 @@ function TaskActions({
             }
             onClick={restart}
           >
-            再次运行
+            {t('再次运行')}
           </Button>
         </>
       )}
@@ -147,7 +164,7 @@ function TaskActions({
           disabled={busy}
           onClick={close}
         >
-          关闭
+          {t('关闭')}
         </Button>
       )}
     </>
@@ -176,6 +193,8 @@ export function TaskResult({
   actions?: boolean
   stale?: boolean
 }) {
+  useLocale()
+
   const active = taskActive(task)
   const showToast = useToast()
   const [clock, setClock] = useState(Date.now())
@@ -216,7 +235,7 @@ export function TaskResult({
     ),
   )
   const eventText = (task.events ?? [])
-    .map((event) => `${new Date(event.at).toLocaleTimeString()}  ${event.message}`)
+    .map((event) => `${new Date(event.at).toLocaleTimeString(getLocale())}  ${event.message}`)
     .join('\n')
   const terminal = task.runnerType === 'terminal'
   const text = terminal ? (stream === 'stderr' ? task.stderr : task.stdout) : eventText
@@ -237,7 +256,7 @@ export function TaskResult({
     setCopying(true)
     try {
       const copied = await copyText(terminal ? terminalOutputText(output) : output)
-      showToast(copied ? '已复制结果。' : '复制失败，请重试。', copied ? 'success' : 'error')
+      showToast(copied ? t('已复制结果。') : t('复制失败，请重试。'), copied ? 'success' : 'error')
     } finally {
       setCopying(false)
     }
@@ -257,14 +276,14 @@ export function TaskResult({
               }
             >
               <span role="status" aria-live="polite">
-                {task.cancellationUncertain ? '结果未知' : taskStatusLabel[task.status]}
+                {task.cancellationUncertain ? t('结果未知') : taskStatusLabel[task.status]}
               </span>
             </Badge>
           )}
           <span className="tool-help">
-            {seconds} 秒
+            {seconds} {t(' 秒')}
             {terminal && resultObject?.exitCode !== undefined
-              ? ` · 退出码 ${resultObject.exitCode ?? '未知'}`
+              ? t(' · 退出码 {v0}', { v0: resultObject.exitCode ?? t('未知') })
               : ''}
             {task.runnerType === 'http' && typeof resultObject?.status === 'number'
               ? ` · HTTP ${resultObject.status}`
@@ -278,22 +297,28 @@ export function TaskResult({
         ) : null}
         {stale && (
           <p className="tool-help" role="status">
-            状态更新中断，正在重新连接。当前显示最后一次收到的状态。
+            {t('状态更新中断，正在重新连接。当前显示最后一次收到的状态。')}
           </p>
         )}
         {history && (
           <p className="tool-help">
-            {new Date(task.startedAt).toLocaleString()} ·{' '}
-            {task.source === 'manual' ? '手动' : task.source === 'ai' ? 'AI' : '工作台'} · v
+            {new Date(task.startedAt).toLocaleString(getLocale())} ·{' '}
+            {task.source === 'manual' ? t('手动') : task.source === 'ai' ? 'AI' : t('工作台')} · v
             {task.version}
           </p>
         )}
         {task.cancellationUncertain && (
           <p className="tool-help">
-            已停止等待，服务端执行结果未知。再次执行前，请确认上次操作的结果。
+            {t('已停止等待，服务端执行结果未知。再次执行前，请确认上次操作的结果。')}
           </p>
         )}
-        {task.error && <p>{TOOL_ERRORS[task.error] ?? '运行未成功，请查看执行过程。'}</p>}
+        {task.error && (
+          <p>
+            {(TOOL_ERRORS[task.error]
+              ? translateKnown(TOOL_ERRORS[task.error] ?? '')
+              : undefined) ?? t('运行未成功，请查看执行过程。')}
+          </p>
+        )}
       </div>
       <div
         className={`tool-result-content${terminal || active ? ' tool-result-content--stream' : ''}`}
@@ -301,7 +326,7 @@ export function TaskResult({
         {!terminal && !active && (
           <>
             <div className="tool-result-heading">
-              {!staged && <h3>运行结果</h3>}
+              {!staged && <h3>{t('运行结果')}</h3>}
               {output && (
                 <Button
                   variant="text"
@@ -309,18 +334,18 @@ export function TaskResult({
                   loading={copying}
                   onClick={() => void copyResult()}
                 >
-                  复制结果
+                  {t('复制结果')}
                 </Button>
               )}
             </div>
             {task.result === null ? (
-              <p className="tool-help">未返回结果。</p>
+              <p className="tool-help">{t('未返回结果。')}</p>
             ) : output === '' ? (
-              <p className="tool-help">返回内容为空。</p>
+              <p className="tool-help">{t('返回内容为空。')}</p>
             ) : structured ? (
-              <pre aria-label="运行结果">{output}</pre>
+              <pre aria-label={t('运行结果')}>{output}</pre>
             ) : (
-              <p className="tool-run-text" aria-label="运行结果">
+              <p className="tool-run-text" aria-label={t('运行结果')}>
                 {output}
               </p>
             )}
@@ -329,31 +354,31 @@ export function TaskResult({
         {logVisible && (
           <>
             <div className="tool-result-heading">
-              <h3>{terminal ? (active ? '运行日志' : '输出结果') : '执行过程'}</h3>
+              <h3>{terminal ? (active ? t('运行日志') : t('输出结果')) : t('执行过程')}</h3>
               <div className="tool-actions">
                 {!follow && (terminal || active) && (
                   <Button variant="ghost" onClick={() => setFollow(true)}>
-                    回到最新
+                    {t('回到最新')}
                   </Button>
                 )}
                 {terminal && !active && text && (
                   <Button variant="text" loading={copying} onClick={() => void copyResult()}>
-                    复制结果
+                    {t('复制结果')}
                   </Button>
                 )}
               </div>
             </div>
             {terminal && task.stderr && (
               <Tabs
-                label="运行输出"
+                label={t('运行输出')}
                 value={stream}
                 onValueChange={(value) => {
                   setStream(value)
                   setFollow(true)
                 }}
                 items={[
-                  { value: 'stdout', label: '输出', id: outputId, panelId: logPanelId },
-                  { value: 'stderr', label: '错误输出', id: errorId, panelId: logPanelId },
+                  { value: 'stdout', label: t('输出'), id: outputId, panelId: logPanelId },
+                  { value: 'stderr', label: t('错误输出'), id: errorId, panelId: logPanelId },
                 ]}
               />
             )}
@@ -368,7 +393,7 @@ export function TaskResult({
                   terminal && task.stderr ? (stream === 'stderr' ? errorId : outputId) : undefined
                 }
                 aria-label={
-                  terminal && task.stderr ? undefined : terminal ? '命令输出' : '执行过程'
+                  terminal && task.stderr ? undefined : terminal ? t('命令输出') : t('执行过程')
                 }
                 onScroll={(event) => {
                   const el = event.currentTarget
@@ -383,13 +408,13 @@ export function TaskResult({
                     text
                   )
                 ) : terminal ? (
-                  '等待输出…'
+                  t('等待输出…')
                 ) : (
-                  '等待执行事件…'
+                  t('等待执行事件…')
                 )}
               </pre>
             ) : (
-              <p className="tool-help">没有输出。</p>
+              <p className="tool-help">{t('没有输出。')}</p>
             )}
           </>
         )}
@@ -399,13 +424,20 @@ export function TaskResult({
             aria-expanded={showEvents}
             onClick={() => setShowEvents(!showEvents)}
           >
-            {showEvents ? '收起执行过程' : '查看执行过程'}
+            {showEvents ? t('收起执行过程') : t('查看执行过程')}
           </Button>
         )}
       </div>
-      {task.truncated && <p className="tool-help">输出已达到预览上限，后续内容被截断。</p>}
-      {active && <p className="tool-help">关闭弹窗后任务继续运行，可在此工具的运行记录中查看。</p>}
-      {history && <code className="tool-task-id">任务 {task.id}</code>}
+      {task.truncated && <p className="tool-help">{t('输出已达到预览上限，后续内容被截断。')}</p>}
+      {active && (
+        <p className="tool-help">{t('关闭弹窗后任务继续运行，可在此工具的运行记录中查看。')}</p>
+      )}
+      {history && (
+        <code className="tool-task-id">
+          {t('任务 ')}
+          {task.id}
+        </code>
+      )}
       {actions && (
         <div className="tool-actions">
           <TaskActions
@@ -435,6 +467,8 @@ export function ToolRunHeader({
   tone?: 'neutral' | 'accent' | 'success' | 'danger'
   titleId?: string
 }) {
+  useLocale()
+
   return (
     <header className="ui-modal-heading tool-run-heading">
       <div className="tool-run-title">
@@ -472,6 +506,8 @@ export function ToolRunStages({
   configuration: ReactNode
   children?: ReactNode
 }) {
+  useLocale()
+
   const [expanded, setExpanded] = useState(false)
   useEffect(() => {
     if (preparing) setExpanded(false)
@@ -481,16 +517,16 @@ export function ToolRunStages({
       className={`tool-run-node-flow${preparing ? '' : ' tool-run-node-flow--executing'}${!preparing && expanded ? ' tool-run-node-flow--expanded' : ''}`}
     >
       <StageSection
-        title="配置"
+        title={t('配置')}
         state={preparing ? 'current' : 'past'}
-        statusLabel={preparing ? '' : '已配置'}
+        statusLabel={preparing ? '' : t('已配置')}
         expanded={expanded}
         onExpandedChange={setExpanded}
       >
         {configuration}
       </StageSection>
       <StageSection
-        title="执行"
+        title={t('执行')}
         state={preparing ? 'pending' : 'current'}
         status={
           preparing || !task
@@ -505,10 +541,10 @@ export function ToolRunStages({
           preparing
             ? ''
             : task?.cancellationUncertain
-              ? '结果未知'
+              ? t('结果未知')
               : task
                 ? taskStatusLabel[task.status]
-                : '读取中'
+                : t('读取中')
         }
       >
         {children}
@@ -518,6 +554,8 @@ export function ToolRunStages({
 }
 
 export function RunProcess({ task, parameters }: { task: ToolTask; parameters?: ReactNode }) {
+  useLocale()
+
   const finished = !taskActive(task)
   const terminal = task.runnerType === 'terminal'
   const result =
@@ -526,9 +564,12 @@ export function RunProcess({ task, parameters }: { task: ToolTask; parameters?: 
       : null
   const log = [
     runLogText(task),
-    task.error ? (TOOL_ERRORS[task.error] ?? '运行未成功，请查看日志。') : '',
+    task.error
+      ? ((TOOL_ERRORS[task.error] ? translateKnown(TOOL_ERRORS[task.error] ?? '') : undefined) ??
+        t('运行未成功，请查看日志。'))
+      : '',
     task.cancellationUncertain
-      ? '已停止等待，服务端执行结果未知。再次执行前，请确认上次操作的结果。'
+      ? t('已停止等待，服务端执行结果未知。再次执行前，请确认上次操作的结果。')
       : '',
   ]
     .filter(Boolean)
@@ -557,16 +598,19 @@ export function RunProcess({ task, parameters }: { task: ToolTask; parameters?: 
     setCopying((current) => ({ ...current, [kind]: true }))
     try {
       const copied = await copyText(text)
-      showToast(copied ? `已复制${kind}。` : '复制失败，请重试。', copied ? 'success' : 'error')
+      showToast(
+        copied ? t('已复制{v0}。', { v0: kind }) : t('复制失败，请重试。'),
+        copied ? 'success' : 'error',
+      )
     } catch {
-      showToast('复制失败，请重试。', 'error')
+      showToast(t('复制失败，请重试。'), 'error')
     } finally {
       setCopying((current) => ({ ...current, [kind]: false }))
     }
   }
   const copy = (kind: string, text: string, small = false) => (
     <IconButton
-      label={`复制${kind}`}
+      label={t('复制{v0}', { v0: kind })}
       iconSize={small ? 'small' : 'default'}
       disabled={!text}
       loading={copying[kind]}
@@ -583,7 +627,7 @@ export function RunProcess({ task, parameters }: { task: ToolTask; parameters?: 
         setDetail('inputs')
       }}
     >
-      查看详情
+      {t('查看详情')}
     </Button>
   )
   return (
@@ -592,16 +636,16 @@ export function RunProcess({ task, parameters }: { task: ToolTask; parameters?: 
         <div className="tool-run-output-navigation">
           {!terminal && (
             <Tabs
-              label="运行内容"
+              label={t('运行内容')}
               value={tab}
               onValueChange={(next) => setSelection({ taskId: task.id, tab: next })}
               items={[
-                { value: 'log', label: '运行记录', id: `${id}-log-tab`, panelId: `${id}-log` },
+                { value: 'log', label: t('运行记录'), id: `${id}-log-tab`, panelId: `${id}-log` },
                 ...(!terminal
                   ? [
                       {
                         value: 'result',
-                        label: task.runnerType === 'http' ? '响应' : '结果',
+                        label: task.runnerType === 'http' ? t('响应') : t('结果'),
                         disabled: !finished,
                         id: `${id}-result-tab`,
                         panelId: `${id}-result`,
@@ -622,7 +666,7 @@ export function RunProcess({ task, parameters }: { task: ToolTask; parameters?: 
         hidden={tab !== 'log'}
       >
         <LogViewer
-          label={terminal ? '运行内容' : '运行记录'}
+          label={terminal ? t('运行内容') : t('运行记录')}
           size="fill"
           numbered={false}
           format={terminal ? 'terminal' : 'text'}
@@ -630,8 +674,8 @@ export function RunProcess({ task, parameters }: { task: ToolTask; parameters?: 
             if (!following) setSelection({ taskId: task.id, tab: 'log' })
           }}
           text={log}
-          emptyLabel={finished ? '没有运行内容。' : ''}
-          overlayAction={copy('日志', terminal ? terminalOutputText(log) : log, true)}
+          emptyLabel={finished ? t('没有运行内容。') : ''}
+          overlayAction={copy(t('日志'), terminal ? terminalOutputText(log) : log, true)}
         />
       </div>
       {!terminal && (
@@ -661,7 +705,7 @@ export function RunProcess({ task, parameters }: { task: ToolTask; parameters?: 
                   numbered={false}
                   autoScroll={false}
                   text={finished ? displayRunResult(panel.text) : ''}
-                  emptyLabel={finished ? '没有返回内容。' : '等待结果…'}
+                  emptyLabel={finished ? t('没有返回内容。') : t('等待结果…')}
                   overlayAction={copy(panel.label, finished ? panel.text : '', true)}
                 />
               </div>
@@ -673,17 +717,17 @@ export function RunProcess({ task, parameters }: { task: ToolTask; parameters?: 
         <Modal
           key={detail}
           returnFocus={detailOrigin.current}
-          title={detail === 'inputs' ? '运行详情' : '原始数据'}
+          title={detail === 'inputs' ? t('运行详情') : t('原始数据')}
           onClose={() => setDetail(null)}
-          actions={<Button onClick={() => setDetail(null)}>完成</Button>}
+          actions={<Button onClick={() => setDetail(null)}>{t('完成')}</Button>}
         >
           {detail === 'inputs' ? (
             <div className="tool-run-pane">
               {parameters ?? (
-                <p className="tool-help">这条运行记录没有保留当时的输入，无法查看。</p>
+                <p className="tool-help">{t('这条运行记录没有保留当时的输入，无法查看。')}</p>
               )}
               <Button variant="text" disabled={!response} onClick={() => setDetail('raw')}>
-                查看原始数据
+                {t('查看原始数据')}
               </Button>
             </div>
           ) : (
@@ -694,16 +738,16 @@ export function RunProcess({ task, parameters }: { task: ToolTask; parameters?: 
               <LogViewer
                 text={response}
                 variant="result"
-                label="原始数据"
+                label={t('原始数据')}
                 numbered={false}
                 autoScroll={false}
-                overlayAction={copy('原始结果', response, true)}
+                overlayAction={copy(t('原始结果'), response, true)}
               />
             </>
           )}
         </Modal>
       )}
-      {task.truncated && <p className="tool-help">输出已达到预览上限，后续内容被截断。</p>}
+      {task.truncated && <p className="tool-help">{t('输出已达到预览上限，后续内容被截断。')}</p>}
     </div>
   )
 }
@@ -714,7 +758,10 @@ export function HistoricalTaskConfiguration({
 }: {
   snapshot: ToolTaskInputSnapshot | null
 }) {
-  if (!snapshot) return <p className="tool-help">这条旧运行记录没有保留当时的输入，无法查看。</p>
+  useLocale()
+
+  if (!snapshot)
+    return <p className="tool-help">{t('这条旧运行记录没有保留当时的输入，无法查看。')}</p>
   const { definition, operation, arguments: args } = snapshot
   const fields = definition.tools.find((tool) => tool.name === operation)?.fields ?? []
   return (
@@ -736,7 +783,7 @@ export function HistoricalTaskConfiguration({
       )}
       <RunParameters
         fields={fields}
-        label="运行时参数"
+        label={t('运行时参数')}
         renderValue={(field, descriptionId, inputId) => {
           const value = field.aiVisible
             ? Object.hasOwn(args, field.key)
@@ -747,7 +794,7 @@ export function HistoricalTaskConfiguration({
             <Input
               id={inputId}
               aria-describedby={descriptionId}
-              aria-label={`${field.key} 当时的输入`}
+              aria-label={t('{v0} 当时的输入', { v0: field.key })}
               readOnly
               type={field.aiVisible ? 'text' : 'password'}
               value={value === undefined ? '' : formatRunValue(field, value)}
@@ -793,6 +840,8 @@ export default function ToolRunPanel({
   stop: (id: string) => void
   busy: boolean
 }) {
+  useLocale()
+
   const terminal = d.runner.type === 'terminal'
   const [operation, setOperation] = useState(() => initialRunOperation(d))
   const operations = availableRunOperations(d)
@@ -964,16 +1013,16 @@ export default function ToolRunPanel({
         invalid.getAttribute('name') ??
         [...fields.current].find(([, element]) => element === invalid)?.[0] ??
         null
-      setError({ key, message: '请修正配置中标记的字段。' })
+      setError({ key, message: t('请修正配置中标记的字段。') })
       if (invalid.closest('[data-run-pane]')?.getAttribute('data-run-pane') === 'request')
         setShowAdvanced(true)
       invalid.focus()
-      showToast('请修正配置中标记的字段。', 'error')
+      showToast(t('请修正配置中标记的字段。'), 'error')
       return null
     }
     if (!tool) {
-      setError({ key: null, message: '请先选择本次运行的工具。' })
-      showToast('请先选择本次运行的工具。', 'error')
+      setError({ key: null, message: t('请先选择本次运行的工具。') })
+      showToast(t('请先选择本次运行的工具。'), 'error')
       return null
     }
     const parsed = prepareManualInputs(tool, values)
@@ -987,10 +1036,10 @@ export default function ToolRunPanel({
       : parsed
     if (!prepared.ok) {
       if (d.runner.type === 'mcp' && prepared.key && !prepared.key.startsWith('runner.'))
-        prepared.message = '本次工具缺少有效的预设参数，请在工具详情中补齐配置后再运行。'
-      setError(prepared)
+        prepared.message = t('本次工具缺少有效的预设参数，请在工具详情中补齐配置后再运行。')
+      setError({ ...prepared, message: translateKnown(prepared.message) })
       if (!terminal && prepared.key?.startsWith('runner.')) setShowAdvanced(true)
-      showToast(prepared.message, 'error')
+      showToast(translateKnown(prepared.message), 'error')
       return null
     }
     setError(null)
@@ -1042,7 +1091,7 @@ export default function ToolRunPanel({
     const props = {
       id: inputId,
       name: field.key,
-      'aria-label': `${field.key} 参数值`,
+      'aria-label': t('{v0} 参数值', { v0: field.key }),
       'aria-invalid': selected || undefined,
       'aria-describedby': descriptionId,
       value: runFieldValue(field, values),
@@ -1076,10 +1125,16 @@ export default function ToolRunPanel({
           else change(field, formatRunValue(field, JSON.parse(event.target.value)))
         }}
       >
-        <option value="">未设置</option>
+        <option value="">{t('未设置')}</option>
         {(field.schema.enum ?? [true, false]).map((value) => (
           <option key={JSON.stringify(value)} value={JSON.stringify(value)}>
-            {value === '' ? '留空' : value === true ? '是' : value === false ? '否' : String(value)}
+            {value === ''
+              ? t('留空')
+              : value === true
+                ? t('是')
+                : value === false
+                  ? t('否')
+                  : String(value)}
           </option>
         ))}
       </Select>
@@ -1102,14 +1157,14 @@ export default function ToolRunPanel({
         rows={terminal ? 3 : 5}
         spellCheck={false}
         className="tool-code"
-        placeholder={field.schema.type === 'string' ? undefined : 'JSON 格式'}
+        placeholder={field.schema.type === 'string' ? undefined : t('JSON 格式')}
       />
     )
   }
   function renderPreset(field: CapabilityField, descriptionId?: string, inputId?: string) {
     const props = {
       id: inputId,
-      'aria-label': `${field.key} 参数值`,
+      'aria-label': t('{v0} 参数值', { v0: field.key }),
       'aria-describedby': descriptionId,
       'aria-invalid': error?.key === field.key || undefined,
       readOnly: true,
@@ -1130,21 +1185,21 @@ export default function ToolRunPanel({
   }
 
   const status = !runAvailable
-    ? '服务未连接'
+    ? t('服务未连接')
     : !configurationCurrent
-      ? '工具配置已变化，请载入最新配置'
+      ? t('工具配置已变化，请载入最新配置')
       : !enabled
-        ? '请先审阅并启用工具'
+        ? t('请先审阅并启用工具')
         : !tool
-          ? '请选择要运行的工具'
+          ? t('请选择要运行的工具')
           : ''
   const notice =
     stage === 0
       ? status
       : stale
-        ? '状态更新中断，正在重新连接'
+        ? t('状态更新中断，正在重新连接')
         : task?.cancellationUncertain
-          ? '远端执行结果未知'
+          ? t('远端执行结果未知')
           : ''
   const actions = (
     <>
@@ -1155,12 +1210,12 @@ export default function ToolRunPanel({
       )}
       {!configurationCurrent && refreshConfiguration && (!task || !taskActive(task)) && (
         <Button variant="secondary" disabled={locked} onClick={refreshConfiguration}>
-          载入最新配置
+          {t('载入最新配置')}
         </Button>
       )}
       {stage === 0 && close && (
         <Button variant="secondary" disabled={locked} onClick={close}>
-          取消
+          {t('取消')}
         </Button>
       )}
       {stage === 0 ? (
@@ -1169,11 +1224,11 @@ export default function ToolRunPanel({
           ref={developmentStart}
           variant="primary"
           loading={submitting || (enabled && !!tool && preflight === null)}
-          loadingLabel={submitting ? '提交中…' : '检查中…'}
+          loadingLabel={submitting ? t('提交中…') : t('检查中…')}
           disabled={!enabled || locked || !tool || preflight === null}
           onClick={() => void submit()}
         >
-          开始运行
+          {t('开始运行')}
         </Button>
       ) : task && taskActive(task) ? (
         <Button
@@ -1183,12 +1238,12 @@ export default function ToolRunPanel({
             if (event.detail < 2) stop(task.id)
           }}
         >
-          {task.status === 'stopping' ? '正在停止…' : '停止运行'}
+          {task.status === 'stopping' ? t('正在停止…') : t('停止运行')}
         </Button>
       ) : (
         task && (
           <Button variant="primary" disabled={locked} onClick={rerun}>
-            调整后再运行
+            {t('调整后再运行')}
           </Button>
         )
       )}
@@ -1203,7 +1258,7 @@ export default function ToolRunPanel({
     !preparing,
   )
   const inspection = (
-    <Field label={preparing ? '当前工具配置（只读）' : '本次运行参数与配置（只读）'}>
+    <Field label={preparing ? t('当前工具配置（只读）') : t('本次运行参数与配置（只读）')}>
       <Textarea
         readOnly
         spellCheck={false}
@@ -1211,9 +1266,11 @@ export default function ToolRunPanel({
         rows={18}
         value={JSON.stringify(
           {
-            ...inspected,
+            [t('本次工具')]: inspected.本次工具,
+            [t('本次运行参数')]: inspected.本次运行参数,
+            [t('完整工具配置')]: inspected.完整工具配置,
             ...(preparing && Object.keys(inspectionDraft).length
-              ? { 未完成的编辑: inspectionDraft }
+              ? { [t('未完成的编辑')]: inspectionDraft }
               : {}),
           },
           null,
@@ -1227,14 +1284,14 @@ export default function ToolRunPanel({
     for (const control of parameterForm.current?.querySelectorAll<
       HTMLInputElement | HTMLTextAreaElement
     >('[aria-invalid="true"]') ?? [])
-      raw[control.labels?.[0]?.textContent ?? control.getAttribute('aria-label') ?? '内容'] =
+      raw[control.labels?.[0]?.textContent ?? control.getAttribute('aria-label') ?? t('内容')] =
         control.value
     setInspectionDraft(raw)
     setShowInspection(true)
   }
   const technicalAction = (
     <Button variant="text" disabled={locked} onClick={openTechnicalInfo}>
-      查看技术信息
+      {t('查看技术信息')}
     </Button>
   )
   const configurationForm = (
@@ -1243,7 +1300,7 @@ export default function ToolRunPanel({
         ref={parameterForm}
         id={formId}
         tabIndex={-1}
-        aria-label="填写内容"
+        aria-label={t('填写内容')}
         className="tool-run-parameter-form"
         noValidate
         onSubmit={(event) => {
@@ -1253,14 +1310,18 @@ export default function ToolRunPanel({
       >
         <div className="tool-run-pane" data-run-pane="parameters">
           {!terminal && d.runner.type !== 'mcp' && d.tools.length > 1 && (
-            <Field label="选择工具" inline error={error?.key === null ? error.message : undefined}>
+            <Field
+              label={t('选择工具')}
+              inline
+              error={error?.key === null ? error.message : undefined}
+            >
               <Select
                 ref={operationInput}
                 value={operation}
                 disabled={locked}
                 onChange={(event) => changeOperation(event.target.value)}
               >
-                <option value="">请选择工具</option>
+                <option value="">{t('请选择工具')}</option>
                 {d.tools.map((item) => (
                   <option key={item.name} value={item.name}>
                     {item.upstreamName ?? item.name}
@@ -1309,10 +1370,10 @@ export default function ToolRunPanel({
                   !needed(field) && (
                     <Button variant="text" disabled={locked} onClick={() => reset(field)}>
                       {!field.aiVisible
-                        ? '恢复固定值'
+                        ? t('恢复固定值')
                         : field.schema.default !== undefined
-                          ? '恢复默认值'
-                          : '不提供此参数'}
+                          ? t('恢复默认值')
+                          : t('不提供此参数')}
                     </Button>
                   )
                 }
@@ -1323,7 +1384,7 @@ export default function ToolRunPanel({
             <RunParameters
               key={operation}
               fields={editable}
-              label={d.runner.type === 'mcp' ? 'MCP 预设参数（只读）' : '请求参数'}
+              label={d.runner.type === 'mcp' ? t('MCP 预设参数（只读）') : t('请求参数')}
               needsInput={needed}
               error={error}
               action={technicalAction}
@@ -1336,10 +1397,10 @@ export default function ToolRunPanel({
                       !needed(field) && (
                         <Button variant="text" disabled={locked} onClick={() => reset(field)}>
                           {!field.aiVisible
-                            ? '恢复固定值'
+                            ? t('恢复固定值')
                             : field.schema.default !== undefined
-                              ? '恢复默认值'
-                              : '不提供此参数'}
+                              ? t('恢复默认值')
+                              : t('不提供此参数')}
                         </Button>
                       )
               }
@@ -1357,7 +1418,7 @@ export default function ToolRunPanel({
                 icon={showAdvanced ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                 onClick={() => setShowAdvanced(!showAdvanced)}
               >
-                {showAdvanced ? '收起更多设置' : '更多设置'}
+                {showAdvanced ? t('收起更多设置') : t('更多设置')}
               </Button>
             </div>
             <div
@@ -1399,7 +1460,11 @@ export default function ToolRunPanel({
       <RunParameters
         fields={tool?.fields ?? []}
         label={
-          terminal ? '外部参数' : d.runner.type === 'mcp' ? 'MCP 预设参数（只读）' : '本次请求参数'
+          terminal
+            ? t('外部参数')
+            : d.runner.type === 'mcp'
+              ? t('MCP 预设参数（只读）')
+              : t('本次请求参数')
         }
         action={technicalAction}
         renderValue={renderPreset}
@@ -1421,9 +1486,9 @@ export default function ToolRunPanel({
     <>
       {showInspection && (
         <Modal
-          title="技术信息"
+          title={t('技术信息')}
           onClose={() => setShowInspection(false)}
-          actions={<Button onClick={() => setShowInspection(false)}>完成</Button>}
+          actions={<Button onClick={() => setShowInspection(false)}>{t('完成')}</Button>}
         >
           {inspection}
         </Modal>

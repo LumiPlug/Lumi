@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale, getLocale } from '../i18n'
 import { allUsageSoftwareIds } from '@lumiplug/shared'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
@@ -68,6 +69,8 @@ const tones = Object.fromEntries(
 ) as Record<UsageSoftware, DataTone>
 const zero: UsageTotals = { total: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, count: 0 }
 function ClientLogo({ software }: { software: UsageSoftware }) {
+  useLocale()
+
   if (!(software in usageLogos)) return <ProviderGlyph id={software} size={18} />
   const logo = usageLogos[software as keyof typeof usageLogos]
   return (
@@ -79,6 +82,8 @@ function ClientLogo({ software }: { software: UsageSoftware }) {
   )
 }
 export default function UsagePage({ active, coreReady }: { active: boolean; coreReady: boolean }) {
+  useLocale()
+
   const toast = useToast()
   const [preset, setPreset] = useState('30'),
     [software, setSoftware] = useState<UsageSoftware | 'all'>('all'),
@@ -91,7 +96,7 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
     [base, setBase] = useState<UsageReport | null>(null),
     [previous, setPrevious] = useState<UsageReport | null>(null)
   const qoderIdentityWarningShown = useRef(false)
-  const qoderIdentityWarning = 'Qoder 部分跨格式请求身份无法关联，已保留历史，统计可能包含重复。'
+  const qoderIdentityWarning = t('Qoder 部分跨格式请求身份无法关联，已保留历史，统计可能包含重复。')
   const [loading, setLoading] = useState(true),
     [busy, setBusy] = useState(false),
     [revision, setRevision] = useState(0)
@@ -202,7 +207,7 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
       },
       fail: () => {
         setLoading(false)
-        toast('用量读取失败，请点击刷新重试。', 'error')
+        toast(t('用量读取失败，请点击刷新重试。'), 'error')
       },
     })
   }, [active, coreReady, payload, range, software, model, revision, toast])
@@ -230,7 +235,7 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
       .catch(() => {
         if (!cancelled) {
           setDetailError(true)
-          toast('会话明细读取失败，请重试。', 'error')
+          toast(t('会话明细读取失败，请重试。'), 'error')
         }
       })
       .finally(() => {
@@ -259,9 +264,9 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
       )
       qoderIdentityWarningShown.current = unverified
       if (unverified) toast(qoderIdentityWarning)
-      else toast('已重新扫描用量并更新会话名称。', 'success')
+      else toast(t('已重新扫描用量并更新会话名称。'), 'success')
     } catch {
-      toast('用量扫描失败，请重试。', 'error')
+      toast(t('用量扫描失败，请重试。'), 'error')
     } finally {
       scanning.current = false
       setBusy(false)
@@ -273,9 +278,9 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
     setExporting(true)
     try {
       const path = await exportUsageCsv(detailPayload)
-      if (path) toast('已导出当前筛选下的全部会话。', 'success')
+      if (path) toast(t('已导出当前筛选下的全部会话。'), 'success')
     } catch {
-      toast('CSV 导出失败，请重试。', 'error')
+      toast(t('CSV 导出失败，请重试。'), 'error')
     } finally {
       exportingRef.current = false
       setExporting(false)
@@ -327,12 +332,12 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
   const columns: DataColumn<UsageSession>[] = [
     {
       key: 'time',
-      label: software === 'vercel-gateway' ? '汇总日期（UTC）' : '最近活动',
+      label: software === 'vercel-gateway' ? t('汇总日期（UTC）') : t('最近活动'),
       render: (row) => (
         <div className="usage-cell-stack">
           <DataText mono>
             <time dateTime={row.latestTime}>
-              {new Date(row.latestTime).toLocaleTimeString([], { hour12: false })}
+              {new Date(row.latestTime).toLocaleTimeString(getLocale(), { hour12: false })}
             </time>
           </DataText>
           <DataText muted>{dateLabel(new Date(row.latestTime))}</DataText>
@@ -341,18 +346,18 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
     },
     {
       key: 'session',
-      label: '会话 / 软件与模型',
+      label: t('会话 / 软件与模型'),
       render: (row) => (
         <div className="usage-session-cell">
           <ClientLogo software={row.software} />
           <div className="usage-cell-stack">
             <strong className="usage-session-name">
               {row.sessionName?.trim() || row.session}{' '}
-              {row.estimatedCount ? <Badge>含估算</Badge> : null}
+              {row.estimatedCount ? <Badge>{t('含估算')}</Badge> : null}
             </strong>
             <DataText muted>
               {usageNames[row.software]} ·{' '}
-              {(row.models ?? []).map((name) => name ?? '未知模型').join(' / ') || '未知模型'}
+              {(row.models ?? []).map((name) => name ?? t('未知模型')).join(' / ') || t('未知模型')}
             </DataText>
           </div>
         </div>
@@ -360,7 +365,7 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
     },
     {
       key: 'io',
-      label: '输入 / 输出',
+      label: t('输入 / 输出'),
       render: (row) => (
         <span className="usage-token-pair">
           <DataText muted mono>
@@ -375,7 +380,7 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
     },
     {
       key: 'cache',
-      label: '缓存命中',
+      label: t('缓存命中'),
       render: (row) => (
         <Badge tone="success">
           {percentLabel(cacheRatio(row))} ({compactTokens(row.cacheRead)})
@@ -384,7 +389,7 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
     },
     {
       key: 'total',
-      label: '总计',
+      label: t('总计'),
       align: 'end',
       render: (row) => (
         <strong>
@@ -395,7 +400,7 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
   ]
   const rangeLabel = range
     ? `${dateLabel(new Date(range.start)).replaceAll('-', '/')} – ${dateLabel(new Date(new Date(range.end).getTime() - 1)).replaceAll('-', '/')}`
-    : '选择日期'
+    : t('选择日期')
   return (
     <div ref={pageRoot} className={`usage-page${selectedSession ? ' usage-page--detail' : ''}`}>
       {selectedSession && (
@@ -427,7 +432,7 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
             <div className="usage-software-tabs">
               <Tabs
                 className="ui-list-toolbar-tabs"
-                label="软件筛选"
+                label={t('软件筛选')}
                 value={software}
                 onValueChange={(value) => {
                   setSoftware(value)
@@ -435,7 +440,7 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
                   setDay(null)
                 }}
                 items={[
-                  { value: 'all' as const, label: '全部' },
+                  { value: 'all' as const, label: t('全部') },
                   ...softwareOptions.map((value) => ({
                     value,
                     label: (
@@ -450,7 +455,7 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
             </div>
             <div className="usage-date-actions" ref={calendarAnchor}>
               <Tabs
-                label="时间范围"
+                label={t('时间范围')}
                 value={preset}
                 onValueChange={(v) => {
                   if (v === 'custom') {
@@ -462,9 +467,9 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
                   setCalendarOpen(false)
                 }}
                 items={[
-                  { value: '1', label: '今日' },
-                  { value: '7', label: '近 7 天' },
-                  { value: '30', label: '近 30 天' },
+                  { value: '1', label: t('今日') },
+                  { value: '7', label: t('近 7 天') },
+                  { value: '30', label: t('近 30 天') },
                   {
                     value: 'custom',
                     label: (
@@ -473,13 +478,13 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
                         {rangeLabel}
                       </span>
                     ),
-                    accessibleLabel: `自定义日期 ${rangeLabel}`,
+                    accessibleLabel: t('自定义日期 {v0}', { v0: rangeLabel }),
                   },
                 ]}
               />
               <IconButton
-                label="导出 CSV"
-                title="导出当前筛选会话的 CSV"
+                label={t('导出 CSV')}
+                title={t('导出当前筛选会话的 CSV')}
                 disabled={!coreReady || !detailPayload}
                 loading={exporting}
                 onClick={() => void exportCsv()}
@@ -487,8 +492,8 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
                 <Download aria-hidden="true" />
               </IconButton>
               <IconButton
-                label="刷新用量"
-                title="重新扫描本地用量和会话名称"
+                label={t('刷新用量')}
+                title={t('重新扫描本地用量和会话名称')}
                 disabled={!coreReady || !payload}
                 loading={busy}
                 loadingAnimation="spin"
@@ -526,14 +531,17 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
           </DashboardToolbar>
           <div className="usage-metrics" aria-busy={loading || undefined}>
             <MetricCard
-              label="总 Token 吞吐"
+              label={t('总 Token 吞吐')}
               tone="accent"
               badge={
                 <>
                   {' '}
-                  {totals.estimatedCount ? <Badge>含估算</Badge> : null}
+                  {totals.estimatedCount ? <Badge>{t('含估算')}</Badge> : null}
                   {change !== null ? (
-                    <Badge tone={change > 0 ? 'accent' : 'success'} title="与上一等长日期区间相比">
+                    <Badge
+                      tone={change > 0 ? 'accent' : 'success'}
+                      title={t('与上一等长日期区间相比')}
+                    >
                       {change >= 0 ? '+' : ''}
                       {(change * 100).toFixed(1)}%
                     </Badge>
@@ -543,13 +551,13 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
             >
               <MetricPair
                 first={{
-                  label: '输入 Token',
+                  label: t('输入 Token'),
                   value: <AnimatedNumber value={totals.input} format={compactTokens} />,
                   exact: tokenNumber(totals.input),
                   tone: 'accent',
                 }}
                 second={{
-                  label: '输出 Token',
+                  label: t('输出 Token'),
                   value: <AnimatedNumber value={totals.output} format={compactTokens} />,
                   exact: tokenNumber(totals.output),
                   tone: 'protocol',
@@ -557,19 +565,24 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
               />
             </MetricCard>
             <MetricCard
-              label="Prompt 缓存复用"
+              label={t('Prompt 缓存复用')}
               tone="success"
-              badge={<Badge tone="success">命中率 {percentLabel(cache)}</Badge>}
+              badge={
+                <Badge tone="success">
+                  {t('命中率 ')}
+                  {percentLabel(cache)}
+                </Badge>
+              }
             >
               <MetricPair
                 first={{
-                  label: '缓存读取 Token',
+                  label: t('缓存读取 Token'),
                   value: <AnimatedNumber value={totals.cacheRead} format={compactTokens} />,
                   exact: tokenNumber(totals.cacheRead),
                   tone: 'success',
                 }}
                 second={{
-                  label: '缓存写入 Token',
+                  label: t('缓存写入 Token'),
                   value: <AnimatedNumber value={totals.cacheWrite} format={compactTokens} />,
                   exact: tokenNumber(totals.cacheWrite),
                   tone: 'success',
@@ -577,16 +590,16 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
               />
             </MetricCard>
             <MetricCard
-              label="活跃设备"
+              label={t('活跃设备')}
               tone="protocol"
               badge={
-                <Badge aria-label={`${clients} 款软件有记录`}>
+                <Badge aria-label={t('{v0} 款软件有记录', { v0: clients })}>
                   <AnimatedNumber value={clients} />
                 </Badge>
               }
             >
               <DistributionRing
-                label="设备 Token 占比"
+                label={t('设备 Token 占比')}
                 items={scopedSoftware.map((key) => ({
                   key,
                   label: usageNames[key],
@@ -603,8 +616,10 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
               <StackedBars
                 animate
                 appearance="dashboard"
-                title={software === 'vercel-gateway' ? '用量趋势（按日 · UTC）' : '用量趋势'}
-                label={preset === '1' && software !== 'vercel-gateway' ? '每小时用量' : '每日用量'}
+                title={software === 'vercel-gateway' ? t('用量趋势（按日 · UTC）') : t('用量趋势')}
+                label={
+                  preset === '1' && software !== 'vercel-gateway' ? t('每小时用量') : t('每日用量')
+                }
                 series={scopedSoftware.map((key) => ({
                   key,
                   label: usageNames[key],
@@ -620,7 +635,7 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
               actions={
                 <>
                   <Tabs
-                    label="排行类型"
+                    label={t('排行类型')}
                     value={rankTab}
                     onValueChange={setRankTab}
                     items={[
@@ -629,7 +644,7 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
                         label: (
                           <span className="ui-choice-content">
                             <SlidersHorizontal size={16} aria-hidden="true" />
-                            软件排行
+                            {t('软件排行')}
                           </span>
                         ),
                       },
@@ -638,13 +653,13 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
                         label: (
                           <span className="ui-choice-content">
                             <Layers3 size={16} aria-hidden="true" />
-                            模型明细
+                            {t('模型明细')}
                           </span>
                         ),
                       },
                     ]}
                   />
-                  <DataText muted>按总量降序</DataText>
+                  <DataText muted>{t('按总量降序')}</DataText>
                 </>
               }
             >
@@ -652,7 +667,7 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
                 <RankingList
                   animate
                   compact
-                  label={rankTab === 'software' ? '软件排行' : '模型明细'}
+                  label={rankTab === 'software' ? t('软件排行') : t('模型明细')}
                   rows={
                     rankTab === 'software'
                       ? ranking.map((row) => ({
@@ -669,7 +684,7 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
                       : models.length
                         ? models.map((row) => ({
                             key: row.key,
-                            label: row.model ?? '未知模型',
+                            label: row.model ?? t('未知模型'),
                             icon: <ClientLogo software={row.software} />,
                             value: `${row.estimatedCount ? '≈ ' : ''}${compactTokens(row.total)}`,
                             numericValue: row.total,
@@ -681,7 +696,7 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
                         : [
                             {
                               key: 'empty',
-                              label: '暂无模型',
+                              label: t('暂无模型'),
                               value: '0',
                               share: 0,
                               tone: 'neutral',
@@ -695,9 +710,11 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
           <DataPanel
             title={
               <>
-                {software === 'vercel-gateway' ? '网关日汇总' : '会话明细'}{' '}
+                {software === 'vercel-gateway' ? t('网关日汇总') : t('会话明细')}{' '}
                 <Badge>
-                  共 {matched.toLocaleString()} 个{software === 'vercel-gateway' ? '汇总' : '会话'}
+                  {software === 'vercel-gateway'
+                    ? t('共 {v0} 个汇总', { v0: matched.toLocaleString(getLocale()) })
+                    : t('共 {v0} 个会话', { v0: matched.toLocaleString(getLocale()) })}
                 </Badge>
               </>
             }
@@ -705,27 +722,27 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
             actions={
               <div className="usage-log-actions">
                 <label className="usage-search">
-                  <span className="sr-only">搜索会话</span>
+                  <span className="sr-only">{t('搜索会话')}</span>
                   <Search size={16} aria-hidden="true" />
                   <Input
                     type="search"
-                    placeholder="搜索会话名称 / 编号 / 模型…"
+                    placeholder={t('搜索会话名称 / 编号 / 模型…')}
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                   />
                 </label>
                 <Select
-                  aria-label="会话排序"
+                  aria-label={t('会话排序')}
                   value={sort}
                   onChange={(e) => setSort(e.target.value)}
                 >
-                  <option value="recent">最近互动优先</option>
-                  <option value="tokens">总 Token 降序</option>
+                  <option value="recent">{t('最近互动优先')}</option>
+                  <option value="tokens">{t('总 Token 降序')}</option>
                 </Select>
                 <Button aria-expanded={filtersOpen} onClick={() => setFiltersOpen((v) => !v)}>
                   <Filter size={16} aria-hidden="true" />
-                  筛选
-                  {model !== 'all' || day ? <Badge tone="accent">已应用</Badge> : null}
+                  {t('筛选')}
+                  {model !== 'all' || day ? <Badge tone="accent">{t('已应用')}</Badge> : null}
                 </Button>
               </div>
             }
@@ -733,11 +750,11 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
             {filtersOpen && (
               <div className="usage-toolbar usage-session-filters">
                 <Select
-                  aria-label="模型筛选"
+                  aria-label={t('模型筛选')}
                   value={model}
                   onChange={(event) => setModel(event.target.value)}
                 >
-                  <option value="all">全部模型</option>
+                  <option value="all">{t('全部模型')}</option>
                   {[
                     ...new Set(
                       (base?.models ?? [])
@@ -746,7 +763,7 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
                     ),
                   ].map((name) => (
                     <option key={JSON.stringify(name)} value={JSON.stringify(name)}>
-                      {name ?? '未知模型'}
+                      {name ?? t('未知模型')}
                     </option>
                   ))}
                 </Select>
@@ -754,9 +771,9 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
             )}
             {model !== 'all' && (
               <div className="usage-toolbar usage-session-filters">
-                <Badge>{(JSON.parse(model) as string | null) ?? '未知模型'}</Badge>
+                <Badge>{(JSON.parse(model) as string | null) ?? t('未知模型')}</Badge>
                 <Button variant="text" onClick={() => setModel('all')}>
-                  清除模型筛选
+                  {t('清除模型筛选')}
                 </Button>
               </div>
             )}
@@ -765,7 +782,7 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
                 <Badge tone="accent">
                   <Activity size={12} aria-hidden="true" />
                   {day.includes('T')
-                    ? new Date(day).toLocaleString([], {
+                    ? new Date(day).toLocaleString(getLocale(), {
                         month: '2-digit',
                         day: '2-digit',
                         hour: '2-digit',
@@ -774,14 +791,14 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
                     : day}
                 </Badge>
                 <Button variant="text" onClick={() => setDay(null)}>
-                  清除时间筛选
+                  {t('清除时间筛选')}
                 </Button>
               </div>
             )}
             <ExpandableTable
               key={JSON.stringify(sessionRequest)}
               fixedHeight
-              label="会话用量明细"
+              label={t('会话用量明细')}
               rows={rows}
               columns={columns}
               rowKey={(row) => row.key}
@@ -789,9 +806,9 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
               busy={detailBusy}
               empty={
                 detailError ? (
-                  <Button onClick={() => setRevision((v) => v + 1)}>重试读取</Button>
+                  <Button onClick={() => setRevision((v) => v + 1)}>{t('重试读取')}</Button>
                 ) : (
-                  '暂无会话 · 0 Token'
+                  t('暂无会话 · 0 Token')
                 )
               }
               onRowOpen={(session) => {

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t } from '../i18n'
 import type { JsonValue, ToolTask } from '@lumiplug/shared'
 export type RunResultPanel = { key: string; label: string; text: string }
 const text = (value: JsonValue): string =>
@@ -7,7 +8,9 @@ const text = (value: JsonValue): string =>
 export function remoteResultPanels(task: ToolTask): RunResultPanel[] {
   const result = task.result
   if (result === null)
-    return [{ key: 'result', label: task.runnerType === 'http' ? '响应数据' : '结果', text: '' }]
+    return [
+      { key: 'result', label: task.runnerType === 'http' ? t('响应数据') : t('结果'), text: '' },
+    ]
   if (result && !Array.isArray(result) && typeof result === 'object') {
     if (
       task.runnerType === 'http' &&
@@ -18,24 +21,28 @@ export function remoteResultPanels(task: ToolTask): RunResultPanel[] {
         Object.entries(result).filter(([key]) => !['status', 'body'].includes(key)),
       )
       return [
-        { key: 'body', label: '响应正文', text: text(result.body!) },
+        { key: 'body', label: t('响应正文'), text: text(result.body!) },
         ...(Object.keys(rest).length
-          ? [{ key: 'data', label: '其他返回数据', text: text(rest) }]
+          ? [{ key: 'data', label: t('其他返回数据'), text: text(rest) }]
           : []),
       ]
     }
     if (task.runnerType === 'mcp' && typeof result.text === 'string') {
       const rest = Object.fromEntries(Object.entries(result).filter(([key]) => key !== 'text'))
       return [
-        { key: 'text', label: '文本结果', text: result.text },
+        { key: 'text', label: t('文本结果'), text: result.text },
         ...(Object.keys(rest).length
-          ? [{ key: 'data', label: '结构化数据', text: text(rest) }]
+          ? [{ key: 'data', label: t('结构化数据'), text: text(rest) }]
           : []),
       ]
     }
   }
   return [
-    { key: 'result', label: task.runnerType === 'http' ? '响应数据' : '结果', text: text(result) },
+    {
+      key: 'result',
+      label: task.runnerType === 'http' ? t('响应数据') : t('结果'),
+      text: text(result),
+    },
   ]
 }
 export function runHttpStatus(task: ToolTask): number | null {

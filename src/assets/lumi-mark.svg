@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="140 84 252 304" width="252" height="304" role="img" aria-labelledby="title">
   <!-- SPDX-License-Identifier: MPL-2.0 -->
-  <title id="title">Lumi 太阳琥珀标志</title>
+  <title id="title">Lumi</title>
   <defs>
     <linearGradient id="solarAmberGrad" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#fef08a"/>

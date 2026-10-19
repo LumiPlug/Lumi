@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale } from '../i18n'
 import { useId, useState, type ReactNode } from 'react'
 import type { CapabilityField } from '@lumiplug/shared'
 import { Badge, Button, FieldGroup } from './ui'
@@ -11,7 +12,7 @@ import { ChevronDown, ChevronUp } from 'lucide-react'
 /** Runtime values are editable; the saved parameter contract is inspection only. */
 export function RunParameters({
   fields,
-  label = '外部参数',
+  label = t('外部参数'),
   renderValue,
   error,
   action,
@@ -30,6 +31,8 @@ export function RunParameters({
   error?: { key: string | null; message: string } | null
   needsInput?: (field: CapabilityField) => boolean
 }) {
+  useLocale()
+
   const id = useId()
   const [expanded, setExpanded] = useState(false)
   const required = fields.filter((field) => field.required || needsInput(field))
@@ -51,9 +54,9 @@ export function RunParameters({
             error={error?.key === field.key ? error.message : undefined}
             tags={
               <>
-                <Badge>{field.aiVisible ? '外部可见' : '外部不可见'}</Badge>
+                <Badge>{field.aiVisible ? t('外部可见') : t('外部不可见')}</Badge>
                 <Badge tone={field.required || needsInput(field) ? 'accent' : 'neutral'}>
-                  {field.required || needsInput(field) ? '必填' : '可选'}
+                  {field.required || needsInput(field) ? t('必填') : t('可选')}
                 </Badge>
               </>
             }
@@ -67,7 +70,11 @@ export function RunParameters({
   )
   return (
     <FieldGroup label={label} action={action}>
-      <div className="tools-run-parameter-viewport" role="region" aria-label={`${label}配置`}>
+      <div
+        className="tools-run-parameter-viewport"
+        role="region"
+        aria-label={t('{v0}配置', { v0: label })}
+      >
         {rows(required)}
         {!!optional.length && (
           <div className="tools-run-advanced">
@@ -78,9 +85,9 @@ export function RunParameters({
               icon={advancedOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
               onClick={() => setExpanded(!advancedOpen)}
             >
-              {advancedOpen ? '收起高级参数' : `高级参数（${optional.length}）`}
+              {advancedOpen ? t('收起高级参数') : t('高级参数（{v0}）', { v0: optional.length })}
             </Button>
-            <div id={`${id}-advanced`} hidden={!advancedOpen} aria-label="高级参数">
+            <div id={`${id}-advanced`} hidden={!advancedOpen} aria-label={t('高级参数')}>
               {rows(optional)}
             </div>
           </div>

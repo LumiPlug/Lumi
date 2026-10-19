@@ -40,17 +40,18 @@ pub struct DesktopMenu {
     status: MenuItem<Wry>,
     start: MenuItem<Wry>,
     stop: MenuItem<Wry>,
+    labels: Vec<(MenuItem<Wry>, &'static str, &'static str)>,
 }
 
-fn label(state: &str) -> &'static str {
+fn label(app: &AppHandle, state: &str) -> &'static str {
     match state {
-        "ready" => "已连接",
-        "starting" => "启动中",
-        "restarting" => "重启中",
-        "stopping" => "停止中",
-        "stopped" => "已停止",
-        "error" => "连接异常",
-        _ => "未连接",
+        "ready" => super::locale::text(app, "已连接", "Connected"),
+        "starting" => super::locale::text(app, "启动中", "Starting"),
+        "restarting" => super::locale::text(app, "重启中", "Restarting"),
+        "stopping" => super::locale::text(app, "停止中", "Stopping"),
+        "stopped" => super::locale::text(app, "已停止", "Stopped"),
+        "error" => super::locale::text(app, "连接异常", "Connection error"),
+        _ => super::locale::text(app, "未连接", "Disconnected"),
     }
 }
 
@@ -64,8 +65,14 @@ pub fn refresh(app: &AppHandle) {
         ) {
             let status = core.status();
             let result = (|| -> tauri::Result<()> {
-                menu.status
-                    .set_text(format!("Core：{}", label(&status.state)))?;
+                menu.status.set_text(format!(
+                    "Core{}{}",
+                    super::locale::text(&app, "：", ": "),
+                    label(&app, &status.state)
+                ))?;
+                for (item, chinese, english) in &menu.labels {
+                    item.set_text(super::locale::text(&app, chinese, english))?;
+                }
                 menu.start.set_enabled(status.can_start)?;
                 menu.stop.set_enabled(status.can_stop)?;
                 Ok(())
@@ -213,13 +220,17 @@ pub fn install(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             &quit,
         ],
     )?;
-    app.manage(DesktopMenu {
-        pending: Mutex::new(VecDeque::new()),
-        quitting: AtomicBool::new(false),
-        status,
-        start,
-        stop,
-    });
+    #[allow(unused_mut)]
+    let mut labels = vec![
+        (open, "打开 Lumi", "Open Lumi"),
+        (usage, "AI 用量", "AI Usage"),
+        (skills, "Skills", "Skills"),
+        (knowledge, "项目知识", "Project knowledge"),
+        (start.clone(), "启动 Core", "Start Core"),
+        (stop.clone(), "停止 Core…", "Stop Core…"),
+        (settings, "设置", "Settings"),
+        (quit, "退出 Lumi", "Quit Lumi"),
+    ];
     TrayIconBuilder::with_id("lumi-tray")
         .icon(Image::from_bytes(include_bytes!("../icons/tray-icon.png"))?)
         .icon_as_template(false)
@@ -240,16 +251,21 @@ pub fn install(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             if count > 0 {
                 submenu.remove_at(count - 1)?;
             }
-            submenu.append(&MenuItem::with_id(
-                app,
-                "lumi-quit",
-                "退出 Lumi",
-                true,
-                Some("CmdOrCtrl+Q"),
-            )?)?;
+            let quit_item =
+                MenuItem::with_id(app, "lumi-quit", "退出 Lumi", true, Some("CmdOrCtrl+Q"))?;
+            submenu.append(&quit_item)?;
+            labels.push((quit_item, "退出 Lumi", "Quit Lumi"));
         }
         app.set_menu(application_menu)?;
     }
+    app.manage(DesktopMenu {
+        pending: Mutex::new(VecDeque::new()),
+        quitting: AtomicBool::new(false),
+        status,
+        start,
+        stop,
+        labels,
+    });
     refresh(app);
     Ok(())
 }

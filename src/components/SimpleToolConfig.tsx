@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale } from '../i18n'
 import {
   Input,
   Textarea,
@@ -29,21 +30,23 @@ export function ToolIdentity({
   disabled: boolean
   children?: ReactNode
 }) {
+  useLocale()
+
   const descriptionId = useId()
   return (
     <>
-      <Field label="工具名称" inline className="tool-field">
+      <Field label={t('工具名称')} inline className="tool-field">
         <Input
           data-validation="name"
           value={d.name}
           disabled={disabled}
           maxLength={64}
-          placeholder="例如：开发助手"
+          placeholder={t('例如：开发助手')}
           onChange={(e) => change({ ...d, name: e.target.value })}
         />
       </Field>
       {children}
-      <Field label="用途说明" optional className="tool-field">
+      <Field label={t('用途说明')} optional className="tool-field">
         <Textarea
           id={descriptionId}
           rows={5}
@@ -51,7 +54,7 @@ export function ToolIdentity({
           disabled={disabled}
           maxLength={1000}
           showCount
-          placeholder="告诉自己和 AI，这个工具用来做什么"
+          placeholder={t('告诉自己和 AI，这个工具用来做什么')}
           onChange={(e) => change({ ...d, description: e.target.value })}
         />
       </Field>
@@ -69,6 +72,8 @@ function Parameters({
   disabled: boolean
   terminal: boolean
 }) {
+  useLocale()
+
   const fields = d.tools[0]?.fields ?? []
   const location = terminal
     ? 'argument'
@@ -98,12 +103,12 @@ function Parameters({
         ])
       }
     >
-      添加参数
+      {t('添加参数')}
     </Button>
   )
   const rows = fields.map((f, i) => {
     const editors = [
-      <Field key="name" label={terminal ? '变量名' : '参数名'} className="tool-field">
+      <Field key="name" label={terminal ? t('变量名') : t('参数名')} className="tool-field">
         <Input
           data-validation={`tools[0].fields[${i}].key`}
           value={f.key}
@@ -120,7 +125,7 @@ function Parameters({
           }
         />
       </Field>,
-      <Field key="default" label="默认值" className="tool-field">
+      <Field key="default" label={t('默认值')} className="tool-field">
         <Input
           disabled={disabled || f.schema.default === undefined}
           value={typeof f.schema.default === 'string' ? f.schema.default : ''}
@@ -133,11 +138,11 @@ function Parameters({
           }
         />
       </Field>,
-      <Field key="description" label="输入说明" className="tool-field">
+      <Field key="description" label={t('输入说明')} className="tool-field">
         <Input
           value={f.schema.description ?? ''}
           disabled={disabled}
-          placeholder="供自己和 AI 理解参数"
+          placeholder={t('供自己和 AI 理解参数')}
           onChange={(e) =>
             update(
               fields.map((x, j) =>
@@ -152,16 +157,16 @@ function Parameters({
       <Button
         type="button"
         className="tool-button"
-        aria-label={`删除参数 ${f.key || i + 1}`}
+        aria-label={t('删除参数 {v0}', { v0: f.key || i + 1 })}
         onClick={() => update(fields.filter((_, j) => j !== i))}
       >
-        删除
+        {t('删除')}
       </Button>
     )
     const options = (
       <>
         <Checkbox
-          label="必填"
+          label={t('必填')}
           disabled={disabled}
           checked={f.required}
           onChange={(event) =>
@@ -169,7 +174,7 @@ function Parameters({
           }
         />
         <Checkbox
-          label="使用默认值"
+          label={t('使用默认值')}
           disabled={disabled}
           checked={f.schema.default !== undefined}
           onChange={(event) =>
@@ -189,7 +194,7 @@ function Parameters({
     return (
       <FieldRow
         key={i}
-        label={`${terminal ? '外部参数' : '请求参数'} ${i + 1}`}
+        label={`${terminal ? t('外部参数') : t('请求参数')} ${i + 1}`}
         fields={editors}
         options={options}
         action={remove}
@@ -198,11 +203,13 @@ function Parameters({
   })
   return (
     <FieldGroup
-      label={terminal ? '外部参数' : '请求参数'}
+      label={terminal ? t('外部参数') : t('请求参数')}
       hint={
         terminal
-          ? '无需参数时可留空。默认值和说明会提供给 AI，请勿填写凭据。命令通过 $变量名 读取；Windows 使用 %变量名%。'
-          : '无需传参时可留空。默认值和说明会提供给 AI，请勿填写凭据。'
+          ? t(
+              '无需参数时可留空。默认值和说明会提供给 AI，请勿填写凭据。命令通过 $变量名 读取；Windows 使用 %变量名%。',
+            )
+          : t('无需传参时可留空。默认值和说明会提供给 AI，请勿填写凭据。')
       }
       action={add}
     >
@@ -227,6 +234,8 @@ export default function SimpleToolConfig({
   onRawChange: () => void
   identity?: boolean
 }) {
+  useLocale()
+
   const s = d.runner.settings,
     disabled = !editable || busy
   const toolNameId = useId()
@@ -278,7 +287,7 @@ export default function SimpleToolConfig({
               readOnly={!editable}
             />
             <Parameters definition={d} change={change} disabled={disabled} terminal />
-            <Field label="Shell 命令" className="tool-field">
+            <Field label={t('Shell 命令')} className="tool-field">
               <Textarea
                 className="tool-code"
                 data-validation="runner.settings.command"
@@ -286,7 +295,7 @@ export default function SimpleToolConfig({
                 spellCheck={false}
                 value={s.command ?? ''}
                 disabled={disabled}
-                placeholder={'# 支持多行命令\nprintf "%s\\n" "$PROJECT"'}
+                placeholder={t('# 支持多行命令\nprintf "%s\\n" "$PROJECT"')}
                 onChange={(e) => setting('command', e.target.value)}
               />
             </Field>
@@ -295,7 +304,7 @@ export default function SimpleToolConfig({
         {s.type === 'http' && (
           <>
             <div className="tool-http-address">
-              <Field label="请求方式" inline className="tool-field">
+              <Field label={t('请求方式')} inline className="tool-field">
                 <Select
                   data-validation="runner.settings.method"
                   value={s.method}
@@ -307,7 +316,7 @@ export default function SimpleToolConfig({
                   ))}
                 </Select>
               </Field>
-              <Field label="请求地址" inline className="tool-field">
+              <Field label={t('请求地址')} inline className="tool-field">
                 <Input
                   data-validation="runner.settings.url"
                   value={s.url}
@@ -318,27 +327,27 @@ export default function SimpleToolConfig({
               </Field>
             </div>
             <KeyValues
-              label="请求头"
+              label={t('请求头')}
               path="runner.settings.fixedHeaders"
               value={s.fixedHeaders}
               change={(v) => setting('fixedHeaders', v)}
               editable={!disabled}
             />
-            <Field label="请求参数格式" inline className="tool-field">
+            <Field label={t('请求参数格式')} inline className="tool-field">
               <Select
                 value={s.bodyMode ?? 'query'}
                 disabled={disabled}
                 onChange={(e) => mode(e.target.value)}
               >
-                <option value="query">Query 查询参数</option>
-                <option value="form">Form 表单</option>
+                <option value="query">{t('Query 查询参数')}</option>
+                <option value="form">{t('Form 表单')}</option>
                 <option value="json">Body（JSON）</option>
               </Select>
             </Field>
             <Parameters definition={d} change={change} disabled={disabled} terminal={false} />
             {s.bodyMode === 'json' && (
               <JsonEditor
-                label="请求 Body（JSON，可选）"
+                label={t('请求 Body（JSON，可选）')}
                 value={s.body ?? {}}
                 path="runner.settings.body"
                 kind="object"
@@ -347,8 +356,10 @@ export default function SimpleToolConfig({
               />
             )}
             <JsonEditor
-              label="允许返回字段（JSON 正则规则，可选）"
-              hint={`与返回 JSON 使用相同结构，叶值填正则，例如 {"data":{"name":".+","id":"^\\\\d+$"}}。数组用一个元素描述每项；匹配则保留原值，不匹配则移除。留空对象沿用原输出规则。`}
+              label={t('允许返回字段（JSON 正则规则，可选）')}
+              hint={t(
+                '与返回 JSON 使用相同结构，叶值填正则，例如 {"data":{"name":".+","id":"^\\\\d+$"}}。数组用一个元素描述每项；匹配则保留原值，不匹配则移除。留空对象沿用原输出规则。',
+              )}
               value={s.responseFilter ?? {}}
               path="runner.settings.responseFilter"
               kind="object"
@@ -372,19 +383,19 @@ export default function SimpleToolConfig({
         )}
         {s.type === 'mcp' && (
           <>
-            <Field label="连接方式" inline className="tool-field">
+            <Field label={t('连接方式')} inline className="tool-field">
               <Select
                 disabled={disabled}
                 value={s.transport}
                 onChange={(e) => setting('transport', e.target.value)}
               >
-                <option value="streamable-http">HTTP 服务</option>
-                <option value="stdio">本机程序（stdio）</option>
+                <option value="streamable-http">{t('HTTP 服务')}</option>
+                <option value="stdio">{t('本机程序（stdio）')}</option>
               </Select>
             </Field>
             {s.transport === 'streamable-http' ? (
               <>
-                <Field label="MCP 地址" inline className="tool-field">
+                <Field label={t('MCP 地址')} inline className="tool-field">
                   <Input
                     data-validation="runner.settings.url"
                     value={s.url ?? ''}
@@ -403,18 +414,18 @@ export default function SimpleToolConfig({
               </>
             ) : (
               <>
-                <Field label="启动程序" inline className="tool-field">
+                <Field label={t('启动程序')} inline className="tool-field">
                   <Input
                     data-validation="runner.settings.command"
                     value={s.command ?? ''}
                     disabled={disabled}
-                    placeholder="例如 npx"
+                    placeholder={t('例如 npx')}
                     onChange={(e) => setting('command', e.target.value)}
                   />
                 </Field>
                 <div className="ui-field tool-field">
-                  <ToolFieldTitle htmlFor={argumentsId} label="启动参数" />
-                  <InputHint label="启动参数" hint="每行填写一个启动参数。" multiline>
+                  <ToolFieldTitle htmlFor={argumentsId} label={t('启动参数')} />
+                  <InputHint label={t('启动参数')} hint={t('每行填写一个启动参数。')} multiline>
                     <Textarea
                       id={argumentsId}
                       rows={3}
@@ -430,18 +441,20 @@ export default function SimpleToolConfig({
               </>
             )}
             <div className="ui-field ui-field--inline tool-field">
-              <ToolFieldTitle htmlFor={toolNameId} label="工具名" optional />
+              <ToolFieldTitle htmlFor={toolNameId} label={t('工具名')} optional />
               <div className="ui-field-control">
                 <div className="tool-control-row">
                   <InputHint
-                    label="工具名"
-                    hint="留空读取全部工具，填写则精确匹配上游名称。读取会连接服务或启动程序，获取真实工具及参数。修改连接或工具名后请重新读取。"
+                    label={t('工具名')}
+                    hint={t(
+                      '留空读取全部工具，填写则精确匹配上游名称。读取会连接服务或启动程序，获取真实工具及参数。修改连接或工具名后请重新读取。',
+                    )}
                   >
                     <Input
                       id={toolNameId}
                       value={s.toolName ?? ''}
                       disabled={disabled}
-                      placeholder="留空读取全部工具"
+                      placeholder={t('留空读取全部工具')}
                       onChange={(e) => setting('toolName', e.target.value)}
                     />
                   </InputHint>
@@ -452,7 +465,7 @@ export default function SimpleToolConfig({
                       disabled={busy}
                       onClick={discover}
                     >
-                      读取工具
+                      {t('读取工具')}
                     </Button>
                   )}
                 </div>
@@ -461,7 +474,9 @@ export default function SimpleToolConfig({
             <div className="tool-discovery">
               {d.tools.every((t) => t.upstreamName) && (
                 <p className="tool-help">
-                  已读取 {d.tools.length} 个操作：{d.tools.map((t) => t.upstreamName).join('、')}
+                  {t('已读取 ')}
+                  {d.tools.length} {t(' 个操作：')}
+                  {d.tools.map((t) => t.upstreamName).join('、')}
                 </p>
               )}
             </div>

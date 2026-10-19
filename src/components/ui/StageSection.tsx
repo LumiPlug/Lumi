@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale } from '../../i18n'
 import { useId } from 'react'
 import type { ReactNode } from 'react'
 
@@ -12,7 +13,7 @@ export function StageSection({
   onExpandedChange,
   summary,
   children,
-  pendingLabel = '尚未开始',
+  pendingLabel = t('尚未开始'),
   action,
   status = state === 'past' ? 'completed' : state,
   statusLabel,
@@ -28,6 +29,8 @@ export function StageSection({
   summary?: ReactNode
   children?: ReactNode
 }) {
+  useLocale()
+
   const titleId = useId()
   const panelId = useId()
   const open = state === 'current' || (state === 'past' && expanded)
@@ -47,10 +50,10 @@ export function StageSection({
       <span className="ui-stage-status" role="status" aria-live="polite">
         {statusLabel ??
           {
-            current: '当前阶段',
-            completed: '已执行',
-            failed: '失败',
-            running: '运行中',
+            current: t('当前阶段'),
+            completed: t('已执行'),
+            failed: t('失败'),
+            running: t('运行中'),
             pending: pendingLabel,
           }[status]}
       </span>

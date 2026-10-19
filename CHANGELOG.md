@@ -2,6 +2,13 @@
 
 # Changelog
 
+## 0.1.5 (preview) — 2026-10-20
+
+- Add instant English and Simplified Chinese switching in Settings, with persisted preferences and synchronized tool windows.
+- Localize application pages, shared components, prompts, validation feedback, accessibility labels, and app-owned native menu text and titles.
+- Preserve input, running tasks, and original user content; retain the current language and restore keyboard focus when saving fails.
+- Synchronize desktop, Core, shared packages, stdio proxy, SDK, and template versions while keeping homepage format 2 and bridge protocol 1.
+
 ## 0.1.4 (preview)
 
 - Add Qoder desktop JSONL token collection with request-level reconciliation and explicit mixed-identity warnings.

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale, getLocale } from '../../i18n'
 import { useEffect, useRef, useState } from 'react'
 import { Button } from './controls'
 import { paginationItems } from './pagination'
@@ -9,13 +10,16 @@ import { useAnimatedValues } from './data-motion'
 
 export function AnimatedNumber({
   value,
-  format = (number) => (number === null ? '未知' : Math.round(number).toLocaleString()),
+  format = (number) =>
+    number === null ? t('未知') : Math.round(number).toLocaleString(getLocale()),
   animate = true,
 }: {
   value: number | null
   format?: (value: number | null) => string
   animate?: boolean
 }) {
+  useLocale()
+
   const element = useRef<HTMLSpanElement>(null)
   const display = useAnimatedValues({ value }, animate, element)
   return (
@@ -38,6 +42,8 @@ export function MetricPair({
   first: { label: string; value: ReactNode; exact?: string; tone?: DataTone }
   second: { label: string; value: ReactNode; exact?: string; tone?: DataTone }
 }) {
+  useLocale()
+
   return (
     <div className="ui-metric-pair">
       <dl>
@@ -66,6 +72,8 @@ export interface RingItem {
 }
 /** One data transition from equal shares to measured shares; no decorative looping. */
 export function DistributionRing({ items, label }: { items: RingItem[]; label: string }) {
+  useLocale()
+
   const svg = useRef<SVGSVGElement>(null)
   const [progress, setProgress] = useState(1)
   const total = items.reduce((sum, item) => sum + (item.value ?? 0), 0)
@@ -109,7 +117,7 @@ export function DistributionRing({ items, label }: { items: RingItem[]; label: s
           ...positive.slice(0, 3),
           {
             key: 'others',
-            label: `其他 ${positive.length - 3} 款`,
+            label: t('其他 {v0} 款', { v0: positive.length - 3 }),
             value: positive.slice(3).reduce((sum, item) => sum + (item.value ?? 0), 0),
             tone: 'neutral' as const,
           },
@@ -117,7 +125,7 @@ export function DistributionRing({ items, label }: { items: RingItem[]; label: s
       : items
   let offset = 0
   const summary = !known
-    ? '用量占比未知'
+    ? t('用量占比未知')
     : total === 0
       ? '0 Token'
       : items
@@ -217,7 +225,7 @@ export function DistributionRing({ items, label }: { items: RingItem[]; label: s
         })()
       ) : (
         <text className="ui-ring-label" x="150" y="49" textAnchor="middle">
-          {known ? '0' : '未知'}
+          {known ? '0' : t('未知')}
         </text>
       )}
     </svg>
@@ -236,23 +244,29 @@ export function Pagination({
   busy?: boolean
   onPageChange: (page: number) => void
 }) {
+  useLocale()
+
   const pages = Math.max(1, Math.ceil(total / pageSize))
   const visible = paginationItems(page, pages)
   return (
-    <nav className="ui-pagination" aria-label="会话分页">
+    <nav className="ui-pagination" aria-label={t('会话分页')}>
       <span className="ui-pagination-summary" role="status">
-        共 {total.toLocaleString()} 个 · 第 {page} / {pages} 页
+        {t('共 {v0} 个 · 第 {v1} / {v2} 页', {
+          v0: total.toLocaleString(getLocale()),
+          v1: page,
+          v2: pages,
+        })}
       </span>
       <div style={{ '--ui-pagination-digits': String(pages).length } as CSSProperties}>
         <Button variant="text" disabled={busy || page <= 1} onClick={() => onPageChange(page - 1)}>
-          上一页
+          {t('上一页')}
         </Button>
         {visible.map((value) => (
           <span className="ui-pagination-step" key={value}>
             {typeof value === 'number' ? (
               <Button
                 disabled={busy}
-                aria-label={`第 ${value} 页`}
+                aria-label={t('第 {v0} 页', { v0: value })}
                 aria-current={value === page ? 'page' : undefined}
                 variant="text"
                 onClick={() => onPageChange(value)}
@@ -269,7 +283,7 @@ export function Pagination({
           disabled={busy || page >= pages}
           onClick={() => onPageChange(page + 1)}
         >
-          下一页
+          {t('下一页')}
         </Button>
       </div>
     </nav>

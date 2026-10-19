@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t } from '../i18n'
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, PointerEvent, RefObject } from 'react'
 import type { CapabilityField } from '@lumiplug/shared'
@@ -59,7 +60,11 @@ export function useParameterOrder({
     const field = latest.current.fields[index]
     if (field)
       setAnnouncement(
-        `${field.key}已移至第 ${index + 1} 项，共 ${latest.current.fields.length} 项。`,
+        t('{v0}已移至第 {v1} 项，共 {v2} 项。', {
+          v0: field.key,
+          v1: index + 1,
+          v2: latest.current.fields.length,
+        }),
       )
   }
 
@@ -82,7 +87,7 @@ export function useParameterOrder({
         rowIds.current = restoredIds
         latest.current = { ...latest.current, fields: restored }
         latest.current.change(restored)
-        setAnnouncement('已取消排序，恢复原顺序。')
+        setAnnouncement(t('已取消排序，恢复原顺序。'))
       } else if (current.moved) announce(current.id)
     }
     function tick() {

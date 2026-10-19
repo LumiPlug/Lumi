@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
+import { translateKnown, t, getLocale } from '../i18n'
 import { hostInvoke } from './tauri'
 import { TOOL_ERRORS } from '@lumiplug/shared'
 export function toolAddedTime(value: string): { dateTime: string | null; text: string } {
   const date = new Date(value)
   if (!Number.isFinite(date.getTime()) || date.getTime() <= 0)
-    return { dateTime: null, text: '添加时间未知' }
-  const formatted = new Intl.DateTimeFormat('zh-CN', {
+    return { dateTime: null, text: t('添加时间未知') }
+  const formatted = new Intl.DateTimeFormat(getLocale(), {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -15,7 +16,7 @@ export function toolAddedTime(value: string): { dateTime: string | null; text: s
   })
     .format(date)
     .replaceAll('/', '-')
-  return { dateTime: date.toISOString(), text: `添加于 ${formatted}` }
+  return { dateTime: date.toISOString(), text: t('添加于 {v0}', { v0: formatted }) }
 }
 
 export type ToolsAction =
@@ -44,9 +45,9 @@ export function toolsRequest<T>(
 export function toolErrorMessage(error: unknown): string {
   const code = error instanceof Error ? error.message : typeof error === 'string' ? error : ''
   return (
-    TOOL_ERRORS[code] ??
+    (TOOL_ERRORS[code] ? translateKnown(TOOL_ERRORS[code] ?? '') : undefined) ??
     (code.includes('core')
-      ? '服务未连接，请稍后重试或到设置检查服务。'
-      : '操作失败，请检查配置后重试。')
+      ? t('服务未连接，请稍后重试或到设置检查服务。')
+      : t('操作失败，请检查配置后重试。'))
   )
 }

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale } from './i18n'
 
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import type { McpConnectionInfo, UiCoreStatus } from '@lumiplug/shared'
@@ -51,14 +52,40 @@ type GlyphName =
   | 'usage'
 
 const navigation: Array<{ id: NavKey; label: string; icon: GlyphName }> = [
-  { id: 'workbench', label: '工作台', icon: 'home' },
-  { id: 'capabilities', label: '工具', icon: 'capability' },
+  {
+    id: 'workbench',
+    get label() {
+      return t('工作台')
+    },
+    icon: 'home',
+  },
+  {
+    id: 'capabilities',
+    get label() {
+      return t('工具')
+    },
+    icon: 'capability',
+  },
   { id: 'skills', label: 'Skills', icon: 'layers' },
-  { id: 'knowledge', label: '知识库', icon: 'knowledge' },
-  { id: 'usage', label: 'AI 用量', icon: 'usage' },
+  {
+    id: 'knowledge',
+    get label() {
+      return t('知识库')
+    },
+    icon: 'knowledge',
+  },
+  {
+    id: 'usage',
+    get label() {
+      return t('AI 用量')
+    },
+    icon: 'usage',
+  },
 ]
 
 function Glyph({ name, size = 20 }: { name: GlyphName; size?: number }) {
+  useLocale()
+
   const paths: Record<GlyphName, string> = {
     home: 'm3 11 9-8 9 8v9H5v-9M9 20v-5h6v5',
     capability: 'M12 3v18M5 7h14M5 17h14M7 3v4m10-4v4M7 17v4m10-4v4',
@@ -101,6 +128,8 @@ function EmptyState({
   description: string
   action?: React.ReactNode
 }) {
+  useLocale()
+
   return (
     <div className="empty-state">
       <strong>{title}</strong>
@@ -111,15 +140,19 @@ function EmptyState({
 }
 
 function PlannedPage({ title, description }: { title: string; description: string }) {
+  useLocale()
+
   return (
     <>
       <h1 className="sr-only">{title}</h1>
-      <EmptyState title="尚未接入" description={description} />
+      <EmptyState title={t('尚未接入')} description={description} />
     </>
   )
 }
 
 export default function App() {
+  useLocale()
+
   const [activeNav, setActiveNav] = useState<NavKey>('workbench')
   useNativeWindowActivity()
   useMainWindowIdle(activeNav === 'workbench')
@@ -162,17 +195,17 @@ export default function App() {
         setCoreStopRequest(null)
       }
       showToast(
-        action === 'start' ? '已请求启动 Core。' : 'Core 已停止，任务与连接已关闭。',
+        action === 'start' ? t('已请求启动 Core。') : t('Core 已停止，任务与连接已关闭。'),
         'success',
       )
     } catch (error) {
       const code = String(error)
       showToast(
         code.includes('core_state_changed')
-          ? 'Core 状态已变化，请重新选择操作。'
+          ? t('Core 状态已变化，请重新选择操作。')
           : action === 'stop'
-            ? '未能确认 Core 已停止，请查看状态；不会自动启动另一个进程。'
-            : 'Core 启动失败，请检查状态与端口。',
+            ? t('未能确认 Core 已停止，请查看状态；不会自动启动另一个进程。')
+            : t('Core 启动失败，请检查状态与端口。'),
         'error',
       )
       setCoreStatus(await getCoreStatus())
@@ -248,7 +281,7 @@ export default function App() {
       acknowledge: acknowledgeDesktopAction,
       handle: (request) => desktopHandler.current(request),
       delivered: deliveredDesktopActions.current,
-      fail: () => showToast('托盘操作未完成，请重新打开 Lumi 后重试。', 'error'),
+      fail: () => showToast(t('托盘操作未完成，请重新打开 Lumi 后重试。'), 'error'),
     })
   }, [showToast])
 
@@ -320,8 +353,8 @@ export default function App() {
     <main className="app-frame">
       {coreStopRequest && (
         <ConfirmationDialog
-          title="停止 Core？"
-          confirmLabel="停止 Core"
+          title={t('停止 Core？')}
+          confirmLabel={t('停止 Core')}
           danger
           busy={coreControlBusy}
           confirm={() => void runCoreControl('stop', coreStopRequest)}
@@ -331,24 +364,25 @@ export default function App() {
           }}
         >
           <p>
-            这会中断 Lumi 托管的运行任务、断开 MCP 连接并暂停用量采集。仅停止本应用启动的
-            Core；之后可从托盘重新启动。
+            {t(
+              '这会中断 Lumi 托管的运行任务、断开 MCP 连接并暂停用量采集。仅停止本应用启动的 Core；之后可从托盘重新启动。',
+            )}
           </p>
         </ConfirmationDialog>
       )}
       <div className="window-drag-region" data-tauri-drag-region aria-hidden="true" />
       <a className="skip-link" href="#main-content">
-        跳转到主要内容
+        {t('跳转到主要内容')}
       </a>
-      <aside className="sidebar" aria-label="Lumi 导航">
+      <aside className="sidebar" aria-label={t('Lumi 导航')}>
         <div className="sidebar-brand" title="Lumi">
           <img src={lumiMark} alt="Lumi" width={34} height={34} />
         </div>
-        <nav className="main-nav" aria-label="主导航">
+        <nav className="main-nav" aria-label={t('主导航')}>
           {navigation.map(navButton)}
         </nav>
-        <nav className="bottom-nav" aria-label="其他页面">
-          {navButton({ id: 'settings', label: '设置', icon: 'settings' })}
+        <nav className="bottom-nav" aria-label={t('其他页面')}>
+          {navButton({ id: 'settings', label: t('设置'), icon: 'settings' })}
         </nav>
       </aside>
       <section className="workspace">
@@ -383,7 +417,7 @@ export default function App() {
               />
               <UsagePage active={activeNav === 'usage'} coreReady={coreStatus.state === 'ready'} />
               {activeNav === 'memory' && (
-                <PlannedPage title="Memory" description="个人和项目经验功能正在开发中。" />
+                <PlannedPage title="Memory" description={t('个人和项目经验功能正在开发中。')} />
               )}
               {activeNav === 'settings' && (
                 <SettingsPage
@@ -399,7 +433,7 @@ export default function App() {
                 />
               )}
               {import.meta.env.DEV && activeNav === 'ui-components' && UiComponentsPage && (
-                <Suspense fallback={<p role="status">加载组件…</p>}>
+                <Suspense fallback={<p role="status">{t('加载组件…')}</p>}>
                   <UiComponentsPage
                     theme={theme}
                     onThemeChange={setTheme}

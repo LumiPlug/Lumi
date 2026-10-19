@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale } from '../i18n'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import type {
@@ -25,6 +26,8 @@ import { useNativeWindowActivity } from '../lib/window-activity'
 import './tools.css'
 
 export default function ToolRunWindow({ route }: { route: RunWindowRoute }) {
+  useLocale()
+
   useTheme()
   useNativeWindowActivity()
   const toast = useToast()
@@ -126,7 +129,7 @@ export default function ToolRunWindow({ route }: { route: RunWindowRoute }) {
         if (cancelled) dispose()
         else unlisten = dispose
       })
-      .catch(() => toast('无法接收窗口关闭请求，请使用窗口内的关闭按钮。', 'error'))
+      .catch(() => toast(t('无法接收窗口关闭请求，请使用窗口内的关闭按钮。'), 'error'))
     return () => {
       cancelled = true
       unlisten?.()
@@ -195,7 +198,7 @@ export default function ToolRunWindow({ route }: { route: RunWindowRoute }) {
       })
       inspect(next.id)
       setTasks((previous) => [next, ...previous.filter((item) => item.id !== next.id)])
-      toast('任务已提交', 'success')
+      toast(t('任务已提交'), 'success')
       return next
     } catch (error) {
       toast(toolErrorMessage(error), 'error')
@@ -210,7 +213,7 @@ export default function ToolRunWindow({ route }: { route: RunWindowRoute }) {
       const next = await toolsRequest<ToolTask>(kind, { id })
       inspect(next.id)
       setTasks((previous) => [next, ...previous.filter((item) => item.id !== next.id)])
-      toast(kind === 'stop' ? '已请求停止任务' : '已提交新的运行任务', 'success')
+      toast(kind === 'stop' ? t('已请求停止任务') : t('已提交新的运行任务'), 'success')
     } catch (error) {
       toast(toolErrorMessage(error), 'error')
     } finally {
@@ -235,28 +238,28 @@ export default function ToolRunWindow({ route }: { route: RunWindowRoute }) {
   }
   const header = (
     <ToolRunHeader
-      title={definition?.name ?? '工具运行'}
-      status={definition ? undefined : '正在连接'}
+      title={definition?.name ?? t('工具运行')}
+      status={definition ? undefined : t('正在连接')}
     />
   )
   return (
     <SurfaceEffects depth="heavy">
       {!definition ? (
         <WindowPanel
-          title="工具运行"
+          title={t('工具运行')}
           nativeTitlebar={nativeTitlebar}
           header={header}
           actions={
             <>
               <Button disabled={busy} onClick={() => setLoadRevision((value) => value + 1)}>
-                重新连接
+                {t('重新连接')}
               </Button>
-              <Button onClick={() => void requestClose()}>关闭</Button>
+              <Button onClick={() => void requestClose()}>{t('关闭')}</Button>
             </>
           }
         >
           <p role="status">
-            {loadFailed ? '无法读取工具，请检查服务连接后重试。' : '正在连接服务并读取工具…'}
+            {loadFailed ? t('无法读取工具，请检查服务连接后重试。') : t('正在连接服务并读取工具…')}
           </p>
         </WindowPanel>
       ) : taskView ? (
@@ -270,7 +273,7 @@ export default function ToolRunWindow({ route }: { route: RunWindowRoute }) {
             <>
               {stale && (
                 <span className="tool-run-footer-status tool-help" role="status">
-                  状态更新中断，正在重新连接
+                  {t('状态更新中断，正在重新连接')}
                 </span>
               )}
               {task && activeTask(task) ? (
@@ -281,7 +284,7 @@ export default function ToolRunWindow({ route }: { route: RunWindowRoute }) {
                     if (event.detail < 2) void taskAction('stop', task.id)
                   }}
                 >
-                  {task.status === 'stopping' ? '正在停止…' : '停止运行'}
+                  {task.status === 'stopping' ? t('正在停止…') : t('停止运行')}
                 </Button>
               ) : (
                 task &&
@@ -299,7 +302,7 @@ export default function ToolRunWindow({ route }: { route: RunWindowRoute }) {
                     }
                     onClick={() => void taskAction('restart', task.id)}
                   >
-                    再运行一次
+                    {t('再运行一次')}
                   </Button>
                 )
               )}
@@ -310,7 +313,7 @@ export default function ToolRunWindow({ route }: { route: RunWindowRoute }) {
                 }
                 onClick={() => void prepareFresh()}
               >
-                调整后再运行
+                {t('调整后再运行')}
               </Button>
             </>
           }
@@ -323,7 +326,7 @@ export default function ToolRunWindow({ route }: { route: RunWindowRoute }) {
               <RunProcess key={task.id} task={task} />
             </ToolRunStages>
           ) : (
-            <p role="status">正在读取任务…</p>
+            <p role="status">{t('正在读取任务…')}</p>
           )}
         </WindowPanel>
       ) : (
@@ -350,7 +353,7 @@ export default function ToolRunWindow({ route }: { route: RunWindowRoute }) {
       )}
       {closePrompt && (
         <Modal
-          title="关闭运行窗口？"
+          title={t('关闭运行窗口？')}
           busy={closeBusy}
           onClose={() => setClosePrompt(false)}
           actions={
@@ -360,29 +363,31 @@ export default function ToolRunWindow({ route }: { route: RunWindowRoute }) {
                 disabled={closeBusy}
                 onClick={() => setClosePrompt(false)}
               >
-                继续查看
+                {t('继续查看')}
               </Button>
               <Button
                 variant="secondary"
                 disabled={closeBusy}
                 onClick={() => void closeWith('background')}
               >
-                后台运行
+                {t('后台运行')}
               </Button>
               <Button
                 variant="danger"
                 loading={closeBusy}
-                loadingLabel="正在结束…"
+                loadingLabel={t('正在结束…')}
                 disabled={!ready}
                 onClick={() => void closeWith('ended')}
               >
-                结束运行
+                {t('结束运行')}
               </Button>
             </>
           }
         >
           <p>
-            任务仍在运行。结束运行会停止任务；后台运行会关闭窗口并保留任务，可从运行记录重新查看。
+            {t(
+              '任务仍在运行。结束运行会停止任务；后台运行会关闭窗口并保留任务，可从运行记录重新查看。',
+            )}
           </p>
         </Modal>
       )}

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, getLocale } from '../i18n'
 export { usageSoftwareNames as usageNames } from '@lumiplug/shared'
 export function localDate(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
@@ -16,7 +17,8 @@ export function usageRange(
 ) {
   function date(value: string) {
     const d = new Date(`${value}T00:00:00`)
-    if (!Number.isFinite(d.getTime()) || localDate(d) !== value) throw new Error('请选择有效日期。')
+    if (!Number.isFinite(d.getTime()) || localDate(d) !== value)
+      throw new Error(t('请选择有效日期。'))
     return d
   }
   let first: Date, last: Date
@@ -35,7 +37,7 @@ export function usageRange(
     first.setDate(first.getDate() - (Number(preset) - 1))
   }
   if (last <= first || last.getTime() - first.getTime() > 367 * 86400000)
-    throw new Error('结束日期不得早于开始日期，时间范围最多一年。')
+    throw new Error(t('结束日期不得早于开始日期，时间范围最多一年。'))
   return {
     start: first.toISOString(),
     end: last.toISOString(),
@@ -43,7 +45,7 @@ export function usageRange(
   }
 }
 export function tokenNumber(value: number | null | undefined) {
-  return value == null ? '未知' : value.toLocaleString()
+  return value == null ? t('未知') : value.toLocaleString(getLocale())
 }
 
 /** Calendar inputs use inclusive dates; the API range has an exclusive end. */

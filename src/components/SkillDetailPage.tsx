@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale } from '../i18n'
 import { IconButton, Button, SurfaceButton } from './ui'
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
@@ -21,12 +22,20 @@ import { useToast } from './ToastProvider'
 export type SkillDetail =
   { kind: 'installed'; skill: InstalledSkill } | { kind: 'market'; skill: MarketSkill }
 const scopes: Record<SkillSource['scope'], string> = {
-  personal: '个人',
-  project: '项目',
-  plugin: '插件',
+  get personal() {
+    return t('个人')
+  },
+  get project() {
+    return t('项目')
+  },
+  get plugin() {
+    return t('插件')
+  },
 }
 
 function FileIcon({ folder = false }: { folder?: boolean }) {
+  useLocale()
+
   return (
     <svg
       aria-hidden="true"
@@ -60,6 +69,8 @@ function SkillFileTree({
   selected: string
   onSelect: (entry: SkillFileEntry) => void
 }) {
+  useLocale()
+
   return (
     <ul className="skill-file-tree">
       {entries.map((entry) => (
@@ -74,7 +85,7 @@ function SkillFileTree({
               {entry.children?.length ? (
                 <SkillFileTree entries={entry.children} selected={selected} onSelect={onSelect} />
               ) : (
-                <p className="skill-file-note">此处没有可预览文件</p>
+                <p className="skill-file-note">{t('此处没有可预览文件')}</p>
               )}
             </details>
           ) : (
@@ -106,6 +117,8 @@ function SkillMarkdownImage({
   src?: string
   alt?: string
 }) {
+  useLocale()
+
   const holder = useRef<HTMLSpanElement>(null)
   const [image, setImage] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
@@ -138,12 +151,12 @@ function SkillMarkdownImage({
         <img src={image} alt={alt ?? ''} />
       ) : (
         <span className="skill-file-note">
-          {alt || '图片'}
+          {alt || t('图片')}
           {failed
-            ? '（无法预览）'
+            ? t('（无法预览）')
             : !id || !src || !resolveSkillDocumentLink(current, src)
-              ? '（外部图片）'
-              : '（加载中…）'}
+              ? t('（外部图片）')
+              : t('（加载中…）')}
         </span>
       )}
     </span>
@@ -161,12 +174,14 @@ export function SkillMarkdown({
   current: string
   onLink: (href: string) => void
 }) {
+  useLocale()
+
   const markdown = splitSkillMarkdown(content)
   return (
     <div className="skill-markdown ui-reading-content">
       {markdown.header && (
         <details className="skill-frontmatter">
-          <summary>文件元信息</summary>
+          <summary>{t('文件元信息')}</summary>
           <pre>
             <code>{markdown.header}</code>
           </pre>
@@ -224,6 +239,8 @@ export default function SkillDetailPage({
   importing?: boolean
   importDisabled?: boolean
 }) {
+  useLocale()
+
   const title = useRef<HTMLHeadingElement>(null)
   const viewport = useRef<HTMLDivElement>(null)
   const fileRequest = useRef(0)
@@ -326,13 +343,13 @@ export default function SkillDetailPage({
       try {
         await openSkillLink(href)
       } catch {
-        showToast('无法打开链接，请检查默认浏览器', 'error')
+        showToast(t('无法打开链接，请检查默认浏览器'), 'error')
       }
       return
     }
     const local = resolveSkillDocumentLink(selected, href)
     if (!id || !local) {
-      showToast('此链接未指向可预览的技能文件', 'info')
+      showToast(t('此链接未指向可预览的技能文件'), 'info')
       return
     }
     setFragment(local.fragment)
@@ -346,9 +363,9 @@ export default function SkillDetailPage({
         : detail.skill.url
     try {
       if (!(await copyText(path))) throw new Error('copy_failed')
-      showToast('文件路径已复制', 'success')
+      showToast(t('文件路径已复制'), 'success')
     } catch {
-      showToast('复制失败，请从详情中手动复制路径', 'error')
+      showToast(t('复制失败，请从详情中手动复制路径'), 'error')
     }
   }
   useLayoutEffect(() => {
@@ -357,7 +374,7 @@ export default function SkillDetailPage({
   return (
     <section className="skills-detail" aria-labelledby="skill-detail-title">
       <header className="skill-detail-header">
-        <IconButton label="返回技能列表" title="返回" onClick={onClose}>
+        <IconButton label={t('返回技能列表')} title={t('返回')} onClick={onClose}>
           <ArrowLeft size={18} />
         </IconButton>
         <h2 id="skill-detail-title" className="ui-detail-heading" ref={title} tabIndex={-1}>
@@ -368,15 +385,15 @@ export default function SkillDetailPage({
             <Button
               disabled={importDisabled || !detail.skill.present}
               loading={importing}
-              loadingLabel="导入中…"
+              loadingLabel={t('导入中…')}
               onClick={() => onImport(detail.skill)}
             >
-              导入 Lumi
+              {t('导入 Lumi')}
             </Button>
           )}
           {detail.kind === 'installed' ? (
             <Button className="type-button" type="button" onClick={() => void copyPath()}>
-              复制路径
+              {t('复制路径')}
             </Button>
           ) : (
             <Button
@@ -385,7 +402,7 @@ export default function SkillDetailPage({
               disabled={opening}
               onClick={() => onSource(detail.skill)}
             >
-              {opening ? '打开中…' : '查看来源（浏览器）'}
+              {opening ? t('打开中…') : t('查看来源（浏览器）')}
             </Button>
           )}
         </div>
@@ -393,24 +410,24 @@ export default function SkillDetailPage({
       <div className="skill-detail-body">
         <nav
           className="skill-directory"
-          aria-label={id ? '技能文件目录' : '技能内容'}
+          aria-label={id ? t('技能文件目录') : t('技能内容')}
           aria-busy={directoryLoading}
         >
           {id ? (
             <>
               {directoryLoading ? (
                 <p className="skill-file-note" role="status">
-                  正在读取文件目录…
+                  {t('正在读取文件目录…')}
                 </p>
               ) : directoryFailed ? (
                 <div className="skill-file-state">
-                  <p>文件目录暂不可用</p>
+                  <p>{t('文件目录暂不可用')}</p>
                   <Button
                     className="type-button"
                     type="button"
                     onClick={() => void loadDirectory()}
                   >
-                    重新读取
+                    {t('重新读取')}
                   </Button>
                 </div>
               ) : (
@@ -422,27 +439,27 @@ export default function SkillDetailPage({
                       onSelect={selectFile}
                     />
                     {directory.truncated && (
-                      <p className="skill-file-note">部分大目录或依赖目录未列出</p>
+                      <p className="skill-file-note">{t('部分大目录或依赖目录未列出')}</p>
                     )}
                   </>
                 )
               )}
               <details className="skill-source-info">
-                <summary>来源与状态</summary>
-                <p>{detail.skill.description || '此技能未提供描述'}</p>
+                <summary>{t('来源与状态')}</summary>
+                <p>{detail.skill.description || t('此技能未提供描述')}</p>
                 {detail.kind === 'installed' && (
                   <>
                     <p>
-                      {detail.skill.archived ? '已归档 · ' : ''}
-                      {!detail.skill.present ? '未找到源文件 · ' : ''}
-                      {!detail.skill.metadataValid ? '信息不完整 · ' : ''}
+                      {detail.skill.archived ? t('已归档 · ') : ''}
+                      {!detail.skill.present ? t('未找到源文件 · ') : ''}
+                      {!detail.skill.metadataValid ? t('信息不完整 · ') : ''}
                       {detail.skill.managed
                         ? detail.skill.archived
-                          ? 'Lumi 托管 · MCP 已停用'
+                          ? t('Lumi 托管 · MCP 已停用')
                           : detail.skill.present && detail.skill.metadataValid
-                            ? 'Lumi 托管 · MCP 可搜索与读取'
-                            : 'Lumi 托管 · MCP 暂不可用'
-                        : '外部扫描 · 导入 Lumi 后可通过 MCP 使用；归档仅在 Lumi 中收起'}
+                            ? t('Lumi 托管 · MCP 可搜索与读取')
+                            : t('Lumi 托管 · MCP 暂不可用')
+                        : t('外部扫描 · 导入 Lumi 后可通过 MCP 使用；归档仅在 Lumi 中收起')}
                     </p>
                     <dl>
                       {detail.skill.sources.map((source) => (
@@ -467,13 +484,13 @@ export default function SkillDetailPage({
               aria-current="page"
             >
               <FileIcon />
-              <span>技能介绍</span>
+              <span>{t('技能介绍')}</span>
             </SurfaceButton>
           )}
         </nav>
-        <section className="skill-file-pane" aria-label="选中文件详情">
+        <section className="skill-file-pane" aria-label={t('选中文件详情')}>
           <div className="skill-file-heading">
-            <span title={id ? selected : detail.skill.name}>{id ? selected : '技能介绍'}</span>
+            <span title={id ? selected : detail.skill.name}>{id ? selected : t('技能介绍')}</span>
             {preview && (
               <span>
                 {preview.size < 1024 ? `${preview.size} B` : `${Math.ceil(preview.size / 1024)} KB`}
@@ -484,7 +501,7 @@ export default function SkillDetailPage({
             className="skill-file-preview"
             ref={viewport}
             tabIndex={0}
-            aria-label="文件内容"
+            aria-label={t('文件内容')}
             aria-busy={fileLoading}
           >
             {!id ? (
@@ -495,24 +512,26 @@ export default function SkillDetailPage({
                   onLink={(href) => void followLink(href)}
                 />
                 <p className="skill-file-note">
-                  {detail.kind === 'market' ? `${detail.skill.publisher} · 官方技能` : ''}
+                  {detail.kind === 'market'
+                    ? t('{v0} · 官方技能', { v0: detail.skill.publisher })
+                    : ''}
                 </p>
               </>
             ) : fileLoading ? (
               <p className="skill-file-note" role="status">
-                正在读取文件…
+                {t('正在读取文件…')}
               </p>
             ) : directoryFailed ? (
-              <p className="skill-file-note">重新读取目录后可查看文件内容。</p>
+              <p className="skill-file-note">{t('重新读取目录后可查看文件内容。')}</p>
             ) : fileFailed ? (
               <div className="skill-file-state">
-                <p>文件暂不可用</p>
+                <p>{t('文件暂不可用')}</p>
                 <Button
                   className="type-button"
                   type="button"
                   onClick={() => void loadFile(selected)}
                 >
-                  重新读取文件
+                  {t('重新读取文件')}
                 </Button>
               </div>
             ) : preview?.kind === 'markdown' ? (
@@ -525,15 +544,15 @@ export default function SkillDetailPage({
               />
             ) : preview?.kind === 'text' ? (
               <pre className="skill-source-code">
-                <code>{preview.content || '（空文件）'}</code>
+                <code>{preview.content || t('（空文件）')}</code>
               </pre>
             ) : preview?.kind === 'image' ? (
               <img className="skill-file-image" src={preview.content} alt={selected} />
             ) : (
               <p className="skill-file-note">
                 {preview?.kind === 'too-large'
-                  ? '文件超过预览大小限制（文本 256 KB，图片 1 MB）。'
-                  : '此文件类型暂不支持预览。'}
+                  ? t('文件超过预览大小限制（文本 256 KB，图片 1 MB）。')
+                  : t('此文件类型暂不支持预览。')}
               </p>
             )}
           </div>

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale } from '../i18n'
 import { Input, Textarea, Button, Checkbox, FieldGroup, FieldRow, InputHint, Badge } from './ui'
 import { RunParameterRow } from './RunParameterRow'
 import { createContext, useContext, useEffect, useId, useRef, useState } from 'react'
@@ -25,6 +26,8 @@ export function JsonEditor({
   hint?: string
   layout?: 'default' | 'parameters'
 }) {
+  useLocale()
+
   const markRaw = useContext(RawInputContext)
   const errorId = useId()
   const inputId = useId()
@@ -94,7 +97,9 @@ export function JsonEditor({
         aria-describedby={invalid && layout === 'default' ? errorId : undefined}
       />
     )
-  const invalidMessage = `请输入有效${kind === 'object' ? ' JSON 对象' : kind === 'array' ? ' JSON 数组' : ' JSON'}；修正后再保存。`
+  const invalidMessage = t('请输入有效{v0}；修正后再保存。', {
+    v0: kind === 'object' ? t(' JSON 对象') : kind === 'array' ? t(' JSON 数组') : ' JSON',
+  })
   if (layout === 'parameters')
     return (
       <RunParameterRow
@@ -102,7 +107,9 @@ export function JsonEditor({
         hint={hint}
         multiline={!secret || reveal}
         tags={
-          <Badge>{kind === 'object' ? 'JSON 对象' : kind === 'array' ? 'JSON 数组' : 'JSON'}</Badge>
+          <Badge>
+            {kind === 'object' ? t('JSON 对象') : kind === 'array' ? t('JSON 数组') : 'JSON'}
+          </Badge>
         }
         error={invalid ? invalidMessage : undefined}
       >
@@ -115,7 +122,7 @@ export function JsonEditor({
       {secret && (
         <Checkbox
           className="tool-check"
-          label="显示内容"
+          label={t('显示内容')}
           checked={reveal}
           onChange={(e) => setReveal(e.target.checked)}
         />
@@ -125,8 +132,9 @@ export function JsonEditor({
       </InputHint>
       {invalid && (
         <span id={errorId} className="tool-error">
-          请输入有效{kind === 'object' ? ' JSON 对象' : kind === 'array' ? ' JSON 数组' : ' JSON'}
-          ；修正后再保存。
+          {t('请输入有效')}
+          {kind === 'object' ? t(' JSON 对象') : kind === 'array' ? t(' JSON 数组') : ' JSON'}
+          {t('；修正后再保存。')}
         </span>
       )}
     </div>
@@ -149,6 +157,8 @@ export function KeyValues({
   fixedKeys?: boolean
   layout?: 'default' | 'parameters'
 }) {
+  useLocale()
+
   const [reveal, setReveal] = useState(false)
   const markRaw = useContext(RawInputContext)
   const [entries, setEntries] = useState(() => Object.entries(value))
@@ -187,7 +197,7 @@ export function KeyValues({
         <>
           {entries.length > 0 && (
             <Checkbox
-              label="显示固定值"
+              label={t('显示固定值')}
               checked={reveal}
               onChange={(e) => setReveal(e.target.checked)}
             />
@@ -202,7 +212,8 @@ export function KeyValues({
                 update([...entries, [key, '']])
               }}
             >
-              添加{label}
+              {t('添加')}
+              {label}
             </Button>
           )}
         </>
@@ -212,7 +223,7 @@ export function KeyValues({
         layout === 'parameters' && fixedKeys ? (
           <RunParameterRow key={index} label={key}>
             <Input
-              aria-label={`${label} 固定值 ${index + 1}`}
+              aria-label={t('{v0} 固定值 {v1}', { v0: label, v1: index + 1 })}
               type={reveal ? 'text' : 'password'}
               value={val}
               disabled={!editable}
@@ -233,7 +244,7 @@ export function KeyValues({
             fields={[
               <Input
                 key="name"
-                aria-label={`${label} 名称 ${index + 1}`}
+                aria-label={t('{v0} 名称 {v1}', { v0: label, v1: index + 1 })}
                 data-validation={path}
                 aria-invalid={
                   !key.trim() ||
@@ -255,7 +266,7 @@ export function KeyValues({
               />,
               <Input
                 key="value"
-                aria-label={`${label} 固定值 ${index + 1}`}
+                aria-label={t('{v0} 固定值 {v1}', { v0: label, v1: index + 1 })}
                 type={reveal ? 'text' : 'password'}
                 value={val}
                 disabled={!editable}
@@ -275,9 +286,9 @@ export function KeyValues({
                   type="button"
                   className="tool-button"
                   onClick={() => update(entries.filter((_, i) => i !== index))}
-                  aria-label={`删除${label} ${key}`}
+                  aria-label={t('删除{v0} {v1}', { v0: label, v1: key })}
                 >
-                  删除
+                  {t('删除')}
                 </Button>
               )
             }
@@ -285,8 +296,8 @@ export function KeyValues({
         ),
       )}
 
-      {invalid && <p className="tool-error">名称不能为空或重复，请修正后再保存。</p>}
-      {!entries.length && (!editable || fixedKeys) && <p className="tool-help">未设置</p>}
+      {invalid && <p className="tool-error">{t('名称不能为空或重复，请修正后再保存。')}</p>}
+      {!entries.length && (!editable || fixedKeys) && <p className="tool-help">{t('未设置')}</p>}
     </FieldGroup>
   )
 }

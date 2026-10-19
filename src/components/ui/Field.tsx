@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale, translateKnown } from '../../i18n'
 import { cloneElement, useId } from 'react'
 import type { ReactElement, ReactNode, HTMLAttributes } from 'react'
 import { Tooltip } from './Tooltip'
@@ -15,17 +16,19 @@ export function FieldTitle({
   hint?: ReactNode
   optional?: boolean
 }) {
+  useLocale()
+
   return (
     <span className="ui-field-title">
       {htmlFor ? (
         <label htmlFor={htmlFor}>
           {label}
-          {optional && <small>可选</small>}
+          {optional && <small>{t('可选')}</small>}
         </label>
       ) : (
         <span className="ui-field-label">
           {label}
-          {optional && <small>可选</small>}
+          {optional && <small>{t('可选')}</small>}
         </span>
       )}
       {hint && <Tooltip label={label}>{hint}</Tooltip>}
@@ -55,6 +58,8 @@ export function Field({
   action?: ReactNode
   children: ReactElement<Control>
 }) {
+  useLocale()
+
   const generated = useId()
   const id = children.props.id ?? generated
   const descriptionId = `${id}-description`
@@ -89,7 +94,7 @@ export function Field({
         )}
         {error && (
           <p id={errorId} className="ui-field-error">
-            {error}
+            {translateKnown(error)}
           </p>
         )}
       </div>
@@ -106,6 +111,8 @@ export function Card({
   density?: 'normal' | 'compact' | 'flush'
   interactive?: boolean
 }) {
+  useLocale()
+
   return (
     <div
       {...props}
@@ -123,6 +130,8 @@ export function Badge({
 }: HTMLAttributes<HTMLSpanElement> & {
   tone?: 'neutral' | 'accent' | 'success' | 'danger' | 'protocol'
 }) {
+  useLocale()
+
   return (
     <span {...props} className={`ui-badge ui-tone--${tone} ${className}`}>
       {children}

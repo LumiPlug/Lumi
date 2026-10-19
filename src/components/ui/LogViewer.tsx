@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale } from '../../i18n'
 import {
   useLayoutEffect,
   useMemo,
@@ -16,6 +17,8 @@ import {
 } from '../../lib/terminal-output'
 
 function StyledRuns({ runs }: { runs: TerminalRun[] }) {
+  useLocale()
+
   return runs.map(({ text, style }, index) => {
     const decoration = [style.underline && 'underline', style.strike && 'line-through']
       .filter(Boolean)
@@ -37,6 +40,8 @@ function StyledRuns({ runs }: { runs: TerminalRun[] }) {
 }
 /** Shared ANSI rendering for existing inline output surfaces. */
 export function TerminalText({ text }: { text: string }) {
+  useLocale()
+
   const runs = useMemo(() => terminalOutputRuns(text), [text])
   return <StyledRuns runs={runs} />
 }
@@ -44,8 +49,8 @@ export function TerminalText({ text }: { text: string }) {
 /** A bounded-height output viewport. Line numbers are excluded from copying and speech. */
 export function LogViewer({
   text,
-  label = '运行日志',
-  emptyLabel = '等待输出…',
+  label = t('运行日志'),
+  emptyLabel = t('等待输出…'),
   autoScroll = true,
   onFollowChange,
   headerAction,
@@ -69,6 +74,8 @@ export function LogViewer({
   size?: 'default' | 'combined' | 'fill'
   format?: 'text' | 'terminal'
 }) {
+  useLocale()
+
   const viewport = useRef<HTMLDivElement>(null)
   const following = useRef(true)
   const [paused, setPaused] = useState(false)
@@ -113,7 +120,7 @@ export function LogViewer({
                   viewport.current?.focus({ preventScroll: true })
                 }}
               >
-                回到最新
+                {t('回到最新')}
               </Button>
             )}
             {headerAction}
@@ -124,7 +131,7 @@ export function LogViewer({
       {overlayAction && autoScroll && paused && (
         <div className="ui-output-follow">
           <IconButton
-            label="回到最新"
+            label={t('回到最新')}
             iconSize="small"
             onClick={() => {
               following.current = true

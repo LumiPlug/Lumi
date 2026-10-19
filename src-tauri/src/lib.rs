@@ -5,6 +5,7 @@ use std::net::TcpStream;
 mod desktop_menu;
 #[cfg(debug_assertions)]
 mod dev_ui;
+mod locale;
 mod mcp_settings;
 mod run_windows;
 use std::path::PathBuf;
@@ -672,7 +673,11 @@ async fn choose_tool_directory(
     }
     Ok(rfd::AsyncFileDialog::new()
         .set_parent(&window)
-        .set_title("选择工具工作目录")
+        .set_title(locale::text(
+            &supervisor.app,
+            "选择工具工作目录",
+            "Choose tool working directory",
+        ))
         .pick_folder()
         .await
         .map(|folder| folder.path().to_string_lossy().into_owned()))
@@ -998,9 +1003,16 @@ async fn export_knowledge(
     .map_err(|_| "knowledge_export_failed")??;
     let Some(file) = rfd::AsyncFileDialog::new()
         .set_parent(&window)
-        .set_title("导出知识库")
+        .set_title(locale::text(
+            &supervisor.app,
+            "导出知识库",
+            "Export knowledge",
+        ))
         .set_file_name(&file_name)
-        .add_filter("Lumi 知识库", &["json"])
+        .add_filter(
+            locale::text(&supervisor.app, "Lumi 知识库", "Lumi knowledge"),
+            &["json"],
+        )
         .save_file()
         .await
     else {
@@ -1040,9 +1052,16 @@ async fn export_usage_csv(
         .ok_or("usage_export_failed")?;
     let Some(file) = rfd::AsyncFileDialog::new()
         .set_parent(&window)
-        .set_title("导出 AI 用量")
+        .set_title(locale::text(
+            &supervisor.app,
+            "导出 AI 用量",
+            "Export AI usage",
+        ))
         .set_file_name("lumi-ai-usage.csv")
-        .add_filter("CSV 表格", &["csv"])
+        .add_filter(
+            locale::text(&supervisor.app, "CSV 表格", "CSV spreadsheet"),
+            &["csv"],
+        )
         .save_file()
         .await
     else {
@@ -1262,6 +1281,7 @@ pub fn run() {
                 .path()
                 .app_data_dir()
                 .map_err(|_| "user_data_dir_unavailable")?;
+            app.manage(locale::UiLocale::load(user_data_dir.clone()));
             let supervisor = Arc::new(CoreSupervisor::new(app.handle().clone(), user_data_dir)?);
             app.manage(supervisor.clone());
             let init = run_windows::initialization_script(&supervisor)?;
@@ -1292,6 +1312,8 @@ pub fn run() {
         .invoke_handler({
             let regular: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
                 get_core_status,
+                locale::get_ui_locale,
+                locale::set_ui_locale,
                 control_core,
                 desktop_menu::pending_desktop_action,
                 desktop_menu::acknowledge_desktop_action,
@@ -1354,8 +1376,15 @@ pub fn run() {
                     api.prevent_close();
                     if let Err(error) = hide_main_window(window) {
                         eprintln!("[lumiplug] hide main window failed: {error}");
-                        let _ =
-                            window.emit_to("main", "lumi-native-error", "隐藏窗口失败，请重试。");
+                        let _ = window.emit_to(
+                            "main",
+                            "lumi-native-error",
+                            locale::text(
+                                &window.app_handle().clone(),
+                                "隐藏窗口失败，请重试。",
+                                "Could not hide the window. Try again.",
+                            ),
+                        );
                     }
                 } else if run_windows::is_run_window(window.label()) {
                     api.prevent_close();

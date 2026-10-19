@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale } from '../i18n'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
@@ -62,6 +63,8 @@ import { createCapabilityDefinition } from '@lumiplug/shared'
 
 type Panel = 'controls' | 'forms' | 'feedback' | 'cards'
 function Icon({ name }: { name: 'play' | 'settings' | 'plus' }) {
+  useLocale()
+
   const paths = {
     play: 'm8 5 11 7-11 7V5Z',
     plus: 'M12 5v14M5 12h14',
@@ -93,6 +96,8 @@ function DemoRow({
   description: string
   children: ReactNode
 }) {
+  useLocale()
+
   return (
     <section className="ui-demo-row">
       <div>
@@ -105,6 +110,8 @@ function DemoRow({
 }
 
 function SessionNavigationPreview() {
+  useLocale()
+
   const [open, setOpen] = useState(false)
   const [range, setRange] = useState({ start: '2026-10-16', end: '2026-10-17' })
   const [calendarOpen, setCalendarOpen] = useState(false)
@@ -116,7 +123,7 @@ function SessionNavigationPreview() {
       id: day,
       software: 'codex' as const,
       time: `${day}T10:00:00`,
-      model: '示例模型',
+      model: t('示例模型'),
       session: 'synthetic',
       total: 20250,
       input: 16200,
@@ -135,15 +142,15 @@ function SessionNavigationPreview() {
     <div className="usage-page">
       <div ref={table} hidden={open}>
         <ExpandableTable
-          label="导航会话表格示例"
-          rows={[{ key: 'sample', name: '示例会话', total: '40.5K' }]}
+          label={t('导航会话表格示例')}
+          rows={[{ key: 'sample', name: t('示例会话'), total: '40.5K' }]}
           rowKey={(row) => row.key}
           rowName={(row) => row.name}
           columns={[
-            { key: 'name', label: '会话名称', render: (row) => row.name },
+            { key: 'name', label: t('会话名称'), render: (row) => row.name },
             {
               key: 'total',
-              label: '总计',
+              label: t('总计'),
               align: 'end',
               render: (row) => <DataText mono>{row.total}</DataText>,
             },
@@ -155,7 +162,7 @@ function SessionNavigationPreview() {
         <div className="usage-page">
           <header className="usage-detail-header">
             <IconButton
-              label="返回示例会话列表"
+              label={t('返回示例会话列表')}
               onClick={() => {
                 setOpen(false)
                 requestAnimationFrame(() =>
@@ -166,23 +173,26 @@ function SessionNavigationPreview() {
               <ArrowLeft aria-hidden="true" />
             </IconButton>
             <h2 ref={heading} tabIndex={-1} className="ui-detail-heading">
-              示例会话
+              {t('示例会话')}
             </h2>
           </header>
           <DataPanel
             className="usage-records-panel usage-records-preview"
-            title={`用量记录（${records.length}条）`}
+            title={t('用量记录（{v0}条）', { v0: records.length })}
             actions={
               <div className="usage-log-actions">
                 <div ref={calendarAnchor}>
                   <Segmented
-                    label="示例会话时间范围"
+                    label={t('示例会话时间范围')}
                     value=""
                     onValueChange={() => setCalendarOpen((value) => !value)}
                     items={[
                       {
                         value: 'custom',
-                        accessibleLabel: `选择示例时间范围 ${range.start} – ${range.end}`,
+                        accessibleLabel: t('选择示例时间范围 {v0} – {v1}', {
+                          v0: range.start,
+                          v1: range.end,
+                        }),
                         label: (
                           <span className="ui-choice-content">
                             <CalendarDays size={16} aria-hidden="true" />
@@ -206,15 +216,16 @@ function SessionNavigationPreview() {
                   )}
                 </div>
                 <Badge>
-                  总计 {compactTokens(records.reduce((sum, row) => sum + row.total, 0))} Token
+                  {t('总计 ')}
+                  {compactTokens(records.reduce((sum, row) => sum + row.total, 0))} Token
                 </Badge>
               </div>
             }
           >
             <UsageRecordTable
               records={records}
-              label="合成会话记录"
-              empty={<DataText muted>所选日期暂无合成记录。</DataText>}
+              label={t('合成会话记录')}
+              empty={<DataText muted>{t('所选日期暂无合成记录。')}</DataText>}
             />
           </DataPanel>
         </div>
@@ -231,13 +242,18 @@ export default function UiComponentsPage({
   onThemeChange: (value: 'dark' | 'light') => void
   back: () => void
 }) {
+  useLocale()
+
   const toast = useToast()
   async function copyPreview(text: string, kind: string) {
     try {
       const copied = await copyText(text)
-      toast(copied ? `已复制${kind}。` : '复制失败，请重试。', copied ? 'success' : 'error')
+      toast(
+        copied ? t('已复制{v0}。', { v0: kind }) : t('复制失败，请重试。'),
+        copied ? 'success' : 'error',
+      )
     } catch {
-      toast('复制失败，请重试。', 'error')
+      toast(t('复制失败，请重试。'), 'error')
     }
   }
   const heading = useRef<HTMLHeadingElement>(null)
@@ -252,14 +268,16 @@ export default function UiComponentsPage({
   const previewLog = [
     ...(outputType === 'terminal'
       ? [
-          '\u001b[32m✓ 服务已启动 🚀\u001b[0m',
-          '中文与 Emoji：👩🏽‍💻 🧑‍🚀 ❤️ 🇨🇳',
-          '\u001b[1;31m红色加粗\u001b[0m · \u001b[4;36m青色下划线\u001b[0m · \u001b[43;30m黄色背景\u001b[0m',
-          '\u001b[38;5;208m256 色\u001b[0m · \u001b[38;2;180;130;250mRGB 真彩色\u001b[0m',
-          '\u001b]8;;https://example.com\u0007日志中的链接文字\u001b]8;;\u0007',
+          t('\u001b[32m✓ 服务已启动 🚀\u001b[0m'),
+          t('中文与 Emoji：👩🏽‍💻 🧑‍🚀 ❤️ 🇨🇳'),
+          t(
+            '\u001b[1;31m红色加粗\u001b[0m · \u001b[4;36m青色下划线\u001b[0m · \u001b[43;30m黄色背景\u001b[0m',
+          ),
+          t('\u001b[38;5;208m256 色\u001b[0m · \u001b[38;2;180;130;250mRGB 真彩色\u001b[0m'),
+          t('\u001b]8;;https://example.com\u0007日志中的链接文字\u001b]8;;\u0007'),
         ]
       : []),
-    ...Array.from({ length: logLines }, (_, index) => `运行输出 ${index + 1}`),
+    ...Array.from({ length: logLines }, (_, index) => t('运行输出 {v0}', { v0: index + 1 })),
   ].join('\n')
   const [knowledgeSelection, setKnowledgeSelection] = useState<string | null>('overview')
   const [panel, setPanel] = useState<Panel>('controls')
@@ -276,7 +294,7 @@ export default function UiComponentsPage({
   const [previewTerminal, setPreviewTerminal] = useState(() => {
     const definition = createCapabilityDefinition({
       kind: 'terminal',
-      name: '参数表示例',
+      name: t('参数表示例'),
       command: 'printf "%s\\n" "$PROJECT"',
     })
     definition.tools[0]!.fields = [
@@ -284,9 +302,9 @@ export default function UiComponentsPage({
         key: 'PROJECT',
         schema: {
           type: 'string',
-          title: '项目名称',
+          title: t('项目名称'),
           default: 'gushan',
-          description: '输出的项目名称',
+          description: t('输出的项目名称'),
         },
         required: true,
         aiVisible: true,
@@ -295,7 +313,12 @@ export default function UiComponentsPage({
       },
       {
         key: 'COUNT',
-        schema: { type: 'integer', title: '显示次数', default: 3, description: '输出内容的次数' },
+        schema: {
+          type: 'integer',
+          title: t('显示次数'),
+          default: 3,
+          description: t('输出内容的次数'),
+        },
         required: false,
         aiVisible: true,
         value: null,
@@ -331,32 +354,36 @@ export default function UiComponentsPage({
       <header className="ui-components-header">
         <div>
           <h1 ref={heading} tabIndex={-1}>
-            UI组件
+            {t('UI组件')}
           </h1>
-          <p>共用组件与真实交互 · 仅开发环境</p>
+          <p>{t('共用组件与真实交互 · 仅开发环境')}</p>
         </div>
-        <Button onClick={back}>返回设置</Button>
+        <Button onClick={back}>{t('返回设置')}</Button>
       </header>
       <div className="ui-components-summary">
-        <p>36px 控件 · 4px 圆角 · 琥珀选中 · 重阴影预览 · outline 底部光晕</p>
+        <p>{t('36px 控件 · 4px 圆角 · 琥珀选中 · 重阴影预览 · outline 底部光晕')}</p>
         <Segmented
-          label="组件预览主题"
+          label={t('组件预览主题')}
           value={theme}
           onValueChange={onThemeChange}
           items={[
-            { value: 'dark', label: '深色' },
-            { value: 'light', label: '浅色' },
+            { value: 'dark', label: t('深色') },
+            { value: 'light', label: t('浅色') },
           ]}
         />
       </div>
       <DemoRow
-        title="用量仪表盘"
-        description="合成示例 · 更新数据可核对数字、趋势与排行动画；快速重复点击验证中断接续，减少动态效果时直接落位。"
+        title={t('用量仪表盘')}
+        description={t(
+          '合成示例 · 更新数据可核对数字、趋势与排行动画；快速重复点击验证中断接续，减少动态效果时直接落位。',
+        )}
       >
         <div style={{ display: 'grid', gap: 16, width: '100%' }}>
-          <Button onClick={() => setPreviewDataChanged((value) => !value)}>更新合成数据</Button>
+          <Button onClick={() => setPreviewDataChanged((value) => !value)}>
+            {t('更新合成数据')}
+          </Button>
           <MetricCard
-            label="总 Token 吞吐"
+            label={t('总 Token 吞吐')}
             value="40.5K"
             exact="40,500"
             tone="accent"
@@ -364,13 +391,13 @@ export default function UiComponentsPage({
             badge={<Badge tone="success">+8.2%</Badge>}
             footer={
               <>
-                <DataText muted>输入 32.4K</DataText>
-                <DataText tone="protocol">输出 8.1K</DataText>
+                <DataText muted>{t('输入 32.4K')}</DataText>
+                <DataText tone="protocol">{t('输出 8.1K')}</DataText>
               </>
             }
           />
           <div ref={calendarAnchor}>
-            <Button onClick={() => setCalendarOpen(true)}>日期范围日历示例</Button>
+            <Button onClick={() => setCalendarOpen(true)}>{t('日期范围日历示例')}</Button>
             {calendarOpen && (
               <DateRangeCalendar
                 anchorRef={calendarAnchor}
@@ -394,62 +421,64 @@ export default function UiComponentsPage({
               ))}
             </div>
           </Card>
-          <MetricCard label="双数值统计示例">
+          <MetricCard label={t('双数值统计示例')}>
             <MetricPair
               first={{
-                label: '输入 Token',
+                label: t('输入 Token'),
                 value: <AnimatedNumber value={previewDataChanged ? 64800 : 32400} />,
               }}
               second={{
-                label: '输出 Token',
+                label: t('输出 Token'),
                 value: <AnimatedNumber value={previewDataChanged ? 20250 : 8100} />,
               }}
             />
           </MetricCard>
-          <MetricCard label="设备占比示例" badge={<Badge>2</Badge>}>
+          <MetricCard label={t('设备占比示例')} badge={<Badge>2</Badge>}>
             <DistributionRing
               key={previewRingRevision}
-              label="合成软件占比"
+              label={t('合成软件占比')}
               items={[
-                { key: 'a', label: '软件 A', value: 70, tone: 'accent' },
-                { key: 'b', label: '软件 B', value: 30, tone: 'protocol' },
+                { key: 'a', label: t('软件 A'), value: 70, tone: 'accent' },
+                { key: 'b', label: t('软件 B'), value: 30, tone: 'protocol' },
               ]}
             />
           </MetricCard>
-          <Button onClick={() => setPreviewRingRevision((value) => value + 1)}>重播圆环动效</Button>
+          <Button onClick={() => setPreviewRingRevision((value) => value + 1)}>
+            {t('重播圆环动效')}
+          </Button>
           <Segmented
             appearance="enclosed"
-            label="仪表盘分组筛选示例"
+            label={t('仪表盘分组筛选示例')}
             value={choice}
             onValueChange={setChoice}
             items={[
-              { value: 'all', label: '全部' },
-              { value: 'terminal', label: '终端' },
+              { value: 'all', label: t('全部') },
+              { value: 'terminal', label: t('终端') },
             ]}
           />
           <Segmented
             appearance="chips"
-            label="仪表盘模型筛选示例"
+            label={t('仪表盘模型筛选示例')}
             value={choice}
             onValueChange={setChoice}
             items={[
-              { value: 'all', label: '全部模型' },
-              { value: 'terminal', label: '示例模型' },
+              { value: 'all', label: t('全部模型') },
+              { value: 'terminal', label: t('示例模型') },
             ]}
           />
-          <DataPanel title="软件排行">
+          <DataPanel title={t('软件排行')}>
             <RankingList
               animate
-              label="软件排行示例"
+              label={t('软件排行示例')}
               rows={[
                 {
                   key: 'sample',
-                  label: '示例软件',
+                  label: t('示例软件'),
                   value: previewDataChanged ? '85.05K' : '40.5K',
                   numericValue: previewDataChanged ? 85050 : 40500,
                   formatValue: (value) =>
                     value === null
-                      ? '未知'
+                      ? t('未知')
                       : new Intl.NumberFormat('en', {
                           notation: 'compact',
                           maximumFractionDigits: 2,
@@ -457,23 +486,23 @@ export default function UiComponentsPage({
                   share: previewDataChanged ? 0.92 : 0.68,
                   tone: 'accent',
                 },
-                { key: 'zero', label: '零数据软件', value: '0', share: 0, tone: 'protocol' },
+                { key: 'zero', label: t('零数据软件'), value: '0', share: 0, tone: 'protocol' },
               ]}
             />
           </DataPanel>
-          <DataPanel title="模型明细">
+          <DataPanel title={t('模型明细')}>
             <RankingList
               animate
-              label="模型明细示例"
+              label={t('模型明细示例')}
               rows={[
                 {
                   key: 'model-a',
-                  label: '示例模型 A',
+                  label: t('示例模型 A'),
                   value: previewDataChanged ? '34.02K' : '30.38K',
                   numericValue: previewDataChanged ? 34020 : 30375,
                   formatValue: (value) =>
                     value === null
-                      ? '未知'
+                      ? t('未知')
                       : new Intl.NumberFormat('en', {
                           notation: 'compact',
                           maximumFractionDigits: 2,
@@ -483,12 +512,12 @@ export default function UiComponentsPage({
                 },
                 {
                   key: 'model-b',
-                  label: '示例模型 B',
+                  label: t('示例模型 B'),
                   value: previewDataChanged ? '51.03K' : '10.13K',
                   numericValue: previewDataChanged ? 51030 : 10125,
                   formatValue: (value) =>
                     value === null
-                      ? '未知'
+                      ? t('未知')
                       : new Intl.NumberFormat('en', {
                           notation: 'compact',
                           maximumFractionDigits: 2,
@@ -501,20 +530,20 @@ export default function UiComponentsPage({
           </DataPanel>
           <ExpandableTable
             fixedHeight
-            label="会话表格示例"
-            rows={[{ key: 'sample', name: '示例会话', total: '40,500' }]}
+            label={t('会话表格示例')}
+            rows={[{ key: 'sample', name: t('示例会话'), total: '40,500' }]}
             rowKey={(row) => row.key}
             rowName={(row) => row.name}
             columns={[
-              { key: 'name', label: '会话名称', render: (row) => row.name },
+              { key: 'name', label: t('会话名称'), render: (row) => row.name },
               {
                 key: 'tokens',
-                label: '总 Token',
+                label: t('总 Token'),
                 align: 'end',
                 render: (row) => <DataText mono>{row.total}</DataText>,
               },
             ]}
-            renderExpanded={() => <p>合成记录 · Enter / 空格或点击行展开。</p>}
+            renderExpanded={() => <p>{t('合成记录 · Enter / 空格或点击行展开。')}</p>}
           />
           <Pagination
             page={previewUsagePage}
@@ -525,8 +554,8 @@ export default function UiComponentsPage({
           <StackedBars
             animate
             appearance="dashboard"
-            title="每日用量"
-            series={[{ key: 'sample', label: '示例软件', tone: 'accent' }]}
+            title={t('每日用量')}
+            series={[{ key: 'sample', label: t('示例软件'), tone: 'accent' }]}
             days={[
               { date: '2026-10-15', values: { sample: previewDataChanged ? 52000 : 12000 } },
               { date: '2026-10-16', values: { sample: previewDataChanged ? 31000 : 40500 } },
@@ -537,21 +566,25 @@ export default function UiComponentsPage({
         </div>
       </DemoRow>
       <DemoRow
-        title="会话二级页面"
-        description="合成示例 · 点击行或具名箭头进入详情；支持 Enter / 空格与返回列表，沿用共用表格视觉。"
+        title={t('会话二级页面')}
+        description={t(
+          '合成示例 · 点击行或具名箭头进入详情；支持 Enter / 空格与返回列表，沿用共用表格视觉。',
+        )}
       >
         <SessionNavigationPreview />
       </DemoRow>
       <DemoRow
-        title="会话汇总展开"
-        description="合成示例 · 复用 Card 与 Button text，汇总名称和总 Token，Enter/空格或点击展开。"
+        title={t('会话汇总展开')}
+        description={t(
+          '合成示例 · 复用 Card 与 Button text，汇总名称和总 Token，Enter/空格或点击展开。',
+        )}
       >
         <Card style={{ width: '100%' }}>
           <UsageSessionHeading
             session={{
               key: 'example',
               session: 'synthetic-hash',
-              sessionName: '示例会话',
+              sessionName: t('示例会话'),
               software: 'codex',
               latestTime: '2026-10-16T00:00:00Z',
               total: 40500,
@@ -566,16 +599,18 @@ export default function UiComponentsPage({
             onToggle={() => setSessionOpen((value) => !value)}
           />
           <div id="preview-session-records" hidden={!sessionOpen}>
-            <p>合成记录内容 · 完整会话汇总不受记录分页影响。</p>
+            <p>{t('合成记录内容 · 完整会话汇总不受记录分页影响。')}</p>
           </div>
         </Card>
       </DemoRow>
       <DemoRow
-        title="刷新图标与零用量"
-        description="合成示例 · 扫描时旋转、禁止重复提交；减少动态效果时保持静止。空日期显示 0。"
+        title={t('刷新图标与零用量')}
+        description={t(
+          '合成示例 · 扫描时旋转、禁止重复提交；减少动态效果时保持静止。空日期显示 0。',
+        )}
       >
         <IconButton
-          label="刷新示例"
+          label={t('刷新示例')}
           loadingAnimation="spin"
           loading={loading}
           onClick={() => {
@@ -586,11 +621,11 @@ export default function UiComponentsPage({
           <RefreshCw aria-hidden="true" />
         </IconButton>
         <Segmented
-          label="带 Logo 的软件筛选示例"
+          label={t('带 Logo 的软件筛选示例')}
           value={choice}
           onValueChange={setChoice}
           items={[
-            { value: 'all', label: '全部' },
+            { value: 'all', label: t('全部') },
             {
               value: 'terminal',
               label: (
@@ -604,7 +639,7 @@ export default function UiComponentsPage({
                       <path key={index} {...attrs} />
                     ))}
                   </svg>
-                  软件示例
+                  {t('软件示例')}
                 </span>
               ),
             },
@@ -612,7 +647,7 @@ export default function UiComponentsPage({
         />
         <div style={{ width: '100%' }}>
           <StackedBars
-            series={[{ key: 'a', label: '软件 A' }]}
+            series={[{ key: 'a', label: t('软件 A') }]}
             days={[{ date: '2026-10-16', values: { a: 0 } }]}
             onSelect={() => setChartDetail(true)}
             showHint={false}
@@ -620,14 +655,14 @@ export default function UiComponentsPage({
         </div>
       </DemoRow>
       <DemoRow
-        title="日堆叠图与明细抽屉"
-        description="合成示例 · 图例切换、键盘日期筛选、共用 Modal 侧边布局。"
+        title={t('日堆叠图与明细抽屉')}
+        description={t('合成示例 · 图例切换、键盘日期筛选、共用 Modal 侧边布局。')}
       >
         <div style={{ width: '100%' }}>
           <StackedBars
             series={[
-              { key: 'a', label: '软件 A' },
-              { key: 'b', label: '软件 B' },
+              { key: 'a', label: t('软件 A') },
+              { key: 'b', label: t('软件 B') },
             ]}
             days={[
               { date: '2026-10-10', values: { a: 100, b: 60 } },
@@ -637,27 +672,27 @@ export default function UiComponentsPage({
           />
         </div>
         {chartDetail && (
-          <Modal title="合成用量明细" placement="side" onClose={() => setChartDetail(false)}>
-            <p>仅展示元数据的侧边抽屉，沿用焦点管理、Escape 关闭和减少动态效果。</p>
+          <Modal title={t('合成用量明细')} placement="side" onClose={() => setChartDetail(false)}>
+            <p>{t('仅展示元数据的侧边抽屉，沿用焦点管理、Escape 关闭和减少动态效果。')}</p>
           </Modal>
         )}
       </DemoRow>
       <Tabs
-        label="组件分类"
+        label={t('组件分类')}
         value={panel}
         onValueChange={setPanel}
         items={[
-          { value: 'cards', label: '卡片方案', id: 'ui-tab-cards', panelId: 'ui-panel-cards' },
+          { value: 'cards', label: t('卡片方案'), id: 'ui-tab-cards', panelId: 'ui-panel-cards' },
           {
             value: 'controls',
-            label: '交互控件',
+            label: t('交互控件'),
             id: 'ui-tab-controls',
             panelId: 'ui-panel-controls',
           },
-          { value: 'forms', label: '表单输入', id: 'ui-tab-forms', panelId: 'ui-panel-forms' },
+          { value: 'forms', label: t('表单输入'), id: 'ui-tab-forms', panelId: 'ui-panel-forms' },
           {
             value: 'feedback',
-            label: '浮层反馈',
+            label: t('浮层反馈'),
             id: 'ui-tab-feedback',
             panelId: 'ui-panel-feedback',
           },
@@ -674,63 +709,67 @@ export default function UiComponentsPage({
         {panel === 'controls' && (
           <>
             <DemoRow
-              title="滑块开关"
-              description="开启、关闭与禁用状态；支持标签点击、Tab 焦点和空格切换。"
+              title={t('滑块开关')}
+              description={t('开启、关闭与禁用状态；支持标签点击、Tab 焦点和空格切换。')}
             >
               <Switch
-                label="必填"
+                label={t('必填')}
                 checked={switchOn}
                 onChange={(event) => setSwitchOn(event.target.checked)}
               />
-              <Switch label="禁用（开启）" checked disabled />
-              <Switch label="禁用（关闭）" checked={false} disabled />
+              <Switch label={t('禁用（开启）')} checked disabled />
+              <Switch label={t('禁用（关闭）')} checked={false} disabled />
             </DemoRow>
             <DemoRow
-              title="列表顶栏"
-              description="分类 Tab 在左，搜索与筛选操作在同一行最右侧；保留阴影留白，窄窗口自然换行。"
+              title={t('列表顶栏')}
+              description={t(
+                '分类 Tab 在左，搜索与筛选操作在同一行最右侧；保留阴影留白，窄窗口自然换行。',
+              )}
             >
               <div className="ui-list-toolbar" style={{ width: '100%' }}>
                 <div className="ui-list-toolbar-heading">
                   <Tabs
                     className="ui-list-toolbar-tabs"
-                    label="列表顶栏分类预览"
+                    label={t('列表顶栏分类预览')}
                     value={listCategory}
                     onValueChange={setListCategory}
                     items={[
-                      { value: 'all', label: '全部', count: 12 },
+                      { value: 'all', label: t('全部'), count: 12 },
                       { value: 'terminal', label: 'TERMINAL', count: 4 },
                       { value: 'http', label: 'HTTP', count: 4 },
                       { value: 'mcp', label: 'MCP', count: 4 },
-                      { value: 'archived', label: '已归档', count: 2 },
+                      { value: 'archived', label: t('已归档'), count: 2 },
                     ]}
                   />
-                  <Button disabled>新增</Button>
+                  <Button disabled>{t('新增')}</Button>
                 </div>
                 <div className="ui-list-toolbar-filters">
                   <Input
                     className="ui-list-toolbar-search"
-                    aria-label="列表顶栏搜索预览"
-                    placeholder="搜索…"
+                    aria-label={t('列表顶栏搜索预览')}
+                    placeholder={t('搜索…')}
                     value={listQuery}
                     onChange={(event) => setListQuery(event.target.value)}
                   />
-                  <Select aria-label="列表顶栏状态预览" defaultValue="all">
-                    <option value="all">全部状态</option>
-                    <option value="ready">已启用</option>
+                  <Select aria-label={t('列表顶栏状态预览')} defaultValue="all">
+                    <option value="all">{t('全部状态')}</option>
+                    <option value="ready">{t('已启用')}</option>
                   </Select>
                 </div>
               </div>
             </DemoRow>
             <DemoRow
-              title="知识阅读"
-              description="目录默认只展开第一级，可手动展开子目录；图谱、关系清单、Markdown、分支与来源引用。"
+              title={t('知识阅读')}
+              description={t(
+                '目录默认只展开第一级，可手动展开子目录；图谱、关系清单、Markdown、分支与来源引用。',
+              )}
             >
               <div style={{ width: '100%', display: 'grid', gap: 16 }}>
                 <TreeView
                   items={[
-                    { id: 'overview', parentId: null, title: '项目概览', order: 0 },
-                    { id: 'module', parentId: 'overview', title: '模块设计', order: 0 },
-                    { id: 'contract', parentId: 'module', title: '接口契约', order: 0 },
+                    { id: 'overview', parentId: null, title: t('项目概览'), order: 0 },
+                    { id: 'module', parentId: 'overview', title: t('模块设计'), order: 0 },
+                    { id: 'contract', parentId: 'module', title: t('接口契约'), order: 0 },
                   ]}
                   selectedId={knowledgeSelection}
                   onSelect={setKnowledgeSelection}
@@ -742,23 +781,23 @@ export default function UiComponentsPage({
                         id: 'overview',
                         label: 'Lumi',
                         kind: 'project',
-                        summary: '本地 AI 工具',
+                        summary: t('本地 AI 工具'),
                         documentId: 'overview',
                         citationIds: [],
                       },
                       {
                         id: 'module',
-                        label: 'MCP 网关',
+                        label: t('MCP 网关'),
                         kind: 'module',
-                        summary: '统一工具契约',
+                        summary: t('统一工具契约'),
                         documentId: 'module',
                         citationIds: [],
                       },
                       {
                         id: 'independent',
-                        label: '独立文档',
+                        label: t('独立文档'),
                         kind: 'concept',
-                        summary: '无直接关联的节点',
+                        summary: t('无直接关联的节点'),
                         documentId: null,
                         citationIds: [],
                       },
@@ -778,75 +817,82 @@ export default function UiComponentsPage({
                   />
                 </div>
                 <DocumentViewer
-                  title="项目概览"
-                  markdown={
-                    '# 跨越多个模块的长标题会自然换行\n\n阅读正文使用 14px 字号与 22px 行高。\n\n## 架构\n\n通过 **MCP** 暴露工具。\n\n### Core 模块\n\n- 持久化\n- 授权\n\n#### 连接\n\n连接状态影响本机操作。\n\n##### 请求\n\n请求经过共享协议。\n\n###### 响应\n\n保留原始结果。\n\n| 模块 | 职责 |\n| --- | --- |\n| Core | 持久化与授权 |'
-                  }
+                  title={t('项目概览')}
+                  markdown={t(
+                    '# 跨越多个模块的长标题会自然换行\n\n阅读正文使用 14px 字号与 22px 行高。\n\n## 架构\n\n通过 **MCP** 暴露工具。\n\n### Core 模块\n\n- 持久化\n- 授权\n\n#### 连接\n\n连接状态影响本机操作。\n\n##### 请求\n\n请求经过共享协议。\n\n###### 响应\n\n保留原始结果。\n\n| 模块 | 职责 |\n| --- | --- |\n| Core | 持久化与授权 |',
+                  )}
                 />
-                <Field label="项目分支">
+                <Field label={t('项目分支')}>
                   <Select defaultValue="main">
                     <option value="main">main</option>
                     <option value="feature/knowledge">feature/knowledge</option>
                   </Select>
                 </Field>
-                <Field label="内容 SHA256">
+                <Field label={t('内容 SHA256')}>
                   <Input readOnly value={'a'.repeat(64)} />
                 </Field>
               </div>
             </DemoRow>
-            <DemoRow title="按钮" description="默认重阴影，悬停轻微浮起；按下回落并减弱阴影。">
+            <DemoRow
+              title={t('按钮')}
+              description={t('默认重阴影，悬停轻微浮起；按下回落并减弱阴影。')}
+            >
               <Button
                 variant="primary"
                 icon={<Icon name="plus" />}
-                onClick={() => toast('主按钮已触发', 'success')}
+                onClick={() => toast(t('主按钮已触发'), 'success')}
               >
-                主要操作
+                {t('主要操作')}
               </Button>
-              <Button onClick={() => toast('次按钮已触发', 'info')}>次要操作</Button>
-              <Button variant="ghost" onClick={() => toast('轻按钮已触发', 'info')}>
-                轻量操作
+              <Button onClick={() => toast(t('次按钮已触发'), 'info')}>{t('次要操作')}</Button>
+              <Button variant="ghost" onClick={() => toast(t('轻按钮已触发'), 'info')}>
+                {t('轻量操作')}
               </Button>
-              <Button variant="text" onClick={() => toast('文字操作已触发', 'info')}>
-                文字操作
+              <Button variant="text" onClick={() => toast(t('文字操作已触发'), 'info')}>
+                {t('文字操作')}
               </Button>
               <Button variant="danger" onClick={() => setConfirm(true)}>
-                危险操作
+                {t('危险操作')}
               </Button>
             </DemoRow>
             <DemoRow
-              title="阶段式内容"
-              description="当前黄圆、已执行绿圆、失败红圆；运行中黄圈内环旋转，减少动态效果时静止。"
+              title={t('阶段式内容')}
+              description={t(
+                '当前黄圆、已执行绿圆、失败红圆；运行中黄圈内环旋转，减少动态效果时静止。',
+              )}
             >
               <div style={{ width: '100%', display: 'grid', gap: 24 }}>
                 <StageSection
-                  title="配置"
+                  title={t('配置')}
                   state="past"
                   expanded={stageOpen}
                   onExpandedChange={setStageOpen}
-                  summary="用户主目录（默认）"
+                  summary={t('用户主目录（默认）')}
                 >
-                  工作目录：用户主目录（默认）
+                  {t('工作目录：用户主目录（默认）')}
                 </StageSection>
-                <StageSection title="运行" state="current" status="running">
+                <StageSection title={t('运行')} state="current" status="running">
                   <Segmented
-                    label="输出预览类型"
+                    label={t('输出预览类型')}
                     value={outputType}
                     onValueChange={setOutputType}
                     items={[
-                      { value: 'terminal', label: '终端' },
+                      { value: 'terminal', label: t('终端') },
                       { value: 'remote', label: 'HTTP / MCP' },
                     ]}
                   />
                   <LogViewer
-                    title={outputType === 'terminal' ? undefined : '日志'}
+                    title={outputType === 'terminal' ? undefined : t('日志')}
                     size={outputType === 'terminal' ? 'combined' : 'default'}
                     format={outputType === 'terminal' ? 'terminal' : 'text'}
                     overlayAction={
                       outputType === 'terminal' ? (
                         <IconButton
-                          label="复制日志"
+                          label={t('复制日志')}
                           iconSize="small"
-                          onClick={() => void copyPreview(terminalOutputText(previewLog), '日志')}
+                          onClick={() =>
+                            void copyPreview(terminalOutputText(previewLog), t('日志'))
+                          }
                         >
                           <Copy />
                         </IconButton>
@@ -855,8 +901,10 @@ export default function UiComponentsPage({
                     headerAction={
                       outputType !== 'terminal' ? (
                         <IconButton
-                          label="复制日志"
-                          onClick={() => void copyPreview(terminalOutputText(previewLog), '日志')}
+                          label={t('复制日志')}
+                          onClick={() =>
+                            void copyPreview(terminalOutputText(previewLog), t('日志'))
+                          }
                         >
                           <Copy />
                         </IconButton>
@@ -866,19 +914,23 @@ export default function UiComponentsPage({
                   />
                   {outputType !== 'terminal' && (
                     <LogViewer
-                      label="运行结果"
+                      label={t('运行结果')}
                       variant="result"
                       numbered={false}
                       autoScroll={false}
-                      text={Array.from({ length: 30 }, (_, i) => `结果正文 ${i + 1}`).join('\n')}
+                      text={Array.from({ length: 30 }, (_, i) =>
+                        t('结果正文 {v0}', { v0: i + 1 }),
+                      ).join('\n')}
                       overlayAction={
                         <IconButton
                           iconSize="small"
-                          label="复制结果"
+                          label={t('复制结果')}
                           onClick={() =>
                             void copyPreview(
-                              Array.from({ length: 30 }, (_, i) => `结果正文 ${i + 1}`).join('\n'),
-                              '结果',
+                              Array.from({ length: 30 }, (_, i) =>
+                                t('结果正文 {v0}', { v0: i + 1 }),
+                              ).join('\n'),
+                              t('结果'),
                             )
                           }
                         >
@@ -888,57 +940,59 @@ export default function UiComponentsPage({
                     />
                   )}
                   <Button variant="text" onClick={() => setLogLines((count) => count + 1)}>
-                    追加日志
+                    {t('追加日志')}
                   </Button>
                 </StageSection>
-                <StageSection title="当前节点" state="current" />
-                <StageSection title="失败节点" state="current" status="failed" />
+                <StageSection title={t('当前节点')} state="current" />
+                <StageSection title={t('失败节点')} state="current" status="failed" />
               </div>
             </DemoRow>
             <DemoRow
-              title="独立窗口容器"
-              description="标题栏与正文同背景，输出填满剩余高度；上滚暂停跟随，追加日志后可回到最新。"
+              title={t('独立窗口容器')}
+              description={t(
+                '标题栏与正文同背景，输出填满剩余高度；上滚暂停跟随，追加日志后可回到最新。',
+              )}
             >
               <WindowPanel
-                title="运行窗口预览"
+                title={t('运行窗口预览')}
                 preview
                 nativeTitlebar
                 bodyLayout="fill"
                 header={
                   <header className="ui-modal-heading">
-                    <h2>运行窗口预览</h2>
-                    <Badge tone="accent">运行中</Badge>
+                    <h2>{t('运行窗口预览')}</h2>
+                    <Badge tone="accent">{t('运行中')}</Badge>
                   </header>
                 }
                 actions={
                   <>
                     <Button variant="secondary" onClick={() => setLogLines((value) => value + 10)}>
-                      追加日志
+                      {t('追加日志')}
                     </Button>
                     <Button
                       variant="danger"
-                      onClick={() => toast('预览：任务结束后关闭窗口。', 'success')}
+                      onClick={() => toast(t('预览：任务结束后关闭窗口。'), 'success')}
                     >
-                      结束运行
+                      {t('结束运行')}
                     </Button>
                   </>
                 }
               >
                 <div className="ui-demo-window-output">
                   <Tabs
-                    label="窗口输出预览"
+                    label={t('窗口输出预览')}
                     value={windowOutput}
                     onValueChange={setWindowOutput}
                     items={[
                       {
                         value: 'log',
-                        label: '日志',
+                        label: t('日志'),
                         id: 'preview-window-log',
                         panelId: 'preview-window-output',
                       },
                       {
                         value: 'result',
-                        label: '结果',
+                        label: t('结果'),
                         id: 'preview-window-result',
                         panelId: 'preview-window-output',
                       },
@@ -952,8 +1006,8 @@ export default function UiComponentsPage({
                   >
                     <LogViewer
                       key={windowOutput}
-                      title={windowOutput === 'log' ? '日志' : '结果'}
-                      label={windowOutput === 'log' ? '窗口日志预览' : '窗口结果预览'}
+                      title={windowOutput === 'log' ? t('日志') : t('结果')}
+                      label={windowOutput === 'log' ? t('窗口日志预览') : t('窗口结果预览')}
                       format={windowOutput === 'log' ? 'terminal' : 'text'}
                       variant={windowOutput === 'log' ? 'log' : 'result'}
                       numbered={windowOutput === 'log'}
@@ -962,17 +1016,17 @@ export default function UiComponentsPage({
                       text={
                         windowOutput === 'log'
                           ? previewLog
-                          : '{\n  "message": "请求成功",\n  "source": "localhost"\n}'
+                          : t('{\n  "message": "请求成功",\n  "source": "localhost"\n}')
                       }
                       headerAction={
                         <IconButton
-                          label="复制窗口输出"
+                          label={t('复制窗口输出')}
                           onClick={() =>
                             void copyPreview(
                               windowOutput === 'log'
                                 ? terminalOutputText(previewLog)
-                                : '{"message":"请求成功","source":"localhost"}',
-                              '输出',
+                                : t('{"message":"请求成功","source":"localhost"}'),
+                              t('输出'),
                             )
                           }
                         >
@@ -984,8 +1038,11 @@ export default function UiComponentsPage({
                 </div>
               </WindowPanel>
             </DemoRow>
-            <DemoRow title="按钮状态" description="加载保留宽度并阻止重复提交，禁用取消交互效果。">
-              <Button disabled>不可用</Button>
+            <DemoRow
+              title={t('按钮状态')}
+              description={t('加载保留宽度并阻止重复提交，禁用取消交互效果。')}
+            >
+              <Button disabled>{t('不可用')}</Button>
               <Button
                 variant="primary"
                 loading={loading}
@@ -993,47 +1050,49 @@ export default function UiComponentsPage({
                   setLoading(true)
                   timer.current = setTimeout(() => {
                     setLoading(false)
-                    toast('示例操作完成', 'success')
+                    toast(t('示例操作完成'), 'success')
                   }, 1200)
                 }}
               >
-                体验加载状态
+                {t('体验加载状态')}
               </Button>
-              <Button loading loadingLabel="保存中…">
-                保存示例配置
+              <Button loading loadingLabel={t('保存中…')}>
+                {t('保存示例配置')}
               </Button>
             </DemoRow>
             <DemoRow
-              title="外观选择"
-              description="鼠标点击只显示选中边框；Tab 导航保留焦点，选中且聚焦时用光晕区分。"
+              title={t('外观选择')}
+              description={t('鼠标点击只显示选中边框；Tab 导航保留焦点，选中且聚焦时用光晕区分。')}
             >
               <ThemePicker value={theme} onValueChange={onThemeChange} />
             </DemoRow>
             <DemoRow
-              title="选择卡片"
-              description="鼠标选择、键盘焦点使用同一边界，边框不叠加；选中且聚焦时增加光晕。"
+              title={t('选择卡片')}
+              description={t('鼠标选择、键盘焦点使用同一边界，边框不叠加；选中且聚焦时增加光晕。')}
             >
               <ChoiceCard
-                label="全部工具"
-                description="显示所有类型"
+                label={t('全部工具')}
+                description={t('显示所有类型')}
                 selected={choice === 'all'}
                 onClick={() => setChoice('all')}
               />
               <ChoiceCard
-                label="本机命令"
-                description="仅显示 Terminal"
+                label={t('本机命令')}
+                description={t('仅显示 Terminal')}
                 selected={choice === 'terminal'}
                 onClick={() => setChoice('terminal')}
               />
             </DemoRow>
             <DemoRow
-              title="侧栏导航"
-              description="选中项无线框，左侧竖线向右投射柔边光束；浅色模式使用琥珀图标与通透金橙灯光，点击区仍为 44px。"
+              title={t('侧栏导航')}
+              description={t(
+                '选中项无线框，左侧竖线向右投射柔边光束；浅色模式使用琥珀图标与通透金橙灯光，点击区仍为 44px。',
+              )}
             >
               {[
-                { value: 'workbench', label: '工作台导航示例', icon: <Home size={20} /> },
-                { value: 'tools', label: '工具导航示例', icon: <Wrench size={20} /> },
-                { value: 'settings', label: '设置导航示例', icon: <Settings size={20} /> },
+                { value: 'workbench', label: t('工作台导航示例'), icon: <Home size={20} /> },
+                { value: 'tools', label: t('工具导航示例'), icon: <Wrench size={20} /> },
+                { value: 'settings', label: t('设置导航示例'), icon: <Settings size={20} /> },
               ].map((item) => (
                 <NavigationButton
                   key={item.value}
@@ -1045,39 +1104,39 @@ export default function UiComponentsPage({
               ))}
             </DemoRow>
             <DemoRow
-              title="图标操作"
-              description="默认灰色轮廓；悬停或键盘聚焦显示对应颜色与完整底部光晕。"
+              title={t('图标操作')}
+              description={t('默认灰色轮廓；悬停或键盘聚焦显示对应颜色与完整底部光晕。')}
             >
               <IconButton
-                label="运行示例"
+                label={t('运行示例')}
                 tone="success"
                 glow
-                onClick={() => toast('运行图标已触发', 'success')}
+                onClick={() => toast(t('运行图标已触发'), 'success')}
               >
                 <Icon name="play" />
               </IconButton>
               <IconButton
-                label="设置示例"
+                label={t('设置示例')}
                 tone="accent"
                 glow
-                onClick={() => toast('设置图标已触发', 'info')}
+                onClick={() => toast(t('设置图标已触发'), 'info')}
               >
                 <Icon name="settings" />
               </IconButton>
-              <IconButton label="禁用的运行示例" tone="success" glow disabled>
+              <IconButton label={t('禁用的运行示例')} tone="success" glow disabled>
                 <Icon name="play" />
               </IconButton>
             </DemoRow>
             <DemoRow
-              title="分段选择"
-              description="与 Tab 共用选中效果；支持方向键、Home 和 End，跳过禁用项。"
+              title={t('分段选择')}
+              description={t('与 Tab 共用选中效果；支持方向键、Home 和 End，跳过禁用项。')}
             >
               <Segmented
-                label="工具类型示例"
+                label={t('工具类型示例')}
                 value={choice}
                 onValueChange={setChoice}
                 items={[
-                  { value: 'all', label: '全部', count: 3 },
+                  { value: 'all', label: t('全部'), count: 3 },
                   { value: 'terminal', label: 'TERMINAL', count: 2 },
                   { value: 'http', label: 'HTTP', count: 1 },
                   { value: 'mcp', label: 'MCP', disabled: true },
@@ -1092,25 +1151,25 @@ export default function UiComponentsPage({
             onSubmit={(event) => {
               event.preventDefault()
               if (!name.trim()) {
-                setError('请输入名称')
+                setError(t('请输入名称'))
                 input.current?.focus()
-                toast('请填写名称后再保存。', 'error')
+                toast(t('请填写名称后再保存。'), 'error')
                 return
               }
               setError('')
-              toast('示例配置已通过校验', 'success')
+              toast(t('示例配置已通过校验'), 'success')
             }}
             className="ui-demo-form"
           >
             <Field
-              label="名称"
+              label={t('名称')}
               inline
-              hint="名称用于识别配置。留空保存可体验校验反馈。"
+              hint={t('名称用于识别配置。留空保存可体验校验反馈。')}
               error={error}
             >
               <Input
                 ref={input}
-                placeholder="输入示例名称"
+                placeholder={t('输入示例名称')}
                 value={name}
                 onChange={(event) => {
                   setName(event.target.value)
@@ -1118,14 +1177,17 @@ export default function UiComponentsPage({
                 }}
               />
             </Field>
-            <Field label="请求方式" inline>
+            <Field label={t('请求方式')} inline>
               <Select value={method} onChange={(event) => setMethod(event.target.value)}>
                 <option>GET</option>
                 <option>POST</option>
                 <option>PUT</option>
               </Select>
             </Field>
-            <Field label="用途说明" description="多行文本至少显示五行，剩余字数悬浮在右下角。">
+            <Field
+              label={t('用途说明')}
+              description={t('多行文本至少显示五行，剩余字数悬浮在右下角。')}
+            >
               <Textarea
                 showCount
                 value={description}
@@ -1133,21 +1195,23 @@ export default function UiComponentsPage({
                 onChange={(event) => setDescription(event.target.value)}
               />
             </Field>
-            <Field label="单行输入提示" inline>
+            <Field label={t('单行输入提示')} inline>
               <InputHint
-                label="单行输入"
-                hint="问号在输入框右侧居中；悬停、点击或键盘聚焦阅读，Escape 关闭。"
+                label={t('单行输入')}
+                hint={t('问号在输入框右侧居中；悬停、点击或键盘聚焦阅读，Escape 关闭。')}
               >
-                <Input defaultValue="右侧问号不遮挡输入内容" />
+                <Input defaultValue={t('右侧问号不遮挡输入内容')} />
               </InputHint>
             </Field>
-            <Field label="多行输入提示" inline>
+            <Field label={t('多行输入提示')} inline>
               <InputHint
-                label="多行输入"
+                label={t('多行输入')}
                 multiline
-                hint="问号在输入框右上角。长提示会换行，气泡通过 portal 显示，不被表单滚动区域裁掉。"
+                hint={t(
+                  '问号在输入框右上角。长提示会换行，气泡通过 portal 显示，不被表单滚动区域裁掉。',
+                )}
               >
-                <Textarea rows={3} defaultValue={'第一行输入内容\n第二行输入内容'} />
+                <Textarea rows={3} defaultValue={t('第一行输入内容\n第二行输入内容')} />
               </InputHint>
             </Field>
             <RunConfigurationFields
@@ -1175,14 +1239,14 @@ export default function UiComponentsPage({
               disabled={false}
               change={() => {}}
               operations={[
-                { name: 'first', upstreamName: '示例工具一' },
-                { name: 'second', upstreamName: '示例工具二' },
+                { name: 'first', upstreamName: t('示例工具一') },
+                { name: 'second', upstreamName: t('示例工具二') },
               ]}
               operation={previewOperation}
               onOperationChange={setPreviewOperation}
             />
             <RunParameters
-              label="运行参数（三工具共用）"
+              label={t('运行参数（三工具共用）')}
               fields={previewTerminal.tools[0]!.fields}
               renderValue={(field, descriptionId, id) =>
                 multilineRunField(field) ? (
@@ -1204,17 +1268,17 @@ export default function UiComponentsPage({
                 )
               }
             />
-            <Field label="只读信息" inline>
-              <Input value="由业务提供的只读值" readOnly />
+            <Field label={t('只读信息')} inline>
+              <Input value={t('由业务提供的只读值')} readOnly />
             </Field>
             <Field
-              label="工作目录"
+              label={t('工作目录')}
               inline
               controlWidth="wide"
-              hint="宽输入区与末尾展示共用实现，编辑时可使用 Home/End 查看完整路径。"
+              hint={t('宽输入区与末尾展示共用实现，编辑时可使用 Home/End 查看完整路径。')}
               action={
-                <Button type="button" onClick={() => toast('目录选择按钮预览', 'info')}>
-                  选择文件夹
+                <Button type="button" onClick={() => toast(t('目录选择按钮预览'), 'info')}>
+                  {t('选择文件夹')}
                 </Button>
               }
             >
@@ -1225,7 +1289,7 @@ export default function UiComponentsPage({
               />
             </Field>
             <Segmented
-              label="参数类型预览"
+              label={t('参数类型预览')}
               value={previewParameterType}
               onValueChange={setPreviewParameterType}
               items={[
@@ -1245,36 +1309,36 @@ export default function UiComponentsPage({
               />
             ) : (
               <FieldGroup
-                label={previewParameterType === 'terminal' ? '外部参数' : '请求参数'}
-                hint="组标题与基本配置字段标题使用同一字号和行高。"
+                label={previewParameterType === 'terminal' ? t('外部参数') : t('请求参数')}
+                hint={t('组标题与基本配置字段标题使用同一字号和行高。')}
                 action={
                   <Button type="button" onClick={() => setPreviewParameters((value) => value + 1)}>
-                    添加参数
+                    {t('添加参数')}
                   </Button>
                 }
               >
                 {Array.from({ length: previewParameters }, (_, index) => (
                   <FieldRow
                     key={index}
-                    label={`外部参数预览 ${index + 1}`}
+                    label={t('外部参数预览 {v0}', { v0: index + 1 })}
                     fields={[
                       <Field
                         key="name"
-                        label={previewParameterType === 'terminal' ? '变量名' : '参数名'}
+                        label={previewParameterType === 'terminal' ? t('变量名') : t('参数名')}
                       >
                         <Input defaultValue={`PROJECT_${index + 1}`} />
                       </Field>,
-                      <Field key="default" label="默认值">
+                      <Field key="default" label={t('默认值')}>
                         <Input defaultValue="gushan" />
                       </Field>,
-                      <Field key="description" label="输入说明">
-                        <Input defaultValue="供自己和 AI 理解参数" />
+                      <Field key="description" label={t('输入说明')}>
+                        <Input defaultValue={t('供自己和 AI 理解参数')} />
                       </Field>,
                     ]}
                     options={
                       <>
-                        <Checkbox label="必填" />
-                        <Checkbox label="使用默认值" defaultChecked />
+                        <Checkbox label={t('必填')} />
+                        <Checkbox label={t('使用默认值')} defaultChecked />
                       </>
                     }
                     action={
@@ -1282,7 +1346,7 @@ export default function UiComponentsPage({
                         type="button"
                         onClick={() => setPreviewParameters((value) => Math.max(0, value - 1))}
                       >
-                        删除
+                        {t('删除')}
                       </Button>
                     }
                   />
@@ -1290,10 +1354,10 @@ export default function UiComponentsPage({
               </FieldGroup>
             )}
             <FieldGroup
-              label="请求头 / MCP Header"
+              label={t('请求头 / MCP Header')}
               action={
                 <Checkbox
-                  label="显示固定值"
+                  label={t('显示固定值')}
                   checked={previewHeaderVisible}
                   onChange={(event) => setPreviewHeaderVisible(event.target.checked)}
                 />
@@ -1301,81 +1365,89 @@ export default function UiComponentsPage({
             >
               <FieldRow
                 size="compact"
-                label="请求头预览"
+                label={t('请求头预览')}
                 fields={[
-                  <Input key="name" aria-label="请求头名称预览" defaultValue="X-Example" />,
+                  <Input key="name" aria-label={t('请求头名称预览')} defaultValue="X-Example" />,
                   <Input
                     key="value"
-                    aria-label="请求头固定值预览"
+                    aria-label={t('请求头固定值预览')}
                     type={previewHeaderVisible ? 'text' : 'password'}
                     defaultValue="example-value"
                   />,
                 ]}
                 action={
-                  <Button type="button" onClick={() => toast('删除请求头操作预览', 'info')}>
-                    删除
+                  <Button type="button" onClick={() => toast(t('删除请求头操作预览'), 'info')}>
+                    {t('删除')}
                   </Button>
                 }
               />
             </FieldGroup>
-            <Field label="禁用输入" inline>
-              <Input placeholder="暂不可修改" disabled />
+            <Field label={t('禁用输入')} inline>
+              <Input placeholder={t('暂不可修改')} disabled />
             </Field>
             <Checkbox
-              label="启用示例配置"
+              label={t('启用示例配置')}
               checked={checked}
               onChange={(event) => setChecked(event.target.checked)}
             />
             <div className="ui-demo-form-actions">
               <Button type="submit" variant="primary">
-                校验并保存示例
+                {t('校验并保存示例')}
               </Button>
             </div>
           </form>
         )}
         {panel === 'feedback' && (
           <>
-            <DemoRow title="说明提示" description="鼠标悬停、键盘聚焦或点击图标阅读，Escape 关闭。">
+            <DemoRow
+              title={t('说明提示')}
+              description={t('鼠标悬停、键盘聚焦或点击图标阅读，Escape 关闭。')}
+            >
               <span className="ui-demo-hint">
-                配置说明
-                <Tooltip label="配置">
-                  提示跟随当前主题，并在弹窗内保持可见；移动到提示上可继续阅读。
+                {t('配置说明')}
+                <Tooltip label={t('配置')}>
+                  {t('提示跟随当前主题，并在弹窗内保持可见；移动到提示上可继续阅读。')}
                 </Tooltip>
               </span>
             </DemoRow>
             <DemoRow
-              title="弹窗与确认"
-              description="原生焦点约束、关闭后恢复焦点；二次确认默认聚焦取消。"
+              title={t('弹窗与确认')}
+              description={t('原生焦点约束、关闭后恢复焦点；二次确认默认聚焦取消。')}
             >
               <Button ref={trigger} onClick={() => setModal(true)}>
-                打开独立弹窗
+                {t('打开独立弹窗')}
               </Button>
-              <Button onClick={() => setConfirm(true)}>打开二次确认</Button>
+              <Button onClick={() => setConfirm(true)}>{t('打开二次确认')}</Button>
             </DemoRow>
-            <DemoRow title="顶部气泡" description="复用现有气泡；成功与提醒 4 秒，错误 8 秒。">
-              <Button onClick={() => toast('示例保存成功', 'success')}>成功</Button>
-              <Button onClick={() => toast('这是一条示例提醒', 'info')}>提醒</Button>
-              <Button variant="danger" onClick={() => toast('示例操作失败，请重试。', 'error')}>
-                错误
+            <DemoRow
+              title={t('顶部气泡')}
+              description={t('复用现有气泡；成功与提醒 4 秒，错误 8 秒。')}
+            >
+              <Button onClick={() => toast(t('示例保存成功'), 'success')}>{t('成功')}</Button>
+              <Button onClick={() => toast(t('这是一条示例提醒'), 'info')}>{t('提醒')}</Button>
+              <Button variant="danger" onClick={() => toast(t('示例操作失败，请重试。'), 'error')}>
+                {t('错误')}
               </Button>
             </DemoRow>
             <DemoRow
-              title="标签与容器"
-              description="浅色卡片使用独立纯白表面，输入框使用浅灰；悬停或聚焦沿用重阴影，标签色彩对应具体语义。"
+              title={t('标签与容器')}
+              description={t(
+                '浅色卡片使用独立纯白表面，输入框使用浅灰；悬停或聚焦沿用重阴影，标签色彩对应具体语义。',
+              )}
             >
               <Card interactive tabIndex={0} className="ui-demo-card">
-                <strong>示例工具</strong>
-                <p>卡片与输入框底色独立，主按钮使用橙琥珀配深色文字。</p>
-                <Field label="输入框底色示例">
-                  <Input placeholder="浅灰输入区域" />
+                <strong>{t('示例工具')}</strong>
+                <p>{t('卡片与输入框底色独立，主按钮使用橙琥珀配深色文字。')}</p>
+                <Field label={t('输入框底色示例')}>
+                  <Input placeholder={t('浅灰输入区域')} />
                 </Field>
-                <Button variant="primary" onClick={() => toast('主色按钮示例已触发', 'success')}>
-                  主色按钮示例
+                <Button variant="primary" onClick={() => toast(t('主色按钮示例已触发'), 'success')}>
+                  {t('主色按钮示例')}
                 </Button>
                 <div className="ui-demo-badges">
-                  <Badge>默认</Badge>
-                  <Badge tone="accent">待审阅</Badge>
-                  <Badge tone="success">已连接</Badge>
+                  <Badge>{t('默认')}</Badge>
+                  <Badge tone="accent">{t('待审阅')}</Badge>
+                  <Badge tone="success">{t('已连接')}</Badge>
                   <Badge tone="protocol" data-tool-kind="terminal">
                     TERMINAL
                   </Badge>
@@ -1387,7 +1459,7 @@ export default function UiComponentsPage({
                   </Badge>
                   <Badge data-source="codex">Codex</Badge>
                   <Badge data-source="gemini">Gemini CLI</Badge>
-                  <Badge tone="danger">失败</Badge>
+                  <Badge tone="danger">{t('失败')}</Badge>
                 </div>
               </Card>
             </DemoRow>
@@ -1396,35 +1468,37 @@ export default function UiComponentsPage({
       </div>
       {modal && (
         <Modal
-          title="组件弹窗预览"
+          title={t('组件弹窗预览')}
           returnFocus={trigger.current}
           onClose={() => setModal(false)}
           actions={
             <>
-              <Button onClick={() => toast('弹窗内反馈保持在窗口顶部', 'success')}>显示气泡</Button>
+              <Button onClick={() => toast(t('弹窗内反馈保持在窗口顶部'), 'success')}>
+                {t('显示气泡')}
+              </Button>
               <Button variant="primary" onClick={() => setConfirm(true)}>
-                保存示例
+                {t('保存示例')}
               </Button>
             </>
           }
         >
-          <p>此弹窗使用与设置页相同的 Modal。可打开二次确认，验证嵌套焦点与气泡层级。</p>
-          <Field label="示例选项" hint="业务传入文案，组件负责交互。">
-            <Input defaultValue="本次预览不写入业务配置" />
+          <p>{t('此弹窗使用与设置页相同的 Modal。可打开二次确认，验证嵌套焦点与气泡层级。')}</p>
+          <Field label={t('示例选项')} hint={t('业务传入文案，组件负责交互。')}>
+            <Input defaultValue={t('本次预览不写入业务配置')} />
           </Field>
         </Modal>
       )}
       {confirm && (
         <ConfirmationDialog
-          title="确认示例操作？"
-          confirmLabel="确认"
+          title={t('确认示例操作？')}
+          confirmLabel={t('确认')}
           cancel={() => setConfirm(false)}
           confirm={() => {
             setConfirm(false)
-            toast('示例操作已确认', 'success')
+            toast(t('示例操作已确认'), 'success')
           }}
         >
-          <p>这是组件交互示例，不会修改工具或服务。</p>
+          <p>{t('这是组件交互示例，不会修改工具或服务。')}</p>
         </ConfirmationDialog>
       )}
     </SurfaceEffects>

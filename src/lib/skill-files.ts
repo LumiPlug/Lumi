@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t } from '../i18n'
 
 /** Resolve document links inside a skill without allowing traversal outside its root. */
 export function resolveSkillDocumentLink(
@@ -36,8 +37,8 @@ export function splitSkillMarkdown(content: string): { header: string; body: str
 
 export function skillFileFailure(error: unknown): string {
   const code = error instanceof Error ? error.message : error
-  if (code === 'invalid_skill_file') return '此文件无法预览，请选择技能目录中的普通文件'
-  if (code === 'skill_source_changed') return '技能源目录已变化，请关闭详情并重新扫描'
-  if (code === 'skill_not_found') return '技能记录已失效，请重新扫描'
-  return '无法读取技能文件，请检查文件及目录权限后重试'
+  if (code === 'invalid_skill_file') return t('此文件无法预览，请选择技能目录中的普通文件')
+  if (code === 'skill_source_changed') return t('技能源目录已变化，请关闭详情并重新扫描')
+  if (code === 'skill_not_found') return t('技能记录已失效，请重新扫描')
+  return t('无法读取技能文件，请检查文件及目录权限后重试')
 }

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale } from '../i18n'
 import { Select, Button, Textarea } from './ui'
 import { useEffect, useRef, useState } from 'react'
 import { copyText } from '../lib/clipboard'
@@ -13,6 +14,8 @@ import SettingsPreviewDialog from './SettingsPreviewDialog'
 import { useToast } from './ToastProvider'
 
 export default function HomepagePromptSetting() {
+  useLocale()
+
   const [template, setTemplate] = useState<WorkbenchTemplate>(
     () => readSavedWorkbenchSetup().selected ?? 'assistant',
   )
@@ -38,7 +41,7 @@ export default function HomepagePromptSetting() {
     try {
       const copied = await copyText(buildWorkbenchPrompt(selected, null))
       showToast(
-        copied ? '已复制首页搭建提示词' : '未能自动复制，请选中提示词手动复制。',
+        copied ? t('已复制首页搭建提示词') : t('未能自动复制，请选中提示词手动复制。'),
         copied ? 'success' : 'error',
       )
       if (!copied) {
@@ -53,10 +56,10 @@ export default function HomepagePromptSetting() {
 
   return (
     <section className="settings-row" aria-labelledby="homepage-prompt-title">
-      <h2 id="homepage-prompt-title">首页搭建提示词</h2>
+      <h2 id="homepage-prompt-title">{t('首页搭建提示词')}</h2>
       <div className="settings-row-controls">
         <Select
-          aria-label="首页搭建模板"
+          aria-label={t('首页搭建模板')}
           value={template}
           disabled={copying}
           onChange={(event) => {
@@ -76,7 +79,7 @@ export default function HomepagePromptSetting() {
           type="button"
           className="settings-button"
           loading={copying}
-          loadingLabel="复制中…"
+          loadingLabel={t('复制中…')}
           onClick={(event) => {
             trigger.current = event.currentTarget
             setFallback(0)
@@ -85,12 +88,14 @@ export default function HomepagePromptSetting() {
             void copy(template)
           }}
         >
-          复制提示词
+          {t('复制提示词')}
         </Button>
       </div>
       {preview && (
         <SettingsPreviewDialog
-          title={`首页搭建提示词 · ${workbenchTemplates.find((option) => option.id === preview)?.label}`}
+          title={t('首页搭建提示词 · {v0}', {
+            v0: workbenchTemplates.find((option) => option.id === preview)?.label,
+          })}
           returnFocus={trigger.current}
           close={() => setPreview(null)}
           actions={
@@ -99,17 +104,17 @@ export default function HomepagePromptSetting() {
               type="button"
               className="settings-button"
               loading={copying}
-              loadingLabel="复制中…"
+              loadingLabel={t('复制中…')}
               onClick={() => void copy(preview)}
             >
-              再次复制
+              {t('再次复制')}
             </Button>
           }
         >
           <Textarea
             ref={field}
             className="settings-code-preview settings-prompt-preview"
-            aria-label="首页搭建提示词正文"
+            aria-label={t('首页搭建提示词正文')}
             value={buildWorkbenchPrompt(preview, null)}
             readOnly
             spellCheck={false}

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale } from '../../i18n'
 import { SurfaceButton } from './controls'
 export function ThemePicker({
   value,
@@ -7,14 +8,16 @@ export function ThemePicker({
   value: 'dark' | 'light'
   onValueChange: (value: 'dark' | 'light') => void
 }) {
+  useLocale()
+
   return (
-    <div className="appearance-options" role="group" aria-label="主题">
+    <div className="appearance-options" role="group" aria-label={t('主题')}>
       {(['dark', 'light'] as const).map((option) => (
         <SurfaceButton
           type="button"
           key={option}
           className="appearance-option"
-          aria-label={`${option === 'dark' ? '深色' : '浅色'}主题`}
+          aria-label={t('{v0}主题', { v0: option === 'dark' ? t('深色') : t('浅色') })}
           aria-pressed={value === option}
           onClick={() => onValueChange(option)}
         >
@@ -28,7 +31,9 @@ export function ThemePicker({
               <i />
               <i />
             </span>
-            <span className="appearance-preview-label">{option === 'dark' ? '深色' : '浅色'}</span>
+            <span className="appearance-preview-label">
+              {option === 'dark' ? t('深色') : t('浅色')}
+            </span>
           </span>
           {value === option && (
             <svg

@@ -3,6 +3,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
+import LocaleSync from './i18n/LocaleSync'
 import ToolRunWindow from './components/ToolRunWindow'
 import { runWindowRoute } from './lib/tool-run-window'
 import ToastProvider from './components/ToastProvider'
@@ -13,6 +14,9 @@ import './styles.css'
 const runRoute = runWindowRoute(window.location.search)
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ToastProvider>{runRoute ? <ToolRunWindow route={runRoute} /> : <App />}</ToastProvider>
+    <ToastProvider>
+      <LocaleSync />
+      {runRoute ? <ToolRunWindow route={runRoute} /> : <App />}
+    </ToastProvider>
   </StrictMode>,
 )

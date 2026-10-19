@@ -43,7 +43,9 @@ fn window_target(capability_id: &str, task_id: Option<&str>) -> Result<(String, 
 pub(super) fn initialization_script(supervisor: &CoreSupervisor) -> Result<String, String> {
     let nonce = serde_json::to_string(&supervisor.host_nonce)
         .map_err(|_| "host_initialization_failed".to_string())?;
-    Ok(format!("if (window.top === window && ((location.protocol === 'tauri:' && location.hostname === 'localhost') || ['http://tauri.localhost','https://tauri.localhost','http://127.0.0.1:1420','http://localhost:1420'].includes(location.origin))) {{ Object.defineProperty(window, '__LUMI_HOST_NONCE__', {{ value: {nonce}, writable: false, configurable: false }}); }}"))
+    let locale = serde_json::to_string(&super::locale::current(&supervisor.app))
+        .map_err(|_| "host_initialization_failed".to_string())?;
+    Ok(format!("if (window.top === window && ((location.protocol === 'tauri:' && location.hostname === 'localhost') || ['http://tauri.localhost','https://tauri.localhost','http://127.0.0.1:1420','http://localhost:1420'].includes(location.origin))) {{ Object.defineProperty(window, '__LUMI_LOCALE__', {{ value: {locale}, writable: false, configurable: false }}); Object.defineProperty(window, '__LUMI_HOST_NONCE__', {{ value: {nonce}, writable: false, configurable: false }}); }}"))
 }
 #[tauri::command]
 pub async fn open_tool_run_window(
@@ -94,7 +96,10 @@ pub async fn open_tool_run_window(
         .title_bar_style(tauri::TitleBarStyle::Overlay)
         .hidden_title(true);
     builder
-        .title(format!("{title} · 运行"))
+        .title(format!(
+            "{title} · {}",
+            super::locale::text(&app, "运行", "Run")
+        ))
         .inner_size(width, height)
         .min_inner_size(min_width, min_height)
         .center()
@@ -118,8 +123,16 @@ pub fn close_tool_run_window(
     }
     let message = match mode.as_str() {
         "idle" => None,
-        "background" => Some("任务已保留在后台运行，可从运行记录查看。"),
-        "ended" => Some("任务已结束，运行窗口已关闭。"),
+        "background" => Some(super::locale::text(
+            &app,
+            "任务已保留在后台运行，可从运行记录查看。",
+            "Task continues in the background. View it in run history.",
+        )),
+        "ended" => Some(super::locale::text(
+            &app,
+            "任务已结束，运行窗口已关闭。",
+            "Task ended and the run window was closed.",
+        )),
         _ => return Err("invalid_run_window".into()),
     };
     if let Some(message) = message {

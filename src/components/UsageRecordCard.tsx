@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale, getLocale } from '../i18n'
 import type { UsageRecord } from '@lumiplug/shared'
 import type { ReactNode } from 'react'
 import { Badge, Card, DataText } from './ui'
@@ -9,13 +10,15 @@ export function UsageRecordTable({
   records,
   empty,
   busy = false,
-  label = '会话用量记录',
+  label = t('会话用量记录'),
 }: {
   records: UsageRecord[]
   empty?: ReactNode
   busy?: boolean
   label?: string
 }) {
+  useLocale()
+
   return (
     <div className="usage-record-table-scroll">
       <div
@@ -26,20 +29,34 @@ export function UsageRecordTable({
         className="usage-record-table"
       >
         <div role="row" className="usage-record-row usage-record-header">
-          {['时间', '模型', '输入', '输出', '缓存读取', '缓存写入', '总计', '来源'].map((name) => (
+          {[
+            t('时间'),
+            t('模型'),
+            t('输入'),
+            t('输出'),
+            t('缓存读取'),
+            t('缓存写入'),
+            t('总计'),
+            t('来源'),
+          ].map((name) => (
             <span role="columnheader" key={name}>
               <DataText muted>{name}</DataText>
             </span>
           ))}
         </div>
-        <div role="rowgroup" aria-label="用量记录列表" className="usage-record-list" tabIndex={0}>
+        <div
+          role="rowgroup"
+          aria-label={t('用量记录列表')}
+          className="usage-record-list"
+          tabIndex={0}
+        >
           {records.map((row) => (
             <UsageRecordCard key={row.id} row={row} embedded />
           ))}
           {!records.length && (
             <div role="row" className="usage-record-empty">
               <span role="cell" aria-colspan={8}>
-                {empty ?? <DataText muted>暂无会话记录。</DataText>}
+                {empty ?? <DataText muted>{t('暂无会话记录。')}</DataText>}
               </span>
             </div>
           )}
@@ -56,32 +73,45 @@ export default function UsageRecordCard({
   row: UsageRecord
   embedded?: boolean
 }) {
+  useLocale()
+
   const quality =
     row.quality === 'reported'
-      ? '来源已报告'
+      ? t('来源已报告')
       : row.quality === 'estimated'
-        ? '来源估算'
+        ? t('来源估算')
         : row.quality === 'context_snapshot'
-          ? '上下文快照'
-          : '缺少用量'
-  const inputLabel = `输入${row.inputIncludesCache === true ? '（含缓存）' : row.inputIncludesCache === false ? '（不含缓存）' : '（缓存语义未知）'}`
+          ? t('上下文快照')
+          : t('缺少用量')
+  const inputLabel = t('输入{v0}', {
+    v0:
+      row.inputIncludesCache === true
+        ? t('（含缓存）')
+        : row.inputIncludesCache === false
+          ? t('（不含缓存）')
+          : t('（缓存语义未知）'),
+  })
   if (embedded) {
     return (
       <div role="row" className="usage-record-row">
-        <span role="cell" className="usage-record-time" title={new Date(row.time).toLocaleString()}>
+        <span
+          role="cell"
+          className="usage-record-time"
+          title={new Date(row.time).toLocaleString(getLocale())}
+        >
           <DataText mono>
-            <time dateTime={row.time}>{new Date(row.time).toLocaleString()}</time>
+            <time dateTime={row.time}>{new Date(row.time).toLocaleString(getLocale())}</time>
           </DataText>
         </span>
-        <span role="cell" className="usage-record-model" title={row.model ?? '未知模型'}>
-          <DataText>{row.model ?? '未知模型'}</DataText>
+        <span role="cell" className="usage-record-model" title={row.model ?? t('未知模型')}>
+          <DataText>{row.model ?? t('未知模型')}</DataText>
         </span>
         {[
-          { label: '输入', description: inputLabel, value: row.input },
-          { label: '输出', description: '输出', value: row.output },
-          { label: '缓存读', description: '缓存读取', value: row.cacheRead },
-          { label: '缓存写', description: '缓存写入', value: row.cacheWrite },
-          { label: '总计', description: '总计', value: row.total },
+          { label: t('输入'), description: inputLabel, value: row.input },
+          { label: t('输出'), description: t('输出'), value: row.output },
+          { label: t('缓存读'), description: t('缓存读取'), value: row.cacheRead },
+          { label: t('缓存写'), description: t('缓存写入'), value: row.cacheWrite },
+          { label: t('总计'), description: t('总计'), value: row.total },
         ].map(({ label, description, value }) => (
           <span
             key={label}
@@ -103,36 +133,36 @@ export default function UsageRecordCard({
     <Card>
       <div className="usage-section-heading">
         <strong>
-          {usageNames[row.software]} · {row.model ?? '未知模型'}
+          {usageNames[row.software]} · {row.model ?? t('未知模型')}
         </strong>
         <Badge>{quality}</Badge>
       </div>
       <p>
-        <time dateTime={row.time}>{new Date(row.time).toLocaleString()}</time> · 会话{' '}
-        {row.sessionName?.trim() || row.session}
+        <time dateTime={row.time}>{new Date(row.time).toLocaleString(getLocale())}</time>{' '}
+        {t(' · 会话')} {row.sessionName?.trim() || row.session}
       </p>
       <dl className="usage-detail-values">
         <div>
-          <dt>总 Token</dt>
+          <dt>{t('总 Token')}</dt>
           <dd>{tokenNumber(row.total)}</dd>
         </div>
         <div>
           <dt>
-            输入
+            {t('输入')}
             {row.inputIncludesCache === true
-              ? '（含缓存）'
+              ? t('（含缓存）')
               : row.inputIncludesCache === false
-                ? '（不含缓存）'
-                : '（缓存语义未知）'}
+                ? t('（不含缓存）')
+                : t('（缓存语义未知）')}
           </dt>
           <dd>{tokenNumber(row.input)}</dd>
         </div>
         <div>
-          <dt>输出</dt>
+          <dt>{t('输出')}</dt>
           <dd>{tokenNumber(row.output)}</dd>
         </div>
         <div>
-          <dt>缓存读取 / 写入</dt>
+          <dt>{t('缓存读取 / 写入')}</dt>
           <dd>
             {tokenNumber(row.cacheRead)} / {tokenNumber(row.cacheWrite)}
           </dd>

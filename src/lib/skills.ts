@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, getLocale } from '../i18n'
 
 import type { InstalledSkill } from '@lumiplug/shared'
 import { normalizeSkillTimestamp } from '@lumiplug/shared'
@@ -16,28 +17,36 @@ export const marketSkills: MarketSkill[] = [
   {
     id: 'openai-docs',
     name: 'openai-docs',
-    description: '查询 OpenAI 产品和 API 的官方文档，帮助理解接口、配置与使用方法。',
+    get description() {
+      return t('查询 OpenAI 产品和 API 的官方文档，帮助理解接口、配置与使用方法。')
+    },
     publisher: 'OpenAI',
     url: 'https://github.com/openai/skills/tree/main/skills/.curated/openai-docs',
   },
   {
     id: 'openai-pdf',
     name: 'pdf',
-    description: '读取、创建和检查 PDF，结合页面渲染验证文档的视觉布局。',
+    get description() {
+      return t('读取、创建和检查 PDF，结合页面渲染验证文档的视觉布局。')
+    },
     publisher: 'OpenAI',
     url: 'https://github.com/openai/skills/tree/main/skills/.curated/pdf',
   },
   {
     id: 'anthropic-frontend-design',
     name: 'frontend-design',
-    description: '设计并实现前端页面与组件，注重视觉表达和可交付的界面质量。',
+    get description() {
+      return t('设计并实现前端页面与组件，注重视觉表达和可交付的界面质量。')
+    },
     publisher: 'Anthropic',
     url: 'https://github.com/anthropics/skills/tree/main/skills/frontend-design',
   },
   {
     id: 'anthropic-skill-creator',
     name: 'skill-creator',
-    description: '创建和改进技能，设计测试用例并评估技能的触发与执行效果。',
+    get description() {
+      return t('创建和改进技能，设计测试用例并评估技能的触发与执行效果。')
+    },
     publisher: 'Anthropic',
     url: 'https://github.com/anthropics/skills/tree/main/skills/skill-creator',
   },
@@ -81,13 +90,13 @@ export function skillAddedTime(skill: Pick<InstalledSkill, 'fileCreatedAt' | 'fi
   description: string
 } {
   for (const [value, label, source] of [
-    [skill.fileCreatedAt, '添加于', 'SKILL.md 文件创建时间'],
-    [skill.firstSeenAt, '首次发现', 'Lumi 首次发现时间，文件创建时间未知'],
+    [skill.fileCreatedAt, t('添加于'), t('SKILL.md 文件创建时间')],
+    [skill.firstSeenAt, t('首次发现'), t('Lumi 首次发现时间，文件创建时间未知')],
   ] as const) {
     const timestamp = normalizeSkillTimestamp(value)
     if (!timestamp) continue
     const date = new Date(timestamp)
-    const formatted = new Intl.DateTimeFormat('zh-CN', {
+    const formatted = new Intl.DateTimeFormat(getLocale(), {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
@@ -100,13 +109,13 @@ export function skillAddedTime(skill: Pick<InstalledSkill, 'fileCreatedAt' | 'fi
     return {
       dateTime: date.toISOString(),
       text: `${label} ${formatted}`,
-      description: `${source}（本机时区）`,
+      description: t('{v0}（本机时区）', { v0: source }),
     }
   }
   return {
     dateTime: null,
-    text: '添加时间未知',
-    description: '文件创建时间与 Lumi 首次发现时间均未知',
+    text: t('添加时间未知'),
+    description: t('文件创建时间与 Lumi 首次发现时间均未知'),
   }
 }
 
@@ -116,7 +125,7 @@ export function skillClientOptions(
 ): { value: string; label: string }[] {
   const options = [...new Set(clients)].sort().map((client) => ({ value: client, label: client }))
   if (selected !== 'all' && !clients.includes(selected)) {
-    options.unshift({ value: selected, label: `${selected}（暂无技能）` })
+    options.unshift({ value: selected, label: t('{v0}（暂无技能）', { v0: selected }) })
   }
   return options
 }
@@ -124,24 +133,24 @@ export function skillClientOptions(
 export function skillProjectFailure(error: unknown): { fieldError: boolean; message: string } {
   const code = error instanceof Error ? error.message : error
   return code === 'invalid_skill_project'
-    ? { fieldError: true, message: '无法添加项目，请检查完整路径、目录权限及项目数量上限' }
-    : { fieldError: false, message: '项目扫描未完成，请检查 Core 连接后重试' }
+    ? { fieldError: true, message: t('无法添加项目，请检查完整路径、目录权限及项目数量上限') }
+    : { fieldError: false, message: t('项目扫描未完成，请检查 Core 连接后重试') }
 }
 
 export function skillImportFailure(error: unknown): string {
   const code = error instanceof Error ? error.message : error
   const messages: Record<string, string> = {
-    skill_import_invalid: '请选择包含有效 SKILL.md（名称和描述）的完整本地目录',
-    skill_already_imported: '此技能已经导入 Lumi，已有副本未被覆盖',
-    skill_import_link: '技能包含链接或特殊文件，请先整理为独立的普通文件目录',
-    skill_import_limit: '技能超过 2000 项、12 层或 32 MiB，请移除大文件或依赖后重试',
-    skill_import_host_required: '导入需要 Lumi 桌面宿主，请重新启动 Lumi 后重试',
-    skill_source_changed: '技能源目录已变化，请重新扫描后再导入',
-    skill_not_found: '技能记录已失效，请重新扫描后再导入',
+    skill_import_invalid: t('请选择包含有效 SKILL.md（名称和描述）的完整本地目录'),
+    skill_already_imported: t('此技能已经导入 Lumi，已有副本未被覆盖'),
+    skill_import_link: t('技能包含链接或特殊文件，请先整理为独立的普通文件目录'),
+    skill_import_limit: t('技能超过 2000 项、12 层或 32 MiB，请移除大文件或依赖后重试'),
+    skill_import_host_required: t('导入需要 Lumi 桌面宿主，请重新启动 Lumi 后重试'),
+    skill_source_changed: t('技能源目录已变化，请重新扫描后再导入'),
+    skill_not_found: t('技能记录已失效，请重新扫描后再导入'),
   }
   return typeof code === 'string' && Object.hasOwn(messages, code)
     ? messages[code]!
-    : '导入失败，请检查目录权限和 Core 连接后重试'
+    : t('导入失败，请检查目录权限和 Core 连接后重试')
 }
 
 export function skillSourceKey(client: string): string {

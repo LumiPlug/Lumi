@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { t, useLocale, getLocale } from '../i18n'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { UsageSession } from '@lumiplug/shared'
 import { ArrowLeft, CalendarDays, RefreshCw } from 'lucide-react'
@@ -26,6 +27,8 @@ export default function UsageSessionDetail({
   onRefresh: () => void
   onBack: () => void
 }) {
+  useLocale()
+
   const heading = useRef<HTMLHeadingElement>(null)
   const headingId = useId()
   const toast = useToast()
@@ -58,7 +61,7 @@ export default function UsageSessionDetail({
   return (
     <section className="usage-page usage-session-detail" aria-labelledby={headingId}>
       <header className="usage-detail-header">
-        <IconButton label="返回会话明细" title="返回" onClick={onBack}>
+        <IconButton label={t('返回会话明细')} title={t('返回')} onClick={onBack}>
           <ArrowLeft aria-hidden="true" />
         </IconButton>
         <div className="usage-detail-title">
@@ -68,12 +71,13 @@ export default function UsageSessionDetail({
           <div className="ui-detail-meta">
             <span>{usageNames[session.software]}</span>
             <span>
-              {(session.models ?? []).map((model) => model ?? '未知模型').join(' / ') || '未知模型'}
+              {(session.models ?? []).map((model) => model ?? t('未知模型')).join(' / ') ||
+                t('未知模型')}
             </span>
           </div>
         </div>
         <IconButton
-          label="刷新会话明细"
+          label={t('刷新会话明细')}
           loading={refreshing}
           loadingAnimation="spin"
           disabled={!coreReady}
@@ -84,19 +88,23 @@ export default function UsageSessionDetail({
       </header>
       <DataPanel
         className="usage-records-panel"
-        title={count === null ? '用量记录' : `用量记录（${count.toLocaleString()}条）`}
+        title={
+          count === null
+            ? t('用量记录')
+            : t('用量记录（{v0}条）', { v0: count.toLocaleString(getLocale()) })
+        }
         actions={
           <div className="usage-log-actions">
             <div ref={calendarAnchor}>
               <Segmented
-                label="会话时间范围"
+                label={t('会话时间范围')}
                 value=""
                 onValueChange={() => setCalendarOpen((open) => !open)}
                 items={[
                   {
                     value: 'custom',
                     disabled: !coreReady,
-                    accessibleLabel: `选择会话时间范围 ${rangeLabel}`,
+                    accessibleLabel: t('选择会话时间范围 {v0}', { v0: rangeLabel }),
                     label: (
                       <span className="ui-choice-content">
                         <CalendarDays size={16} aria-hidden="true" />
@@ -117,13 +125,16 @@ export default function UsageSessionDetail({
                       setCustomRange(usageCustomRange(start, end, String(filter.timezone)))
                       setCalendarOpen(false)
                     } catch (error) {
-                      toast(error instanceof Error ? error.message : '请选择有效日期。', 'error')
+                      toast(error instanceof Error ? error.message : t('请选择有效日期。'), 'error')
                     }
                   }}
                 />
               )}
             </div>
-            <Badge>总计 {compactTokens(total)} Token</Badge>
+            <Badge>
+              {t('总计 ')}
+              {compactTokens(total)} Token
+            </Badge>
           </div>
         }
       >

@@ -63,6 +63,10 @@ export type UsageQuality = 'reported' | 'estimated' | 'missing' | 'context_snaps
 export interface UsageRecord {
   id: string
   reader?: 'codeburn' | 'native'
+  /** Older unmarked native Qoder records came from SQLite. */
+  qoderFormat?: 'jsonl' | 'sqlite'
+  /** Hashed explicit session/request pair; absent for rowid and old unverified records. */
+  qoderRequest?: string
   requestCount?: number
   counterBasis?: 'initial' | 'delta' | 'reset' | 'response' | 'last'
   software: UsageSoftware
@@ -86,7 +90,7 @@ export interface UsageSource {
   records: number
   issues: number
   experimental: boolean
-  problems?: Array<'denied' | 'incompatible' | 'limit' | 'missing_usage'>
+  problems?: Array<'denied' | 'incompatible' | 'limit' | 'missing_usage' | 'identity_unverified'>
 }
 export interface UsageSnapshot {
   records: UsageRecord[]

@@ -193,6 +193,12 @@ export class UsageService {
           throw error
         }
       }
+      if (provider.name === 'qoder' && this.qoderReconciliation().unverified) {
+        result.status.problems = [...(result.status.problems ?? []), 'identity_unverified']
+        result.status.issues++
+        if (result.status.state === 'ready' || result.status.state === 'empty')
+          result.status.state = 'partial'
+      }
       sources.push(result.status)
       // Publish source discovery progressively so one slow tool doesn't hide all the others.
       const known = this.state<UsageSource[]>('sources') ?? []
@@ -517,6 +523,34 @@ export class UsageService {
   validateQuery(payload: Record<string, unknown>) {
     this.queryPeriod(payload)
   }
+  private qoderReconciliation(): { suppressed: Set<string>; unverified: boolean } {
+    const records: UsageRecord[] = []
+    const requests = new Map<string, UsageRecord>()
+    const suppressed = new Set<string>()
+    for (const row of this.db
+      .prepare("SELECT data FROM usage_records WHERE software='qoder'")
+      .iterate()) {
+      const record = JSON.parse(row.data as string) as UsageRecord
+      records.push(record)
+      // Old records without identity provenance and SQLite rowid cannot prove a match.
+      if (!record.qoderRequest) continue
+      const previous = requests.get(record.qoderRequest)
+      if (!previous) requests.set(record.qoderRequest, record)
+      else {
+        const selected = mergeNativeRecord(previous, record)
+        suppressed.add(selected.id === previous.id ? record.id : previous.id)
+        requests.set(record.qoderRequest, selected)
+      }
+    }
+    const sessions = new Map<string, Set<string>>()
+    for (const record of records) {
+      if (suppressed.has(record.id)) continue
+      const formats = sessions.get(record.session) ?? new Set<string>()
+      formats.add(record.qoderFormat === 'jsonl' ? 'jsonl' : 'sqlite')
+      sessions.set(record.session, formats)
+    }
+    return { suppressed, unverified: [...sessions.values()].some((formats) => formats.size > 1) }
+  }
   private *filteredRecords(
     payload: Record<string, unknown>,
     start: Date,
@@ -539,12 +573,19 @@ export class UsageService {
       }
     if (payload.model === null) clauses.push('model IS NULL')
     if (payload.software !== 'vercel-gateway') clauses.push("software != 'vercel-gateway'")
+    // Resolve across the persisted ledger before applying date/model filters, so
+    // the chosen request does not change with pagination, source deletion or restart.
+    const suppressed =
+      payload.software === undefined || payload.software === 'qoder'
+        ? this.qoderReconciliation().suppressed
+        : new Set<string>()
     for (const row of this.db
       .prepare(
         `SELECT data FROM usage_records WHERE ${clauses.join(' AND ')} ORDER BY time DESC,id`,
       )
       .iterate(...params)) {
       const record = JSON.parse(row.data as string) as UsageRecord
+      if (record.software === 'qoder' && suppressed.has(record.id)) continue
       if (typeof payload.session !== 'string' || record.session === payload.session) yield record
     }
   }

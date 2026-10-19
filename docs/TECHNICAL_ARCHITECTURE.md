@@ -2,6 +2,22 @@
 
 # Lumi 技术架构
 
+### 托盘、窗口与托管 Core 控制（2026-10-19，未发布）
+
+基于锁定 Tauri 2.12.0：macOS 主窗口关闭仅隐藏窗口；所有应用窗口均隐藏时才调用 set_dock_visibility(false)，若运行窗口仍可见或最小化则保留 Dock 访问。重开恢复 Dock、窗口、取消最小化与聚焦；其他平台不调用 Dock API。明确退出标志与自定义 Cmd+Q/退出菜单共用 app.exit(0)，关闭/后台 WebView 释放仍阻止无意退出，不改变现有最终 supervisor.shutdown 语义。
+
+托盘复用工作台、AI 用量、Skills、项目知识（现有知识库）、设置及 Core 状态。固定 action 白名单、内存队列和前端订阅后读取/确认交付，支持创建早期/重建窗口与重复点击；导航经过工具未保存守卫。项目当前只有 zh-CN 界面，无通用翻译/语言设置体系，托盘采用与当前界面一致的中文，不以系统语言制造混合页面。Core 菜单显示真实状态并按所有权/过渡状态禁用启停；新增宿主授权控制仅操作本 supervisor 持有的 sidecar，不按端口查杀，不接管外部 Core。停止通过既有 ConfirmationDialog 确认会中断任务与 MCP，携带点击时 generation 防止误停后来重启的进程。手动停止抑制自动拉起，手动启动重置重试预算，退出仍走原 shutdown；失败/未确认退出不标成已停止。手动停止通过新增仅宿主授权的 POST /app/core/stop 调用入口层已有的 SIGTERM/SIGINT 清理回调（幂等），依次关闭采集、知识服务、任务、MCP、主页服务、HTTP与数据库；无回调的嵌入实例返回409。Rust 保留受管 child 句柄至 Terminated，最长等待10秒，失败/超时保留 pending 并禁用再次启动，不强杀或声称已停止；最终应用退出仍沿用原 child.kill 生命周期。
+
+保护既有 Qoder 未提交改动，托盘分支从相同 HEAD 建立并携带工作区，不提交/推送/发布。自动化使用临时合成数据与隔离实例；不终止当前用户服务、不使用正式数据或修改登录项。
+
+### Qoder 桌面 JSONL 补充（2026-10-19，未发布）
+
+Qoder 新增 `~/.qoder/projects` 安全有界 JSONL 发现，复用现有 collector、缓存、upsert 账本及查询链路。只接收 assistant 且显式 sessionId/session_id 和稳定 message.id（兼容 uuid/id）的记录；缺少身份保守跳过，不以路径或正文制造请求 ID。JSONL 的 input_tokens 不扣缓存，cache_read_input_tokens/cache_creation_input_tokens 独立保留，总量为四项之和；缺项为未知，全零为 missing。时间支持 ISO 字符串、秒/毫秒安全整数及对应数字字符串，拒绝无效时间。Credits 不采集。
+
+记录增加可选 qoderFormat=jsonl/sqlite 与 qoderRequest（显式会话/稳定请求身份的哈希），不新增数据库结构。JSONL 存储 ID 与旧 SQLite 分开命名，避免 rowid 和消息 ID 意外碰撞。SQLite message_id/id/uuid 的非空字符串可提供稳定身份；rowid、数字型库内 ID 及没有来源证据的旧账本不提供跨格式匹配证据。查询在完整持久账本按 qoderRequest 精确匹配，reported 优先于 missing、完整分项优先，跨格式同完整度优先 JSONL；同格式沿用完整/较大流式快照优先。其他请求全部保留，不按整会话、时间或 Token 接近丢弃历史。筛选、会话和 CSV 使用同一按请求选择，跨日期/模型筛选、轮转、删除及重启稳定，账本不删除或改写为另一格式。
+
+核对后同会话仍包含两种格式的独立记录时，不能证明请求是否存在别名关联，来源 problems 增加 identity_unverified（有当前 ready/empty 来源时状态为 partial），保留计数但不宣称完全去重。诊断由持久账本重新计算，源删除后仍保留；整根 absent 的 detectedOnly 过滤仍沿用原行为。AI 用量首次读取该风险时、及用户每次刷新后，复用 useToast 顶部提醒“Qoder 部分跨格式请求身份无法关联，已保留历史，统计可能包含重复。”，后台每分钟轮询不重复弹出。来源状态合并两个根，旧 SQLite absent 不隐藏 JSONL 成功。UI 布局不变，vendor 与 codeburn.test.ts 不改。只用人工合成样例验证，真实公司机不在访问范围内。
+
 ### 四款本地用量来源接入（2026-10-18）
 
 在现有 CodeBurn 固定版本之上增加 Lumi 自有采集组合层，不修改 vendor、不新增进程或远端接口。Qoder 读取标准 SharedClientCache SQLite 的 chat_message/token_info；QoderWork 读取 ~/.qoderwork/projects 的 assistant/message.usage；WorkBuddy 读取 ~/.workbuddy/projects 的 providerData.rawUsage（兼容 message 与 function_call，用 providerData.messageId 去重）；千问办公独立标识 qwenwork，读取 ~/.qwenworkcn/logs/sessions 下 segments 的 model.response.completed，忽略 turn.finished 及上下文快照。所有来源转换成现有 UsageRecord，经 UsageService 的 SQLite 事务、宿主 query/sessions/export 与现有 UI 流转。

@@ -76,9 +76,14 @@ await writeFile(
 )
 assets.push(sums)
 const notes = path.join(output, 'release-notes.md')
+// Publish version-specific limitations with the release, before it becomes public.
+const productNotes = (await readFile(path.join(root, `docs/releases/${version}.md`), 'utf8'))
+  .replace(/^<!-- SPDX-License-Identifier: MPL-2\.0 -->\s*/, '')
+  .replace(/\]\(\.\.\/([^\s)]+)\)/g, `](https://github.com/${repository}/blob/${revision}/docs/$1)`)
+  .trim()
 await writeFile(
   notes,
-  `Lumi ${version} preview build ${runNumber}\n\n` +
+  `${productNotes}\n\n---\n\nLumi ${version} preview build ${runNumber}\n\n` +
     `Built from main: https://github.com/${repository}/tree/${revision}\n` +
     `Build and verification: https://github.com/${repository}/actions/runs/${process.env.GITHUB_RUN_ID}\n\n` +
     '- macOS Apple Silicon: aarch64 DMG or APP ZIP; macOS 13.5 or newer.\n' +

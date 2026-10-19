@@ -16,6 +16,7 @@ import type {
   McpConnectionCheck,
   McpPortSettings,
   UiCoreStatus,
+  DesktopRequest,
   WorkbenchView,
   WorkbenchPresetId,
   SkillInventory,
@@ -45,6 +46,18 @@ export async function getCoreStatus(): Promise<UiCoreStatus> {
   } catch {
     return disconnectedStatus
   }
+}
+export function pendingDesktopAction(): Promise<DesktopRequest | null> {
+  return hostInvoke('pending_desktop_action')
+}
+export function acknowledgeDesktopAction(id: string): Promise<void> {
+  return hostInvoke('acknowledge_desktop_action', { id })
+}
+export function controlCore(
+  action: 'start' | 'stop',
+  expectedGeneration: number,
+): Promise<UiCoreStatus> {
+  return hostInvoke('control_core', { action, expectedGeneration })
 }
 export async function getMcpConnectionInfo(): Promise<McpConnectionInfo | null> {
   try {

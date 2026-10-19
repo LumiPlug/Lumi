@@ -31,7 +31,7 @@ export interface CoreHealth {
 }
 
 export type CoreLifecycleState =
-  'disconnected' | 'error' | 'ready' | 'restarting' | 'starting' | 'stopped'
+  'disconnected' | 'error' | 'ready' | 'restarting' | 'starting' | 'stopping' | 'stopped'
 
 export interface UiCoreStatus {
   state: CoreLifecycleState
@@ -40,6 +40,23 @@ export interface UiCoreStatus {
   userDataPathAvailable: boolean
   restartCount: number
   lastError: string | null
+  canStart?: boolean
+  canStop?: boolean
+}
+
+export type DesktopAction =
+  | 'open'
+  | 'usage'
+  | 'skills'
+  | 'knowledge'
+  | 'core-status'
+  | 'core-start'
+  | 'core-stop'
+  | 'settings'
+export interface DesktopRequest {
+  id: string
+  action: DesktopAction
+  coreGeneration: number
 }
 
 /** Credentials persist in native app storage; never store them in frontend storage. */

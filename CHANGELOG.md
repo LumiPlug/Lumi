@@ -2,6 +2,12 @@
 
 # Changelog
 
+## 0.1.4 (preview)
+
+- Add Qoder desktop JSONL token collection with request-level reconciliation and explicit mixed-identity warnings.
+- Add grouped native tray navigation, macOS Dock visibility management, and recoverable owned-Core controls with confirmation and authenticated cleanup.
+- Keep Qoder company-machine counts and native tray/Dock multi-window behavior explicitly pending real-machine acceptance; publish these limitations with preview assets.
+
 ## 0.1.1 — 2026-10-15
 
 - Install local Skill directories into Lumi or import existing Skills from scan results, preserving the original files.

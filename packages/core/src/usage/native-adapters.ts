@@ -26,6 +26,17 @@ function timestamp(value: unknown): string | null {
   const date = new Date(value)
   return Number.isFinite(date.getTime()) ? date.toISOString() : null
 }
+/** Qoder transcripts use ISO strings or Unix seconds/milliseconds, never locale guesses. */
+function qoderTimestamp(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const text = value.trim()
+    if (/^\d+$/.test(text)) value = Number(text)
+    else if (/^\d{4}-\d{2}-\d{2}T/.test(text)) return timestamp(text)
+    else return null
+  }
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) return null
+  return timestamp(value < 1e12 ? value * 1000 : value)
+}
 function sum(values: Array<number | null>): number | null {
   if (values.some((value) => value === null)) return null
   return count(values.reduce<number>((total, value) => total + value!, 0))
@@ -33,11 +44,12 @@ function sum(values: Array<number | null>): number | null {
 function tokens(
   software: NativeUsageSoftware,
   usage: Record<string, unknown>,
+  qoderJsonl = false,
 ): Pick<
   UsageRecord,
   'input' | 'output' | 'cacheRead' | 'cacheWrite' | 'total' | 'inputIncludesCache' | 'quality'
 > {
-  const exclusive = software === 'qoderwork'
+  const exclusive = software === 'qoderwork' || qoderJsonl
   const prompt = count(
     exclusive || software === 'qwenwork' ? usage.input_tokens : usage.prompt_tokens,
   )
@@ -47,7 +59,7 @@ function tokens(
   const cached = count(
     software === 'workbuddy'
       ? usage.prompt_cache_hit_tokens
-      : software === 'qoder'
+      : software === 'qoder' && !qoderJsonl
         ? usage.cached_tokens
         : usage.cache_read_input_tokens,
   )
@@ -71,7 +83,7 @@ function tokens(
   const fields = { input, output, cacheRead, cacheWrite, total }
   // These products can emit placeholder zeros when their exposure gate is disabled.
   const hidden =
-    (software === 'qoderwork' || software === 'qwenwork') &&
+    (software === 'qoderwork' || software === 'qwenwork' || qoderJsonl) &&
     Object.values(fields).every((value) => value === null || value === 0)
   return {
     ...(hidden
@@ -112,13 +124,34 @@ export function nativeRecord(
 }
 /** Only explicit title metadata is retained; message bodies and tool arguments are ignored. */
 export function parseNativeLine(
-  software: Exclude<NativeUsageSoftware, 'qoder'>,
+  software: NativeUsageSoftware,
   value: unknown,
   filename: string,
 ): ParsedNativeLine {
   const e = object(value),
     message = object(e.message),
     pd = object(e.providerData)
+  if (software === 'qoder') {
+    if (e.type !== 'assistant' || (message.role != null && message.role !== 'assistant'))
+      return { recognized: typeof e.type === 'string' }
+    const session = identifier(e.sessionId) ?? identifier(e.session_id)
+    const request = identifier(message.id) ?? identifier(e.uuid) ?? identifier(e.id)
+    const time = qoderTimestamp(e.timestamp)
+    // Without a stable pair, copies/rotation cannot safely be reconciled.
+    if (!session || !request || !time) return { recognized: true }
+    const usage = object(message.usage)
+    const record = nativeRecord(software, session, request, time, message.model ?? e.model, {})!
+    return {
+      recognized: true,
+      record: {
+        ...record,
+        id: hash(`native:qoder:jsonl:${record.id}`),
+        qoderFormat: 'jsonl',
+        qoderRequest: record.id,
+        ...tokens(software, usage, true),
+      },
+    }
+  }
   const segment = software === 'qwenwork'
   const fallback = segment
     ? path.basename(path.dirname(path.dirname(filename)))
@@ -168,11 +201,16 @@ export function mergeNativeRecord(
     ['input', 'output', 'cacheRead', 'cacheWrite', 'total'].filter(
       (key) => row[key as keyof UsageRecord] !== null,
     ).length
+  const crossFormat =
+    previous.software === 'qoder' &&
+    (previous.qoderFormat === 'jsonl') !== (next.qoderFormat === 'jsonl')
   const preferNext =
     score(next) > score(previous) ||
     (score(next) === score(previous) &&
-      ((next.total ?? -1) > (previous.total ?? -1) ||
-        (next.total === previous.total && next.time >= previous.time)))
+      (crossFormat
+        ? next.qoderFormat === 'jsonl'
+        : (next.total ?? -1) > (previous.total ?? -1) ||
+          (next.total === previous.total && next.time >= previous.time)))
   const selected = preferNext ? next : previous
   return {
     ...selected,

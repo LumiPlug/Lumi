@@ -37,6 +37,7 @@ export function nativeUsageRoots(home: string, platform = process.platform): Nat
       directory: path.join(support, 'Qoder/SharedClientCache/cache/db/local.db'),
       sqlite: true,
     },
+    { software: 'qoder', directory: path.join(home, '.qoder/projects') },
     { software: 'qoderwork', directory: path.join(home, '.qoderwork/projects') },
     { software: 'workbuddy', directory: path.join(home, '.workbuddy/projects') },
     { software: 'qwenwork', directory: path.join(home, '.qwenworkcn/logs/sessions') },
@@ -242,7 +243,6 @@ export class NativeUsageCollector {
       issues: 0,
       limited: false,
     }
-    if (software === 'qoder') return result
     const handle = await fs.open(filename, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
     const rows = new Map<string, UsageRecord>()
     let pending = Buffer.alloc(0),
@@ -359,7 +359,14 @@ export class NativeUsageCollector {
           selectedModel.model_key ?? selectedModel.model_id ?? selectedModel.model,
           usage,
         )
-        if (record) result.records.push(record)
+        if (record)
+          result.records.push({
+            ...record,
+            qoderFormat: 'sqlite',
+            ...(identity !== 'rowid' && typeof row.request === 'string' && row.request.length > 0
+              ? { qoderRequest: record.id }
+              : {}),
+          })
         else result.issues++
       }
       const titleColumns = new Set(

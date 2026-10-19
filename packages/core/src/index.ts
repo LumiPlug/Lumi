@@ -6,9 +6,15 @@ import { CoreService, genericErrorPayload, writeReadyHandshake } from './service
 
 async function main(): Promise<void> {
   let service: CoreService
+  let stopping = false
+  const stop = (): void => {
+    if (stopping) return
+    stopping = true
+    void service.stop().finally(() => process.exit(0))
+  }
   try {
     const options = parseRuntimeConfig()
-    service = new CoreService({ ...options, emitReady: writeReadyHandshake })
+    service = new CoreService({ ...options, emitReady: writeReadyHandshake, onStopRequested: stop })
     await service.start()
   } catch (error) {
     process.stderr.write(`${JSON.stringify(genericErrorPayload(error))}\n`)
@@ -16,9 +22,6 @@ async function main(): Promise<void> {
     return
   }
 
-  const stop = (): void => {
-    void service.stop().finally(() => process.exit(0))
-  }
   process.once('SIGTERM', stop)
   process.once('SIGINT', stop)
 }

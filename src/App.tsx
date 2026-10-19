@@ -16,6 +16,12 @@ import { useTheme } from './lib/useTheme'
 import { refreshRunState } from './lib/run-task-refresh'
 import { useNativeWindowActivity } from './lib/window-activity'
 import { useMainWindowIdle } from './lib/window-retention'
+import { useRetainWindowState } from './lib/window-retention'
+import { isTauri } from '@tauri-apps/api/core'
+import { connectDesktopActions } from './lib/desktop-actions'
+import { pendingDesktopAction, acknowledgeDesktopAction, controlCore } from './lib/tauri'
+import type { DesktopRequest } from '@lumiplug/shared'
+import ConfirmationDialog from './components/ConfirmationDialog'
 import { listen } from '@tauri-apps/api/event'
 import { useToast } from './components/ToastProvider'
 
@@ -124,14 +130,127 @@ export default function App() {
   const mcpCredentialRevision = useRef(0)
   const [mcpConnection, setMcpConnection] = useState<McpConnectionInfo | null>(null)
   const leaveTools = useRef<(leave: () => void) => void>((leave) => leave())
+  const [coreStopRequest, setCoreStopRequest] = useState<DesktopRequest | null>(null)
+  const [coreControlBusy, setCoreControlBusy] = useState(false)
+  const coreControlInFlight = useRef(false)
+  const coreControlRevision = useRef(0)
+  const stopPromptOpen = useRef(false)
+  const deliveredDesktopActions = useRef(new Set<string>())
+  useRetainWindowState(!!coreStopRequest || coreControlBusy)
   const registerLeave = useCallback((guard: (leave: () => void) => void) => {
     leaveTools.current = guard
   }, [])
-  const navigate = (next: NavKey) => {
-    if (activeNav === 'capabilities' && next !== activeNav)
-      leaveTools.current(() => setActiveNav(next))
-    else setActiveNav(next)
+  const navigate = (next: NavKey, after?: () => void) => {
+    const apply = () => {
+      setActiveNav(next)
+      if (after) requestAnimationFrame(after)
+    }
+    if (activeNav === 'capabilities' && next !== activeNav) leaveTools.current(apply)
+    else apply()
   }
+  const desktopHandler = useRef<(request: DesktopRequest) => void>(() => {})
+  async function runCoreControl(action: 'start' | 'stop', request: DesktopRequest) {
+    if (coreControlInFlight.current) return
+    coreControlInFlight.current = true
+    coreControlRevision.current += 1
+    setCoreControlBusy(true)
+    try {
+      const status = await controlCore(action, request.coreGeneration)
+      setCoreStatus(status)
+      if (action === 'stop') {
+        stopPromptOpen.current = false
+        setCoreStopRequest(null)
+      }
+      showToast(
+        action === 'start' ? '已请求启动 Core。' : 'Core 已停止，任务与连接已关闭。',
+        'success',
+      )
+    } catch (error) {
+      const code = String(error)
+      showToast(
+        code.includes('core_state_changed')
+          ? 'Core 状态已变化，请重新选择操作。'
+          : action === 'stop'
+            ? '未能确认 Core 已停止，请查看状态；不会自动启动另一个进程。'
+            : 'Core 启动失败，请检查状态与端口。',
+        'error',
+      )
+      setCoreStatus(await getCoreStatus())
+    } finally {
+      coreControlInFlight.current = false
+      coreControlRevision.current += 1
+      setCoreControlBusy(false)
+      window.dispatchEvent(new Event('focus'))
+    }
+  }
+  desktopHandler.current = (request) => {
+    const focusCore = () => {
+      const section = document.getElementById('core-title')
+      section?.scrollIntoView({ block: 'nearest' })
+      section?.focus()
+    }
+    switch (request.action) {
+      case 'open':
+        break
+      case 'usage':
+        navigate('usage')
+        break
+      case 'skills':
+        navigate('skills')
+        break
+      case 'knowledge':
+        navigate('knowledge')
+        break
+      case 'settings':
+        navigate('settings')
+        break
+      case 'core-status':
+        navigate('settings', focusCore)
+        break
+      case 'core-start':
+        navigate('settings', () => {
+          focusCore()
+          void runCoreControl('start', request)
+        })
+        break
+      case 'core-stop':
+        navigate('settings', () => {
+          focusCore()
+          if (!stopPromptOpen.current && !coreControlInFlight.current) {
+            stopPromptOpen.current = true
+            setCoreStopRequest(request)
+          }
+        })
+        break
+    }
+  }
+  useEffect(() => {
+    if (!isTauri()) return
+    return connectDesktopActions({
+      subscribe: async (wake) => {
+        const unlisten = await listen('lumi-desktop-action', wake)
+        try {
+          const removeError = await listen<string>('lumi-native-error', ({ payload }) =>
+            showToast(payload, 'error'),
+          )
+          window.addEventListener('focus', wake)
+          return () => {
+            unlisten()
+            removeError()
+            window.removeEventListener('focus', wake)
+          }
+        } catch (error) {
+          unlisten()
+          throw error
+        }
+      },
+      read: pendingDesktopAction,
+      acknowledge: acknowledgeDesktopAction,
+      handle: (request) => desktopHandler.current(request),
+      delivered: deliveredDesktopActions.current,
+      fail: () => showToast('托盘操作未完成，请重新打开 Lumi 后重试。', 'error'),
+    })
+  }, [showToast])
 
   useEffect(() => {
     let cancelled = false
@@ -154,16 +273,20 @@ export default function App() {
     return refreshRunState({
       wakeTarget: window,
       interval: ({ nextStatus }) =>
-        ['starting', 'restarting', 'disconnected'].includes(nextStatus.state) ? 250 : 2000,
+        ['starting', 'restarting', 'stopping', 'disconnected'].includes(nextStatus.state)
+          ? 250
+          : 2000,
       read: async () => {
         const credentialRevision = mcpCredentialRevision.current
+        const lifecycleRevision = coreControlRevision.current
         const [nextStatus, nextMcpConnection] = await Promise.all([
           getCoreStatus(),
           getMcpConnectionInfo(),
         ])
-        return { credentialRevision, nextStatus, nextMcpConnection }
+        return { credentialRevision, lifecycleRevision, nextStatus, nextMcpConnection }
       },
-      update: ({ credentialRevision, nextStatus, nextMcpConnection }) => {
+      update: ({ credentialRevision, lifecycleRevision, nextStatus, nextMcpConnection }) => {
+        if (lifecycleRevision !== coreControlRevision.current) return
         setCoreStatus(nextStatus)
         setCoreStatusLoaded(true)
         if (credentialRevision === mcpCredentialRevision.current)
@@ -195,6 +318,24 @@ export default function App() {
 
   return (
     <main className="app-frame">
+      {coreStopRequest && (
+        <ConfirmationDialog
+          title="停止 Core？"
+          confirmLabel="停止 Core"
+          danger
+          busy={coreControlBusy}
+          confirm={() => void runCoreControl('stop', coreStopRequest)}
+          cancel={() => {
+            stopPromptOpen.current = false
+            setCoreStopRequest(null)
+          }}
+        >
+          <p>
+            这会中断 Lumi 托管的运行任务、断开 MCP 连接并暂停用量采集。仅停止本应用启动的
+            Core；之后可从托盘重新启动。
+          </p>
+        </ConfirmationDialog>
+      )}
       <div className="window-drag-region" data-tauri-drag-region aria-hidden="true" />
       <a className="skip-link" href="#main-content">
         跳转到主要内容

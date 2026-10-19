@@ -2,6 +2,7 @@
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
+mod desktop_menu;
 #[cfg(debug_assertions)]
 mod dev_ui;
 mod mcp_settings;
@@ -13,9 +14,6 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tauri::image::Image;
-use tauri::menu::{Menu, MenuItem};
-use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
@@ -37,6 +35,8 @@ pub struct UiCoreStatus {
     user_data_path_available: bool,
     restart_count: u8,
     last_error: Option<String>,
+    can_start: bool,
+    can_stop: bool,
 }
 
 #[derive(Serialize)]
@@ -91,7 +91,51 @@ struct SupervisorState {
     child: Option<CommandChild>,
     generation: u64,
     shutting_down: bool,
+    manually_stopped: bool,
+    stop_pending: bool,
     stdout_buffer: String,
+}
+
+impl SupervisorState {
+    fn status(&self) -> UiCoreStatus {
+        let mut status = self.status.clone();
+        status.can_start = !self.shutting_down
+            && !self.stop_pending
+            && self.child.is_none()
+            && !matches!(
+                status.state.as_str(),
+                "starting" | "restarting" | "stopping"
+            );
+        status.can_stop = !self.shutting_down
+            && !self.stop_pending
+            && self.child.is_some()
+            && !matches!(status.state.as_str(), "starting" | "restarting");
+        status
+    }
+
+    fn terminated(&mut self, generation: u64) -> bool {
+        if self.generation != generation {
+            return false;
+        }
+        self.child = None;
+        self.stop_pending = false;
+        if self.shutting_down || self.manually_stopped {
+            self.status.state = "stopped".to_string();
+            false
+        } else if self.status.state == "starting" || self.status.state == "ready" {
+            if self.status.restart_count < MAX_RESTARTS {
+                self.status.restart_count += 1;
+                self.status.state = "restarting".to_string();
+                true
+            } else {
+                self.status.state = "error".to_string();
+                self.status.last_error = Some("sidecar_restart_limit_reached".to_string());
+                false
+            }
+        } else {
+            false
+        }
+    }
 }
 
 pub struct CoreSupervisor {
@@ -101,6 +145,7 @@ pub struct CoreSupervisor {
     host_token: String,
     window_open_lock: Mutex<()>,
     main_hidden_at: Mutex<Option<Instant>>,
+    lifecycle_lock: Mutex<()>,
 }
 
 impl CoreSupervisor {
@@ -118,6 +163,7 @@ impl CoreSupervisor {
             host_token: format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple()),
             window_open_lock: Mutex::new(()),
             main_hidden_at: Mutex::new(None),
+            lifecycle_lock: Mutex::new(()),
             state: Mutex::new(SupervisorState {
                 status: UiCoreStatus {
                     state: "disconnected".to_string(),
@@ -126,6 +172,8 @@ impl CoreSupervisor {
                     user_data_path_available: user_data_dir.exists(),
                     restart_count: 0,
                     last_error: None,
+                    can_start: false,
+                    can_stop: false,
                 },
                 port,
                 configured_port: port,
@@ -134,6 +182,8 @@ impl CoreSupervisor {
                 child: None,
                 generation: 0,
                 shutting_down: false,
+                manually_stopped: false,
+                stop_pending: false,
                 stdout_buffer: String::new(),
             }),
         })
@@ -143,8 +193,7 @@ impl CoreSupervisor {
         self.state
             .lock()
             .expect("core supervisor mutex poisoned")
-            .status
-            .clone()
+            .status()
     }
 
     fn mcp_connection_info(&self) -> McpConnectionInfo {
@@ -221,13 +270,44 @@ impl CoreSupervisor {
         Ok(self.mcp_connection_info())
     }
 
-    fn start_sidecar(self: &Arc<Self>) -> Result<(), String> {
+    fn start_sidecar(
+        self: &Arc<Self>,
+        manual: bool,
+        expected_generation: Option<u64>,
+    ) -> Result<(), String> {
+        let _operation = self
+            .lifecycle_lock
+            .lock()
+            .map_err(|_| "core_control_failed")?;
+        let result = self.start_sidecar_inner(manual, expected_generation);
+        desktop_menu::refresh(&self.app);
+        result
+    }
+
+    fn start_sidecar_inner(
+        self: &Arc<Self>,
+        manual: bool,
+        expected_generation: Option<u64>,
+    ) -> Result<(), String> {
         let (port, token, user_data_dir, generation) = {
             let mut state = self.state.lock().expect("core supervisor mutex poisoned");
             if state.shutting_down {
                 return Err("core_supervisor_stopped".to_string());
             }
+            if expected_generation.is_some_and(|generation| generation != state.generation) {
+                return Err("core_state_changed".into());
+            }
+            if state.child.is_some() || state.stop_pending {
+                return Err("core_control_busy".into());
+            }
+            if manual {
+                state.manually_stopped = false;
+                state.status.restart_count = 0;
+            } else if state.manually_stopped {
+                return Err("core_manually_stopped".into());
+            }
             state.generation += 1;
+            state.stdout_buffer.clear();
             state.status.state = "starting".to_string();
             state.status.last_error = None;
             (
@@ -256,16 +336,29 @@ impl CoreSupervisor {
             "--user-data-dir".to_string(),
             user_data_dir.to_string_lossy().into_owned(),
         ];
-        let sidecar = self
-            .app
-            .shell()
-            .sidecar(CORE_SIDECAR_NAME)
-            .map_err(|_| "sidecar_not_configured".to_string())?;
-        let (mut receiver, child) = sidecar
-            .env("LUMIPLUG_HOST_TOKEN", &self.host_token)
-            .args(args)
-            .spawn()
-            .map_err(|_| "sidecar_spawn_failed".to_string())?;
+        let spawned = (|| {
+            let sidecar = self
+                .app
+                .shell()
+                .sidecar(CORE_SIDECAR_NAME)
+                .map_err(|_| "sidecar_not_configured".to_string())?;
+            sidecar
+                .env("LUMIPLUG_HOST_TOKEN", &self.host_token)
+                .args(args)
+                .spawn()
+                .map_err(|_| "sidecar_spawn_failed".to_string())
+        })();
+        let (mut receiver, child) = match spawned {
+            Ok(spawned) => spawned,
+            Err(error) => {
+                let mut state = self.state.lock().expect("core supervisor mutex poisoned");
+                if state.generation == generation {
+                    state.status.state = "error".into();
+                    state.status.last_error = Some(error.clone());
+                }
+                return Err(error);
+            }
+        };
 
         let mut child_to_store = Some(child);
         let keep_child = {
@@ -319,13 +412,14 @@ impl CoreSupervisor {
             CommandEvent::Terminated(_) => self.handle_terminated(generation),
             _ => {}
         }
+        desktop_menu::refresh(&self.app);
     }
 
     fn handle_stdout(&self, generation: u64, bytes: &[u8]) {
         let mut ready: Option<SidecarReadyHandshake> = None;
         {
             let mut state = self.state.lock().expect("core supervisor mutex poisoned");
-            if state.generation != generation {
+            if state.generation != generation || state.manually_stopped || state.shutting_down {
                 return;
             }
             state
@@ -347,7 +441,7 @@ impl CoreSupervisor {
 
         if let Some(handshake) = ready {
             let mut state = self.state.lock().expect("core supervisor mutex poisoned");
-            if state.generation != generation {
+            if state.generation != generation || state.manually_stopped || state.shutting_down {
                 return;
             }
             if handshake.kind != "sidecar.ready"
@@ -366,29 +460,11 @@ impl CoreSupervisor {
     }
 
     fn handle_terminated(self: &Arc<Self>, generation: u64) {
-        let should_restart = {
-            let mut state = self.state.lock().expect("core supervisor mutex poisoned");
-            if state.generation != generation {
-                return;
-            }
-            state.child = None;
-            if state.shutting_down {
-                state.status.state = "stopped".to_string();
-                false
-            } else if state.status.state == "starting" || state.status.state == "ready" {
-                if state.status.restart_count < MAX_RESTARTS {
-                    state.status.restart_count += 1;
-                    state.status.state = "restarting".to_string();
-                    true
-                } else {
-                    state.status.state = "error".to_string();
-                    state.status.last_error = Some("sidecar_restart_limit_reached".to_string());
-                    false
-                }
-            } else {
-                false
-            }
-        };
+        let should_restart = self
+            .state
+            .lock()
+            .expect("core supervisor mutex poisoned")
+            .terminated(generation);
 
         if should_restart {
             let supervisor = Arc::clone(self);
@@ -396,8 +472,63 @@ impl CoreSupervisor {
             thread::spawn(move || {
                 let backoff_ms = 100_u64.saturating_mul(2_u64.saturating_pow(attempt as u32));
                 thread::sleep(Duration::from_millis(backoff_ms));
-                let _ = supervisor.start_sidecar();
+                let _ = supervisor.start_sidecar(false, Some(generation));
             });
+        }
+    }
+
+    fn stop_managed_sidecar(&self, expected_generation: u64) -> Result<(), String> {
+        let _operation = self
+            .lifecycle_lock
+            .lock()
+            .map_err(|_| "core_control_failed")?;
+        {
+            let mut state = self.state.lock().map_err(|_| "core_control_failed")?;
+            if state.generation != expected_generation {
+                return Err("core_state_changed".into());
+            }
+            if state.shutting_down || state.stop_pending {
+                return Err("core_control_busy".into());
+            }
+            if matches!(state.status.state.as_str(), "starting" | "restarting") {
+                return Err("core_control_busy".into());
+            }
+            if state.child.is_none() {
+                return Err("core_not_managed".into());
+            }
+            state.manually_stopped = true;
+            state.stop_pending = true;
+            state.status.state = "stopping".into();
+            state.status.last_error = None;
+        }
+        desktop_menu::refresh(&self.app);
+        // Retain the owned handle until termination. This private request shares
+        // SIGTERM cleanup, closing tasks/connections instead of blindly killing.
+        let request_failed = self
+            .call_core("POST", "/app/core/stop", Some(json!({})))
+            .is_err();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            {
+                let state = self.state.lock().map_err(|_| "core_control_failed")?;
+                if !state.stop_pending {
+                    return Ok(());
+                }
+            }
+            if Instant::now() >= deadline {
+                let error = if request_failed {
+                    "core_stop_failed"
+                } else {
+                    "core_stop_timeout"
+                };
+                let mut state = self.state.lock().map_err(|_| "core_control_failed")?;
+                state.status.state = "error".into();
+                state.status.last_error = Some(error.into());
+                drop(state);
+                desktop_menu::refresh(&self.app);
+                return Err(error.into());
+            }
+            thread::sleep(Duration::from_millis(20));
         }
     }
 
@@ -444,13 +575,16 @@ impl CoreSupervisor {
                 | "/app/skills/file"
                 | "/app/knowledge"
                 | "/app/usage"
+                | "/app/core/stop"
         ) && !path.starts_with("/app/capabilities/")
         {
             return Err("core_path_not_allowed".to_string());
         }
         let (port, token) = {
             let state = self.state.lock().expect("core supervisor mutex poisoned");
-            if state.status.state != "ready" {
+            if state.status.state != "ready"
+                && !(path == "/app/core/stop" && state.stop_pending && state.child.is_some())
+            {
                 return Err("core_not_ready".to_string());
             }
             (state.port, state.session_token.clone())
@@ -551,6 +685,31 @@ fn get_core_status(
 ) -> Result<UiCoreStatus, String> {
     supervisor.authorize(&host_nonce)?;
     Ok(supervisor.status())
+}
+
+#[tauri::command]
+async fn control_core(
+    window: tauri::WebviewWindow,
+    supervisor: State<'_, Arc<CoreSupervisor>>,
+    host_nonce: String,
+    action: String,
+    expected_generation: u64,
+) -> Result<UiCoreStatus, String> {
+    supervisor.authorize(&host_nonce)?;
+    if window.label() != "main" || !matches!(action.as_str(), "start" | "stop") {
+        return Err("core_control_not_allowed".into());
+    }
+    let core = Arc::clone(supervisor.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        if action == "start" {
+            core.start_sidecar(true, Some(expected_generation))?;
+        } else {
+            core.stop_managed_sidecar(expected_generation)?;
+        }
+        Ok(core.status())
+    })
+    .await
+    .map_err(|_| "core_control_failed".to_string())?
 }
 
 #[tauri::command]
@@ -1004,10 +1163,49 @@ fn show_main_window(app: &AppHandle) -> Result<(), String> {
             .build()
             .map_err(|_| "main_window_failed")?
     };
+    #[cfg(target_os = "macos")]
+    app.set_dock_visibility(true)
+        .map_err(|_| "main_window_failed")?;
     window.show().map_err(|_| "main_window_failed")?;
     window.unminimize().map_err(|_| "main_window_failed")?;
     window.set_focus().map_err(|_| "main_window_failed")?;
     let _ = window.emit_to(window.label(), "lumi-window-activity", true);
+    Ok(())
+}
+
+fn hide_main_window(window: &tauri::Window) -> Result<(), String> {
+    let supervisor = window.app_handle().state::<Arc<CoreSupervisor>>();
+    let _opening = supervisor
+        .window_open_lock
+        .lock()
+        .map_err(|_| "main_window_failed")?;
+    window.hide().map_err(|_| "main_window_failed")?;
+    if sync_dock_visibility(window.app_handle(), Some(window.label())).is_err() {
+        let _ = window.show();
+        return Err("main_window_failed".into());
+    }
+    *supervisor
+        .main_hidden_at
+        .lock()
+        .map_err(|_| "main_window_failed")? = Some(Instant::now());
+    let _ = window.emit_to(window.label(), "lumi-window-activity", false);
+    Ok(())
+}
+
+fn sync_dock_visibility(app: &AppHandle, excluding: Option<&str>) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        // Keep Dock access for every visible application window, including minimized
+        // run windows. Closing just main must not strand another active window.
+        let visible = app.webview_windows().values().any(|window| {
+            Some(window.label()) != excluding
+                && (window.is_visible().unwrap_or(true) || window.is_minimized().unwrap_or(true))
+        });
+        app.set_dock_visibility(visible)
+            .map_err(|_| "dock_visibility_failed".to_string())?;
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, excluding);
     Ok(())
 }
 
@@ -1084,35 +1282,19 @@ pub fn run() {
             tauri::WebviewWindowBuilder::from_config(app, config)?
                 .initialization_script(init)
                 .build()?;
-            if let Err(error) = supervisor.start_sidecar() {
+            if let Err(error) = supervisor.start_sidecar(false, None) {
                 eprintln!("[lumiplug] core sidecar unavailable: {}", error);
             }
 
-            let show = MenuItem::with_id(app, "show", "Show Lumi", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &quit])?;
-            let tray_icon = Image::from_bytes(include_bytes!("../icons/tray-icon.png"))
-                .map_err(|_| "tray_icon_invalid")?;
-            TrayIconBuilder::new()
-                .icon(tray_icon)
-                .icon_as_template(false)
-                .tooltip("Lumi")
-                .menu(&menu)
-                .on_menu_event(|app, event| match event.id.as_ref() {
-                    "show" => {
-                        if let Err(error) = show_main_window(app) {
-                            eprintln!("[lumiplug] main window unavailable: {error}");
-                        }
-                    }
-                    "quit" => app.exit(0),
-                    _ => {}
-                })
-                .build(app)?;
+            desktop_menu::install(app.handle())?;
             Ok(())
         })
         .invoke_handler({
             let regular: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
                 get_core_status,
+                control_core,
+                desktop_menu::pending_desktop_action,
+                desktop_menu::acknowledge_desktop_action,
                 get_window_activity,
                 release_idle_main_window,
                 run_windows::open_tool_run_window,
@@ -1152,22 +1334,28 @@ pub fn run() {
                 regular(invoke)
             }
         })
+        .on_menu_event(desktop_menu::handle_menu)
         .on_window_event(|window, event| {
+            if matches!(event, WindowEvent::Destroyed)
+                && !desktop_menu::quitting(window.app_handle())
+            {
+                let _ = sync_dock_visibility(window.app_handle(), Some(window.label()));
+            }
             if matches!(event, WindowEvent::Focused(_) | WindowEvent::Resized(_)) {
                 let visible =
                     window.is_visible().unwrap_or(false) && !window.is_minimized().unwrap_or(false);
                 let _ = window.emit_to(window.label(), "lumi-window-activity", visible);
             }
             if let WindowEvent::CloseRequested { api, .. } = event {
+                if desktop_menu::quitting(window.app_handle()) {
+                    return;
+                }
                 if window.label() == "main" {
                     api.prevent_close();
-                    if window.hide().is_ok() {
-                        let supervisor = window.app_handle().state::<Arc<CoreSupervisor>>();
-                        *supervisor
-                            .main_hidden_at
-                            .lock()
-                            .expect("main hidden mutex poisoned") = Some(Instant::now());
-                        let _ = window.emit_to(window.label(), "lumi-window-activity", false);
+                    if let Err(error) = hide_main_window(window) {
+                        eprintln!("[lumiplug] hide main window failed: {error}");
+                        let _ =
+                            window.emit_to("main", "lumi-native-error", "隐藏窗口失败，请重试。");
                     }
                 } else if run_windows::is_run_window(window.label()) {
                     api.prevent_close();
@@ -1183,7 +1371,7 @@ pub fn run() {
         .expect("error while building Lumi");
     app.run(|app_handle, event| {
         #[cfg(target_os = "macos")]
-        if matches!(event, tauri::RunEvent::Reopen { .. }) {
+        if matches!(event, tauri::RunEvent::Reopen { .. }) && !desktop_menu::quitting(app_handle) {
             if let Err(error) = show_main_window(app_handle) {
                 eprintln!("[lumiplug] main window unavailable: {error}");
             }
@@ -1192,7 +1380,9 @@ pub fn run() {
             code: None, api, ..
         } = &event
         {
-            api.prevent_exit();
+            if !desktop_menu::quitting(app_handle) {
+                api.prevent_exit();
+            }
         }
         if matches!(event, tauri::RunEvent::Exit) {
             if let Some(supervisor) = app_handle.try_state::<Arc<CoreSupervisor>>() {

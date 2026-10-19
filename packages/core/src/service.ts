@@ -42,6 +42,8 @@ import type { UsageRoot } from './usage/discovery'
 interface ServiceOptions extends CoreRuntimeConfig {
   usageRoots?: UsageRoot[]
   emitReady?: (handshake: SidecarReadyHandshake) => void
+  /** Supplied only by the owned process entry point, sharing its signal cleanup path. */
+  onStopRequested?: () => void
 }
 
 interface ErrorPayload {
@@ -288,6 +290,7 @@ export class CoreService {
     // The MCP token still grants every enabled tool through the public MCP interface.
     if (
       route === '/app/usage' ||
+      route === '/app/core/stop' ||
       route === '/app/tools' ||
       route === '/app/capabilities' ||
       route.startsWith('/app/capabilities/')
@@ -305,6 +308,20 @@ export class CoreService {
         )
         return
       }
+    }
+    if (route === '/app/core/stop' && method === 'POST') {
+      const stop = this.options.onStopRequested
+      if (!stop) {
+        writeJson(
+          responseObject,
+          409,
+          failure('core_control_unavailable', 'Core stop is unavailable'),
+        )
+        return
+      }
+      responseObject.once('finish', stop)
+      writeJson(responseObject, 200, response({ stopping: true }))
+      return
     }
     if (route === '/app/mcp/token' && method === 'POST') {
       if (

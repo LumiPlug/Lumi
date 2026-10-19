@@ -11,6 +11,7 @@ const statusLabels: Record<UiCoreStatus['state'], string> = {
   ready: '已连接',
   starting: '启动中',
   restarting: '重启中',
+  stopping: '停止中',
   error: '连接异常',
   stopped: '已停止',
   disconnected: '未连接',
@@ -45,7 +46,9 @@ export default function SettingsPage({
       <McpPortSetting coreStatus={coreStatus} />
       <HomepagePromptSetting />
       <section className="settings-row" aria-labelledby="core-title">
-        <h2 id="core-title">Core</h2>
+        <h2 id="core-title" tabIndex={-1}>
+          Core
+        </h2>
         <dl className="settings-core-values">
           <div>
             <dt className="sr-only">连接状态</dt>

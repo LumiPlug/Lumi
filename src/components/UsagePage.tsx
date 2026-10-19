@@ -90,6 +90,8 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
   const [report, setReport] = useState<UsageReport | null>(null),
     [base, setBase] = useState<UsageReport | null>(null),
     [previous, setPrevious] = useState<UsageReport | null>(null)
+  const qoderIdentityWarningShown = useRef(false)
+  const qoderIdentityWarning = 'Qoder 部分跨格式请求身份无法关联，已保留历史，统计可能包含重复。'
   const [loading, setLoading] = useState(true),
     [busy, setBusy] = useState(false),
     [revision, setRevision] = useState(0)
@@ -191,6 +193,12 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
         setBase(value.all)
         setPrevious(value.prior)
         setLoading(false)
+        const unverified = value.all.sources.some(
+          (source) =>
+            source.software === 'qoder' && source.problems?.includes('identity_unverified'),
+        )
+        if (unverified && !qoderIdentityWarningShown.current) toast(qoderIdentityWarning)
+        qoderIdentityWarningShown.current = unverified
       },
       fail: () => {
         setLoading(false)
@@ -246,7 +254,12 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
         setLoading(false)
       }
       setRevision((v) => v + 1)
-      toast('已重新扫描用量并更新会话名称。', 'success')
+      const unverified = value.sources.some(
+        (source) => source.software === 'qoder' && source.problems?.includes('identity_unverified'),
+      )
+      qoderIdentityWarningShown.current = unverified
+      if (unverified) toast(qoderIdentityWarning)
+      else toast('已重新扫描用量并更新会话名称。', 'success')
     } catch {
       toast('用量扫描失败，请重试。', 'error')
     } finally {

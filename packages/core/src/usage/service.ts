@@ -12,6 +12,7 @@ import type {
   UsageSoftware,
   UsageSession,
   UsageSessionPage,
+  UsageScanStatus,
 } from '@lumiplug/shared'
 import { codexSessionMeta, cursorRecord, hash, parseLine, type ParserState } from './adapters'
 import { discover, safeStat, standardRoots, type UsageRoot } from './discovery'
@@ -61,6 +62,7 @@ export class UsageService {
   private readonly roots: UsageRoot[]
   private readonly codeburn: CodeburnCollector | null
   private sessionNames = new Map<string, string>()
+  private scanState: UsageScanStatus
   constructor(
     private readonly db: DatabaseSync,
     roots?: UsageRoot[],
@@ -72,6 +74,33 @@ export class UsageService {
       (roots === undefined
         ? new UsageCollector(this.state<Cache>('codeburn-cache') ?? undefined)
         : null)
+    const previous = this.state<UsageScanStatus>('scan-status')
+    this.scanState = {
+      id: previous?.id ?? 0,
+      state: 'idle',
+      startedAt: null,
+      finishedAt: previous?.finishedAt ?? null,
+      updatedAt: this.state<string>('updatedAt'),
+      revision: previous?.revision ?? 0,
+      providersDone: 0,
+      providersTotal: 0,
+      currentSoftware: null,
+      sources: this.state<UsageSource[]>('sources') ?? [],
+    }
+    if (this.paused) this.scanState.state = 'paused'
+    else if (previous && previous.state !== 'scanning')
+      this.scanState = { ...previous, updatedAt: this.state<string>('updatedAt') }
+  }
+  status(): UsageScanStatus {
+    return structuredClone(this.scanState)
+  }
+  private progress(source: UsageSource, committed = false) {
+    const sources = this.scanState.sources.filter((item) => item.software !== source.software)
+    this.scanState.sources = [...sources, structuredClone(source)]
+    if (committed) {
+      this.scanState.providersDone++
+      if (source.records > 0) this.scanState.revision++
+    }
   }
   get paused(): boolean {
     return this.state<boolean>('paused') ?? false
@@ -101,16 +130,53 @@ export class UsageService {
   }
   async setPaused(paused: boolean) {
     this.saveState('paused', paused)
-    if (paused) await this.running
-    else await this.scan()
+    if (paused) {
+      await this.running
+      this.scanState.state = 'paused'
+    } else await this.scan()
   }
   scan(): Promise<void> {
     if (this.running) return this.running
     if (this.paused || this.stopped) return Promise.resolve()
-    this.running = this.collect().finally(() => {
+    this.scanState = {
+      id: this.scanState.id + 1,
+      state: 'scanning',
+      startedAt: new Date().toISOString(),
+      finishedAt: null,
+      updatedAt: this.state<string>('updatedAt'),
+      revision: this.scanState.revision,
+      providersDone: 0,
+      providersTotal: 0,
+      currentSoftware: null,
+      sources: [],
+    }
+    this.running = this.runScan().finally(() => {
       this.running = null
     })
     return this.running
+  }
+  private async runScan() {
+    try {
+      await this.collect()
+      this.scanState.state =
+        this.paused || this.stopped
+          ? 'paused'
+          : this.scanState.sources.some(
+                (source) =>
+                  source.problems?.length ||
+                  ['partial', 'denied', 'incompatible', 'missing_usage'].includes(source.state),
+              )
+            ? 'partial'
+            : 'complete'
+      this.scanState.updatedAt = this.state<string>('updatedAt')
+    } catch (error) {
+      this.scanState.state = 'failed'
+      throw error
+    } finally {
+      this.scanState.finishedAt = new Date().toISOString()
+      this.scanState.currentSoftware = null
+      this.saveState('scan-status', this.scanState)
+    }
   }
   private saveRecord(record: UsageRecord) {
     const previous = this.db.prepare('SELECT data FROM usage_records WHERE id=?').get(record.id) as
@@ -150,9 +216,16 @@ export class UsageService {
     if (!this.codeburn) return this.collectLegacy()
     this.codeburn.begin()
     const sources: UsageSource[] = []
-    for (const provider of await this.codeburn.providers()) {
+    const providers = await this.codeburn.providers()
+    this.scanState.providersTotal = providers.length
+    for (const provider of providers) {
       if (this.paused || this.stopped) return
-      const result = await this.codeburn.collect(provider, () => this.paused || this.stopped)
+      this.scanState.currentSoftware = provider.name as UsageSoftware
+      const result = await this.codeburn.collect(
+        provider,
+        () => this.paused || this.stopped,
+        (source) => this.progress(source),
+      )
       if (this.paused || this.stopped) return
       // Only a complete source read may replace legacy IDs or remove reconciled rollups.
       // A failed refresh preserves its last good snapshot, never a mixed accounting generation.
@@ -200,6 +273,7 @@ export class UsageService {
           result.status.state = 'partial'
       }
       sources.push(result.status)
+      this.progress(result.status, true)
       // Publish source discovery progressively so one slow tool doesn't hide all the others.
       const known = this.state<UsageSource[]>('sources') ?? []
       this.saveState('sources', [
@@ -227,8 +301,10 @@ export class UsageService {
   }
   private async collectLegacy() {
     const sources: UsageSource[] = []
+    this.scanState.providersTotal = softwareNames.length
     for (const software of softwareNames) {
       if (this.paused || this.stopped) break
+      this.scanState.currentSoftware = software
       const status: UsageSource = {
         software,
         state: 'absent',
@@ -337,6 +413,7 @@ export class UsageService {
                       ? 'partial'
                       : 'ready'
       sources.push(status)
+      this.progress(status, true)
     }
     const names = await readCodexSessionNames(this.roots, () => this.paused || this.stopped)
     if (!this.paused && !this.stopped) {
@@ -543,13 +620,35 @@ export class UsageService {
       }
     }
     const sessions = new Map<string, Set<string>>()
+    // Only an extra explicit event UUID and an identical measurement prove a cross-root copy.
+    const replays = new Map<string, UsageRecord[]>()
+    for (const record of records) {
+      if (!record.qoderReplay) continue
+      const group = replays.get(record.qoderReplay) ?? []
+      group.push(record)
+      replays.set(record.qoderReplay, group)
+    }
+    for (const group of replays.values()) {
+      if (group.some((record) => record.qoderOrigin !== 'cn'))
+        for (const record of group) if (record.qoderOrigin === 'cn') suppressed.add(record.id)
+    }
+    const origins = new Map<string, Set<string>>()
     for (const record of records) {
       if (suppressed.has(record.id)) continue
       const formats = sessions.get(record.session) ?? new Set<string>()
       formats.add(record.qoderFormat === 'jsonl' ? 'jsonl' : 'sqlite')
       sessions.set(record.session, formats)
+      const identity = record.qoderIdentity ?? record.qoderRequest
+      if (identity) {
+        const roots = origins.get(identity) ?? new Set<string>()
+        roots.add(record.qoderOrigin ?? 'international')
+        origins.set(identity, roots)
+      }
     }
-    return { suppressed, unverified: [...sessions.values()].some((formats) => formats.size > 1) }
+    return {
+      suppressed,
+      unverified: [...sessions.values(), ...origins.values()].some((values) => values.size > 1),
+    }
   }
   private *filteredRecords(
     payload: Record<string, unknown>,
@@ -714,6 +813,7 @@ export class UsageService {
       sources: this.state<UsageSource[]>('sources') ?? [],
       paused: this.paused,
       updatedAt: this.state<string>('updatedAt'),
+      scan: this.status(),
       truncated: matched > offset + records.length,
     }
   }

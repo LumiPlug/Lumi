@@ -67,6 +67,12 @@ export interface UsageRecord {
   qoderFormat?: 'jsonl' | 'sqlite'
   /** Hashed explicit session/request pair; absent for rowid and old unverified records. */
   qoderRequest?: string
+  /** Absent on older records: those belong to the international root. */
+  qoderOrigin?: 'international' | 'cn'
+  /** Unscoped explicit request identity, used only to surface root collisions. */
+  qoderIdentity?: string
+  /** Extra event UUID plus identical normalized measurement proves a replay. */
+  qoderReplay?: string
   requestCount?: number
   counterBasis?: 'initial' | 'delta' | 'reset' | 'response' | 'last'
   software: UsageSoftware
@@ -91,6 +97,31 @@ export interface UsageSource {
   issues: number
   experimental: boolean
   problems?: Array<'denied' | 'incompatible' | 'limit' | 'missing_usage' | 'identity_unverified'>
+  filesProgress?: UsageFileProgress
+}
+/** Counts cover the discovered native files of this round, never all historical data. */
+export interface UsageFileProgress {
+  stage: 'discovering' | 'reading' | 'done'
+  discovered: number
+  checked: number
+  read: number
+  cached: number
+  deferred: number
+  limited: number
+  failed: number
+  discoveryLimited: boolean
+}
+export interface UsageScanStatus {
+  id: number
+  state: 'idle' | 'scanning' | 'complete' | 'partial' | 'failed' | 'paused'
+  startedAt: string | null
+  finishedAt: string | null
+  updatedAt: string | null
+  revision: number
+  providersDone: number
+  providersTotal: number
+  currentSoftware: UsageSoftware | null
+  sources: UsageSource[]
 }
 export interface UsageSnapshot {
   records: UsageRecord[]
@@ -98,6 +129,7 @@ export interface UsageSnapshot {
   paused: boolean
   updatedAt: string | null
   truncated: boolean
+  scan?: UsageScanStatus
 }
 export interface UsageFilter {
   start: string

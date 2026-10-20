@@ -2,6 +2,13 @@
 
 # Changelog
 
+## 0.1.6 (preview) — 2026-10-20
+
+- Collect Qoder CN JSONL from `~/.qoder-cn/projects` alongside the international source, with isolated request identities and evidence-based copy reconciliation.
+- Show actual scan stages and file coverage, preserve bounded reading budgets, and refresh usage after committed results and scan completion.
+- Preserve English/Simplified Chinese switching, shared UI components, existing history and explicit partial-coverage feedback.
+- Company-machine live collection and native WebView acceptance remain pending; automated fixtures do not establish client-version coverage.
+
 ## 0.1.5 (preview) — 2026-10-20
 
 - Add instant English and Simplified Chinese switching in Settings, with persisted preferences and synchronized tool windows.

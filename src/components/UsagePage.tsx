@@ -8,6 +8,7 @@ import type {
   UsageReport,
   UsageSoftware,
   UsageTotals,
+  UsageScanStatus,
 } from '@lumiplug/shared'
 import {
   Activity,
@@ -58,6 +59,13 @@ import {
   tokenShare,
 } from '../lib/usage-dashboard'
 import { refreshRunState } from '../lib/run-task-refresh'
+import {
+  observeScan,
+  scanDescription,
+  scanFeedback,
+  scanLabels,
+  type ScanWatchState,
+} from '../lib/usage-scan'
 import { usageLogos } from '../assets/clients/logos'
 import UsageSessionDetail from './UsageSessionDetail'
 import './usage.css'
@@ -96,7 +104,7 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
     [base, setBase] = useState<UsageReport | null>(null),
     [previous, setPrevious] = useState<UsageReport | null>(null)
   const qoderIdentityWarningShown = useRef(false)
-  const qoderIdentityWarning = t('Qoder 部分跨格式请求身份无法关联，已保留历史，统计可能包含重复。')
+  const qoderIdentityWarning = t('Qoder 部分来源请求身份无法确认，已保留历史，统计可能包含重复。')
   const [loading, setLoading] = useState(true),
     [busy, setBusy] = useState(false),
     [revision, setRevision] = useState(0)
@@ -125,6 +133,26 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
   const calendarAnchor = useRef<HTMLDivElement>(null)
   const [calendarOpen, setCalendarOpen] = useState(false)
   const closeCalendar = useCallback(() => setCalendarOpen(false), [])
+  const [scanStatus, setScanStatus] = useState<UsageScanStatus | null>(null)
+  const [scanStatusFailed, setScanStatusFailed] = useState(false)
+  const scanWatch = useRef<ScanWatchState | null>(null)
+  const scanning = useRef(false)
+  useEffect(() => {
+    if (!active || !coreReady) return
+    return refreshRunState({
+      wakeTarget: window,
+      interval: (status: UsageScanStatus) => (status.state === 'scanning' ? 2000 : 5000),
+      read: () => usageRequest<UsageScanStatus>('status'),
+      update: (status) => {
+        setScanStatus(status)
+        setScanStatusFailed(false)
+        const observed = observeScan(scanWatch.current, status)
+        scanWatch.current = observed.next
+        if (observed.refresh && !scanning.current) setRevision((value) => value + 1)
+      },
+      fail: () => setScanStatusFailed(true),
+    })
+  }, [active, coreReady])
   const calendarToday =
     software === 'vercel-gateway' ? new Date().toISOString().slice(0, 10) : today
   const dateLabel = (date: Date) =>
@@ -245,7 +273,6 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
       cancelled = true
     }
   }, [active, coreReady, sessionRequest, detailPayload, revision, page, filterKey, toast])
-  const scanning = useRef(false)
   const current = useRef({ payload })
   current.current = { payload }
   async function scan() {
@@ -254,6 +281,10 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
     setBusy(true)
     try {
       const value = await usageRequest<UsageReport>('scan', payload)
+      if (value.scan) {
+        setScanStatus(value.scan)
+        scanWatch.current = observeScan(scanWatch.current, value.scan).next
+      }
       if (current.current.payload === payload) {
         setReport(value)
         setLoading(false)
@@ -263,8 +294,8 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
         (source) => source.software === 'qoder' && source.problems?.includes('identity_unverified'),
       )
       qoderIdentityWarningShown.current = unverified
-      if (unverified) toast(qoderIdentityWarning)
-      else toast(t('已重新扫描用量并更新会话名称。'), 'success')
+      const feedback = scanFeedback(value)
+      toast(feedback.message, feedback.tone)
     } catch {
       toast(t('用量扫描失败，请重试。'), 'error')
     } finally {
@@ -413,7 +444,7 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
           }
           filter={selectedSession.filter}
           revision={revision}
-          refreshing={busy}
+          refreshing={busy || scanStatus?.state === 'scanning'}
           coreReady={coreReady}
           onRefresh={() => void scan()}
           onBack={() => {
@@ -495,7 +526,7 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
                 label={t('刷新用量')}
                 title={t('重新扫描本地用量和会话名称')}
                 disabled={!coreReady || !payload}
-                loading={busy}
+                loading={busy || scanStatus?.state === 'scanning'}
                 loadingAnimation="spin"
                 onClick={() => void scan()}
               >
@@ -529,6 +560,34 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
               />
             )}
           </DashboardToolbar>
+          <div className="usage-toolbar" aria-label={t('扫描状态')}>
+            <Badge
+              role="status"
+              aria-live="polite"
+              tone={
+                !coreReady || scanStatusFailed || scanStatus?.state === 'failed'
+                  ? 'danger'
+                  : scanStatus?.state === 'scanning' || scanStatus?.state === 'partial'
+                    ? 'accent'
+                    : 'neutral'
+              }
+            >
+              {!coreReady
+                ? t('等待 Core 连接')
+                : scanStatusFailed
+                  ? t('扫描状态暂不可用')
+                  : scanStatus
+                    ? scanLabels[scanStatus.state]
+                    : t('正在读取扫描状态')}
+            </Badge>
+            {scanStatus && <DataText muted>{scanDescription(scanStatus, software)}</DataText>}
+            <DataText muted>
+              {t('最近更新：')}
+              {scanStatus?.updatedAt
+                ? new Date(scanStatus.updatedAt).toLocaleString(getLocale())
+                : t('尚无已完成的扫描')}
+            </DataText>
+          </div>
           <div className="usage-metrics" aria-busy={loading || undefined}>
             <MetricCard
               label={t('总 Token 吞吐')}

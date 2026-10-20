@@ -127,6 +127,7 @@ export function parseNativeLine(
   software: NativeUsageSoftware,
   value: unknown,
   filename: string,
+  origin: 'international' | 'cn' = 'international',
 ): ParsedNativeLine {
   const e = object(value),
     message = object(e.message),
@@ -141,14 +142,23 @@ export function parseNativeLine(
     if (!session || !request || !time) return { recognized: true }
     const usage = object(message.usage)
     const record = nativeRecord(software, session, request, time, message.model ?? e.model, {})!
+    const fields = tokens(software, usage, true)
+    const event = identifier(message.id) && identifier(e.uuid) && e.uuid !== message.id
+    const replay = event
+      ? hash(JSON.stringify([record.id, e.uuid, time, record.model, fields]))
+      : undefined
     return {
       recognized: true,
       record: {
         ...record,
-        id: hash(`native:qoder:jsonl:${record.id}`),
+        id: hash(`native:qoder:jsonl:${origin === 'cn' ? 'cn:' : ''}${record.id}`),
+        ...(origin === 'cn' ? { session: hash(`native:qoder:cn:${session}`).slice(0, 24) } : {}),
         qoderFormat: 'jsonl',
-        qoderRequest: record.id,
-        ...tokens(software, usage, true),
+        qoderOrigin: origin,
+        qoderIdentity: record.id,
+        qoderRequest: origin === 'cn' ? hash(`native:qoder:cn:${record.id}`) : record.id,
+        ...(replay ? { qoderReplay: replay } : {}),
+        ...fields,
       },
     }
   }

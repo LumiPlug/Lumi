@@ -237,8 +237,7 @@ try {
       () => execute('return !!document.querySelector(".settings-core-status[data-state=ready]")'),
       'Settings did not show connected Core',
     )
-    const select = await element('select[aria-label="语言 / Language"]')
-    await command('POST', `/element/${select}/value`, { text: 'English' })
+    await click('select[aria-label="语言 / Language"] option[value="en"]')
     await waitFor(
       () =>
         execute(

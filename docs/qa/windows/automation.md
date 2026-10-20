@@ -14,7 +14,7 @@
 
 - 工作流：`.github/workflows/windows-acceptance.yml`，PR 或手动运行，`windows-2022` x64，`contents: read`；无发布、合并或 secrets 权限。
 - 依赖：仓库锁定 pnpm 11.19.0、Node 26.10.0、Rust stable、`tauri-driver` 2.1.0、微软 Evergreen WebView2 及其匹配 Edge Driver。runner 由 GitHub 提供桌面会话；不适用于 Windows service/session 0。
-- 顺序：`pnpm check`、Rust 单元测试、release 应用及独立 sidecars 构建、WebDriver 验证。
+- 顺序：先构建 Rust 检查所需 standalone sidecars，再 `pnpm check`、Rust 单元测试、release 应用构建、WebDriver 验证。
 - 证据：Actions artifact `windows-acceptance-<attempt>`，保留 14 天；`results.json` 逐项记录通过/失败，成功工作台截图或失败截图。未执行到的 A 项不算通过。下载必要证据保存到人工记录旁，避免过期。
 - 不上传 SQLite、令牌、用户配置、driver 原始日志或完整页面源码。
 
@@ -24,6 +24,7 @@
 
 ```powershell
 pnpm install --frozen-lockfile
+pnpm build:sidecars
 pnpm check
 cargo test --manifest-path src-tauri/Cargo.toml
 pnpm tauri:build --no-bundle --ci --config tests/windows/tauri.qa.json

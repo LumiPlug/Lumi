@@ -10,6 +10,14 @@ Lumi is an open-source desktop app that brings your private tools, Skills, and p
 
 **Status:** In active development. See the [product specification](docs/PRODUCT_SPEC.md) and [development plan](docs/DEVELOPMENT_PLAN.md) for scope and progress. Project documentation is currently primarily in Chinese.
 
+## Watch the demo
+
+[![Lumi demo: shared Skills, project knowledge and private tools](https://i.ytimg.com/vi/sxSfrC342TQ/hqdefault.jpg)](https://www.youtube.com/watch?v=sxSfrC342TQ)
+
+[Lumi: Shared Skills, Project Knowledge & Private Tools for AI IDEs](https://www.youtube.com/watch?v=sxSfrC342TQ) · 2:16 · English narration and subtitles.
+
+Native recording of v0.1.5-preview.21, showing project knowledge, managed Skills shared through Lumi MCP with compatible AI IDEs, and private tools with hidden configuration. Dynamic results are demo data.
+
 ## What Lumi brings to your workflow
 
 ### Private tool calls, with control over what AI can see

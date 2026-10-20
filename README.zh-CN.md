@@ -10,6 +10,14 @@ Lumi 是运行在你电脑上的开源桌面应用，集中管理私有工具、
 
 **项目状态：** 正在开发中。功能范围与实现进度见[产品规格](docs/PRODUCT_SPEC.md)和[开发计划](docs/DEVELOPMENT_PLAN.md)。项目文档目前以中文为主。
 
+## 视频演示
+
+[![Lumi 实机演示：共享 Skills、项目知识与私有工具](https://i.ytimg.com/vi/sxSfrC342TQ/hqdefault.jpg)](https://www.youtube.com/watch?v=sxSfrC342TQ)
+
+[Lumi：面向 AI IDE 的共享 Skills、项目知识与私有工具](https://www.youtube.com/watch?v=sxSfrC342TQ) · 2 分 16 秒 · 英文旁白和字幕。
+
+基于 v0.1.5-preview.21 的原生实录，展示项目知识、通过 Lumi MCP 向兼容 AI IDE 共享托管 Skills，以及带隐藏配置的私有工具。动态结果均为演示数据。
+
 ## Lumi 为你的工作带来什么
 
 ### 安全可控的私有能力调用

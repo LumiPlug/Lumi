@@ -37,6 +37,8 @@ jobs:
           workspaces: src-tauri -> target
           key: windows-acceptance
       - run: pnpm install --frozen-lockfile
+      - name: Build sidecars required by Rust checks
+        run: pnpm build:sidecars
       - name: Required checks
         run: pnpm check
       - name: Rust unit tests

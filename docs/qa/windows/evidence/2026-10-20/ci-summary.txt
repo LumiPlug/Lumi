@@ -1,0 +1,12 @@
+2026-10-20T05:15:24.8518234Z  Test Files  53 passed (53)
+2026-10-20T05:15:24.8520145Z       Tests  406 passed | 12 skipped (418)
+2026-10-20T05:19:37.1112244Z test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+2026-10-20T05:19:37.1226356Z test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+2026-10-20T05:19:37.4149272Z test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+2026-10-20T05:25:22.2652733Z WebView2=131.0.2903.86; Edge Driver=Microsoft Edge WebDriver 131.0.2903.86 (cf5bf303997cad93d7a0bede234d3c3dc01cc63d)
+2026-10-20T05:25:30.6786275Z PASS WIN-A01 release startup and real IPC
+2026-10-20T05:25:31.6305614Z PASS WIN-A02 pages and native language persistence
+2026-10-20T05:25:33.0441324Z PASS WIN-A03 WebView2 SDK storage and rejected writes
+2026-10-20T05:25:33.8406457Z PASS WIN-A04 Qoder international/CN paths, dedup and partial progress
+2026-10-20T05:25:35.3785178Z PASS WIN-A05 pause and resume ingest exactly once
+2026-10-20T05:25:41.1150246Z PASS WIN-A06 process restart preserves WebView2 SDK data and locale

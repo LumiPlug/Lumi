@@ -50,4 +50,22 @@ node tests/windows/acceptance.mjs
 
 ## 执行记录
 
-初稿状态：已编写，Windows 尚待实际运行。本段将在真实 CI 终态后更新链接与结果；它不能作为通过证据。
+2026-10-20 已实际运行通过，代码提交 `009161d957f1e6a13d89c1f019fce75978c17cdc`，基于 `main` 的 `640137e`；后续交付提交只完善人工说明和保存证据。
+
+- [Windows 原生 CI（success）](https://github.com/LumiPlug/Lumi/actions/runs/39373595132)，[具体 job](https://github.com/LumiPlug/Lumi/actions/runs/39373595132/job/118466869605)。release 应用、standalone sidecars、Rust 单元测试 10 项及 A01–A06 全通过。
+- Windows 原有 Vitest 集合实际为 **406 通过、12 平台跳过、0 失败（418 总数）**。12 项是原来 `tools.test.ts` 的 8 项 POSIX shell/进程信号用例，以及 `terminal-environment.test.ts` 的 4 项 POSIX/zsh 登录环境用例；本任务没有增加或扩大 skip，也没有把跳过算通过。Windows Terminal 正常/失败输出、取消及运行窗等仍须按 M03/M06 人工验证。
+- [三平台质量 CI（success）](https://github.com/LumiPlug/Lumi/actions/runs/39373595140)：Windows/macOS/Linux 均通过；本地 macOS `pnpm check` 为 53 文件、418 项通过，Rust fmt/check/clippy 通过。
+- Runtime 与匹配 Edge Driver 均为 `131.0.2903.86`，驱动微软签名验证成功；runner 为 Windows Server 2022 x64。此记录不外推到其他 WebView2/Windows 版本。
+- [逐项原始 JSON](evidence/2026-10-20/results.json)、[脱敏日志摘要](evidence/2026-10-20/ci-summary.txt)、[重启后的工作台截图](evidence/2026-10-20/workbench.png) 已保存在仓库；截图可见真实连接与重新读取的中文待办。内置工作台正文并不跟随宿主自动翻译，截图中文不是语言保存失败。
+- [原始 artifact](https://github.com/LumiPlug/Lumi/actions/runs/39373595132/artifacts/12242776636) 包含同一 JSON/截图，2026-11-03 到期；ZIP SHA256：`11267b9929b94302962940f4a45e939d9c021f40c34232407f05f9de28098410`。
+
+| 用例 | 实际断言                                                                                                     | 结果 |
+| ---- | ------------------------------------------------------------------------------------------------------------ | ---- |
+| A01  | release 启动，真实 Rust IPC/standalone Core 0.1.6 就绪                                                       | 通过 |
+| A02  | 工具/Skills/知识库/用量/设置可导航，设置中真实 Core 状态，选择并保存英文                                     | 通过 |
+| A03  | 真实 WebView2 工作台添加待办，SDK KV 读写，刷新保留；非法键/超限拒绝且旧值不变；原生 localStorage 被沙箱拒绝 | 通过 |
+| A04  | 中文空格路径读取国际/CN，4 条源记录核对为 3 条/375 Token，重复扫描不增，损坏行导致部分覆盖及 UI 提示         | 通过 |
+| A05  | 暂停后新增记录不入账，点击真实刷新恢复为 4 条/500 Token，再扫不重复                                          | 通过 |
+| A06  | 结束隔离进程后重新启动，英文与 SDK 数据/待办/账本保留；SDK 删除生效                                          | 通过 |
+
+人工 M01–M10 均仍未执行；正式安装包、托盘、正常退出、多窗口、真实客户端、升级卸载不能由上表推定通过。本任务没有产品修复、合并或发布。

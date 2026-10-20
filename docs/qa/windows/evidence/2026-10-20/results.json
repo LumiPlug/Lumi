@@ -1,0 +1,32 @@
+{
+  "platform": "win32",
+  "architecture": "x64",
+  "startedAt": "2026-10-20T05:25:22.630Z",
+  "checks": [
+    {
+      "id": "WIN-A01 release startup and real IPC",
+      "status": "passed"
+    },
+    {
+      "id": "WIN-A02 pages and native language persistence",
+      "status": "passed"
+    },
+    {
+      "id": "WIN-A03 WebView2 SDK storage and rejected writes",
+      "status": "passed"
+    },
+    {
+      "id": "WIN-A04 Qoder international/CN paths, dedup and partial progress",
+      "status": "passed"
+    },
+    {
+      "id": "WIN-A05 pause and resume ingest exactly once",
+      "status": "passed"
+    },
+    {
+      "id": "WIN-A06 process restart preserves WebView2 SDK data and locale",
+      "status": "passed"
+    }
+  ],
+  "finishedAt": "2026-10-20T05:25:41.175Z"
+}

@@ -111,6 +111,7 @@ export class CodeburnCollector {
   async collect(
     provider: Provider,
     stopped: () => boolean = () => false,
+    onProgress?: (source: UsageSource) => void,
   ): Promise<CollectedProvider> {
     const status: UsageSource = {
       software: provider.name as UsageSoftware,
@@ -143,6 +144,7 @@ export class CodeburnCollector {
         ).some(Boolean)
       status.files = sources.length
       status.state = exists ? 'empty' : 'absent'
+      onProgress?.({ ...status })
       const regular: Source[] = []
       function save(call: Call, session: string, title?: string) {
         const row = codeburnRecord(call, session, title)

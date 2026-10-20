@@ -4,6 +4,7 @@ import {
   nativeUsageSoftwareIds,
   usageSoftwareNames,
   type NativeUsageSoftware,
+  type UsageSource,
 } from '@lumiplug/shared'
 import type { Cache, Provider } from '../../vendor/codeburn/reader.cjs'
 import { CodeburnCollector } from './codeburn'
@@ -26,9 +27,13 @@ export class UsageCollector extends CodeburnCollector {
       ...(await super.providers()),
     ]
   }
-  override collect(provider: Provider, stopped: () => boolean = () => false) {
+  override collect(
+    provider: Provider,
+    stopped: () => boolean = () => false,
+    onProgress?: (source: UsageSource) => void,
+  ) {
     return (nativeUsageSoftwareIds as readonly string[]).includes(provider.name)
-      ? this.native.collect(provider.name as NativeUsageSoftware, stopped)
-      : super.collect(provider, stopped)
+      ? this.native.collect(provider.name as NativeUsageSoftware, stopped, onProgress)
+      : super.collect(provider, stopped, onProgress)
   }
 }

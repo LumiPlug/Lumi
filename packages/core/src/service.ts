@@ -363,11 +363,17 @@ export class CoreService {
         const body = await readBody(request)
         if (
           !isRecord(body) ||
-          !['query', 'sessions', 'export', 'scan', 'pause'].includes(String(body.action)) ||
+          !['query', 'sessions', 'export', 'scan', 'pause', 'status'].includes(
+            String(body.action),
+          ) ||
           (body.payload != null && !isRecord(body.payload))
         )
           throw new Error('usage_invalid_request')
         const payload = isRecord(body.payload) ? body.payload : {}
+        if (body.action === 'status') {
+          writeJson(responseObject, 200, response(this.usage.status()))
+          return
+        }
         this.usage.validateQuery(payload)
         if (body.action === 'pause') {
           if (typeof payload.paused !== 'boolean') throw new Error('usage_invalid_pause')

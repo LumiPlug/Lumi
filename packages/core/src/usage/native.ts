@@ -23,6 +23,7 @@ export interface NativeUsageRoot {
   software: NativeUsageSoftware
   directory: string
   sqlite?: boolean
+  origin?: 'international' | 'cn'
 }
 export function nativeUsageRoots(home: string, platform = process.platform): NativeUsageRoot[] {
   const support =
@@ -37,7 +38,8 @@ export function nativeUsageRoots(home: string, platform = process.platform): Nat
       directory: path.join(support, 'Qoder/SharedClientCache/cache/db/local.db'),
       sqlite: true,
     },
-    { software: 'qoder', directory: path.join(home, '.qoder/projects') },
+    { software: 'qoder', directory: path.join(home, '.qoder/projects'), origin: 'international' },
+    { software: 'qoder', directory: path.join(home, '.qoder-cn/projects'), origin: 'cn' },
     { software: 'qoderwork', directory: path.join(home, '.qoderwork/projects') },
     { software: 'workbuddy', directory: path.join(home, '.workbuddy/projects') },
     { software: 'qwenwork', directory: path.join(home, '.qwenworkcn/logs/sessions') },
@@ -59,6 +61,26 @@ const MAX_SCAN_BYTES = 128 * 1024 * 1024
 const MAX_RECORDS = 100000
 const MAX_LINE = 4 * 1024 * 1024
 const CACHE_SETTLE_MS = 2000
+
+async function fileState(filename: string, sqlite = false) {
+  const stat = await safeStat(filename)
+  let stamp = `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`
+  let latestChange = Math.max(stat.mtimeMs, stat.ctimeMs)
+  if (sqlite) {
+    for (const suffix of ['-shm', '-wal']) {
+      try {
+        const sidecar = await safeStat(filename + suffix)
+        if (suffix === '-wal') {
+          stamp += `:${sidecar.ino}:${sidecar.size}:${sidecar.mtimeMs}:${sidecar.ctimeMs}`
+          latestChange = Math.max(latestChange, sidecar.mtimeMs, sidecar.ctimeMs)
+        }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
+    }
+  }
+  return { stat, stamp, latestChange }
+}
 
 /** Read-only, bounded sources. The cache contains counters/explicit titles, never raw JSON. */
 export class NativeUsageCollector {
@@ -83,6 +105,7 @@ export class NativeUsageCollector {
   async collect(
     software: NativeUsageSoftware,
     stopped: () => boolean = () => false,
+    onProgress?: (source: UsageSource) => void,
   ): Promise<CollectedProvider> {
     const status: UsageSource = {
       software,
@@ -91,6 +114,17 @@ export class NativeUsageCollector {
       records: 0,
       issues: 0,
       experimental: false,
+      filesProgress: {
+        stage: 'discovering',
+        discovered: 0,
+        checked: 0,
+        read: 0,
+        cached: 0,
+        deferred: 0,
+        limited: 0,
+        failed: 0,
+        discoveryLimited: false,
+      },
     }
     const records = new Map<string, UsageRecord>(),
       titles = new Map<string, string>()
@@ -100,6 +134,16 @@ export class NativeUsageCollector {
       bytes = 0,
       missing = false
     const active = new Set<string>()
+    const progress = status.filesProgress!
+    const publish = () => {
+      status.records = records.size
+      onProgress?.({ ...status, filesProgress: { ...progress }, problems: [...problems] })
+    }
+    const candidates: Array<{
+      root: NativeUsageRoot
+      filename: string
+      latestChange: number
+    }> = []
     const problem = (kind: NonNullable<UsageSource['problems']>[number]) => {
       status.issues++
       problems.add(kind)
@@ -112,6 +156,7 @@ export class NativeUsageCollector {
         status.issues += found.issues
         if (found.denied) problems.add('denied')
         if (found.limited) problems.add('limit')
+        progress.discoveryLimited ||= found.limited
         if (found.issues && !found.denied) problems.add('incompatible')
         const files =
           root.sqlite || software !== 'qwenwork'
@@ -120,65 +165,16 @@ export class NativeUsageCollector {
         for (const filename of files) {
           if (stopped()) break
           status.files++
+          progress.discovered++
           active.add(filename)
           try {
-            const stat = await safeStat(filename)
-            let stamp = `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`
-            let latestChange = Math.max(stat.mtimeMs, stat.ctimeMs)
-            if (root.sqlite) {
-              // SQLite may open these companions itself; reject redirected sidecars too.
-              try {
-                await safeStat(filename + '-shm')
-              } catch (error) {
-                if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-              }
-              try {
-                const wal = await safeStat(filename + '-wal')
-                stamp += `:${wal.ino}:${wal.size}:${wal.mtimeMs}:${wal.ctimeMs}`
-                latestChange = Math.max(latestChange, wal.mtimeMs, wal.ctimeMs)
-              } catch (error) {
-                if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-              }
-            }
-            const cached = this.cache.get(filename)
-            // Coarse filesystem clocks can give rapid same-size rewrites identical stamps.
-            const settled = Date.now() - latestChange > CACHE_SETTLE_MS
-            let result = settled && cached?.stamp === stamp ? cached.result : undefined
-            if (!result) {
-              if (!root.sqlite && (stat.size > MAX_BYTES || bytes + stat.size > MAX_SCAN_BYTES)) {
-                problem('limit')
-                continue
-              }
-              bytes += root.sqlite ? 0 : stat.size
-              result = root.sqlite
-                ? this.readQoder(filename, stopped)
-                : await this.readJsonl(software, filename, stopped)
-              const after = await safeStat(filename)
-              // A changing/partial file is retried; normalized completed rows can still be upserted.
-              if (
-                !stopped() &&
-                after.size === stat.size &&
-                after.mtimeMs === stat.mtimeMs &&
-                !result.limited
-              )
-                this.remember(filename, { stamp, result })
-            }
-            status.issues += result.issues
-            if (result.issues) problems.add('incompatible')
-            if (result.limited) problems.add('limit')
-            recognized ||= result.recognized
-            for (const [id, title] of result.titles) titles.set(id, title)
-            for (const record of result.records) {
-              if (!records.has(record.id) && records.size >= MAX_RECORDS) {
-                problem('limit')
-                break
-              }
-              records.set(record.id, mergeNativeRecord(records.get(record.id), record))
-            }
+            const { latestChange } = await fileState(filename, root.sqlite)
+            candidates.push({ root, filename, latestChange })
           } catch (error) {
+            progress.checked++
+            progress.failed++
             const code = (error as NodeJS.ErrnoException).code
-            if (code !== 'ENOENT')
-              problem(code === 'EACCES' || code === 'EPERM' ? 'denied' : 'incompatible')
+            problem(code === 'EACCES' || code === 'EPERM' ? 'denied' : 'incompatible')
           }
         }
       } catch (error) {
@@ -187,6 +183,69 @@ export class NativeUsageCollector {
           exists = true
           problem(code === 'EACCES' || code === 'EPERM' ? 'denied' : 'incompatible')
         }
+      }
+      publish()
+    }
+    progress.stage = 'reading'
+    // Recent changes from either Qoder root get a chance within the same bounded round.
+    candidates.sort((a, b) => b.latestChange - a.latestChange || (a.filename < b.filename ? -1 : 1))
+    publish()
+    for (const { root, filename } of candidates) {
+      if (stopped()) break
+      try {
+        // A file/WAL can change while the other candidates are being discovered.
+        const { stat, stamp, latestChange } = await fileState(filename, root.sqlite)
+        const cached = this.cache.get(filename)
+        // Coarse filesystem clocks can give rapid same-size rewrites identical stamps.
+        const settled = Date.now() - latestChange > CACHE_SETTLE_MS
+        let result = settled && cached?.stamp === stamp ? cached.result : undefined
+        if (!result) {
+          if (!root.sqlite && stat.size > MAX_BYTES) {
+            progress.limited++
+            problem('limit')
+            continue
+          }
+          if (!root.sqlite && bytes + stat.size > MAX_SCAN_BYTES) {
+            progress.deferred++
+            problem('limit')
+            continue
+          }
+          bytes += root.sqlite ? 0 : stat.size
+          result = root.sqlite
+            ? this.readQoder(filename, stopped)
+            : await this.readJsonl(software, filename, stopped, root.origin)
+          progress.read++
+          const after = await safeStat(filename)
+          // A changing/partial file is retried; normalized completed rows can still be upserted.
+          if (
+            !stopped() &&
+            after.size === stat.size &&
+            after.mtimeMs === stat.mtimeMs &&
+            !result.limited
+          )
+            this.remember(filename, { stamp, result })
+        } else progress.cached++
+        status.issues += result.issues
+        if (result.issues) problems.add('incompatible')
+        if (result.limited) problems.add('limit')
+        if (result.limited) progress.limited++
+        recognized ||= result.recognized
+        for (const [id, title] of result.titles) titles.set(id, title)
+        for (const record of result.records) {
+          if (!records.has(record.id) && records.size >= MAX_RECORDS) {
+            progress.limited++
+            problem('limit')
+            break
+          }
+          records.set(record.id, mergeNativeRecord(records.get(record.id), record))
+        }
+      } catch (error) {
+        progress.failed++
+        const code = (error as NodeJS.ErrnoException).code
+        problem(code === 'EACCES' || code === 'EPERM' ? 'denied' : 'incompatible')
+      } finally {
+        progress.checked++
+        publish()
       }
     }
     // Remove only this source's dead file caches; the persistent request ledger retains history.
@@ -208,6 +267,7 @@ export class NativeUsageCollector {
     if (missing) problems.add('missing_usage')
     if (status.files && !recognized && !records.size && !problems.size) problem('incompatible')
     status.records = records.size
+    progress.stage = stopped() ? progress.stage : 'done'
     status.problems = [...problems]
     status.state = problems.has('denied')
       ? 'denied'
@@ -235,6 +295,7 @@ export class NativeUsageCollector {
     software: NativeUsageSoftware,
     filename: string,
     stopped: () => boolean,
+    origin: 'international' | 'cn' = 'international',
   ): Promise<FileResult> {
     const result: FileResult = {
       records: [],
@@ -273,7 +334,12 @@ export class NativeUsageCollector {
           }
           if (!line.toString('utf8').trim()) continue
           try {
-            const parsed = parseNativeLine(software, JSON.parse(line.toString('utf8')), filename)
+            const parsed = parseNativeLine(
+              software,
+              JSON.parse(line.toString('utf8')),
+              filename,
+              origin,
+            )
             result.recognized ||= parsed.recognized
             if (parsed.title && result.titles.size < MAX_RECORDS)
               result.titles.set(parsed.title.session, parsed.title.name)
@@ -363,8 +429,9 @@ export class NativeUsageCollector {
           result.records.push({
             ...record,
             qoderFormat: 'sqlite',
+            qoderOrigin: 'international',
             ...(identity !== 'rowid' && typeof row.request === 'string' && row.request.length > 0
-              ? { qoderRequest: record.id }
+              ? { qoderRequest: record.id, qoderIdentity: record.id }
               : {}),
           })
         else result.issues++

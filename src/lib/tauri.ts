@@ -128,7 +128,7 @@ export function refreshMcpToken(): Promise<McpConnectionInfo> {
 }
 
 export function usageRequest<T>(
-  action: 'query' | 'sessions' | 'scan' | 'pause',
+  action: 'query' | 'sessions' | 'scan' | 'pause' | 'status',
   payload: Record<string, unknown> = {},
 ): Promise<T> {
   return hostInvoke<T>('usage_request', { action, payload })

@@ -2,6 +2,10 @@
 
 # Lumi 开发计划
 
+## 0.1.7 Windows 验证预览发布（2026-10-21）
+
+用户授权递增最小补丁版本并发布预览版。基于 main `640137e`，将 PR #16 的隔离 Windows WebView2 自动化、人工用例及真实证据纳入 0.1.7；统一应用/Core/SDK/模板版本，主页格式 2 和桥接协议 1 不变。正式运行前重新执行必需检查和 Windows 原生 CI，通过后合并到 main，使用现有 Desktop Build 手动触发三目标打包及预览发布。develop 的旧 QA 提交和其他工作树的 Skills/工作台存储/权限/托盘改动不纳入，不修改 `packages/core/src/usage/codeburn.test.ts`。版本说明与未完成手测见 [0.1.7](releases/0.1.7.md)。
+
 ## 0.1.6 预览发布（2026-10-20）
 
 用户明确授权提交、推送、合并并发布 Qoder CN 目录与扫描进度修复。以 main 1d97be8（0.1.5 双语）为集成基线，在隔离副本中提取本次改动，保留原工作区并行改动；发布范围及验收限制见 [0.1.6](releases/0.1.6.md)。新增永久回归允许修改本次相关测试，明确不改 packages/core/src/usage/codeburn.test.ts。最终验证以该集成版本重跑，不沿用下述历史400测试结果。

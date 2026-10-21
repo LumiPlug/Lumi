@@ -1,0 +1,2 @@
+LUMI_WINDOWS_SKILL_QA_OK
+合成附件，只用于验证中文与带空格目录中的技能文件读取。

@@ -2,6 +2,13 @@
 
 # Changelog
 
+## 0.1.7 (preview) — 2026-10-21
+
+- Add Windows release-mode application acceptance using real WebView2 and standalone Core, covering navigation, locale persistence, workbench storage refresh/restart/failure paths, and synthetic Qoder international/CN scan progress, deduplication and pause/resume.
+- Add Windows path/reading-budget regression coverage and a Chinese installer-only manual checklist with detailed cases, results template and committed evidence.
+- Synchronize desktop, Core, shared, stdio proxy, SDK and template release versions; keep home format 2 and bridge protocol 1.
+- Keep tray, real-client integration, normal-exit/multi-window behavior, installation, upgrade and uninstall explicitly pending manual acceptance. No functional changes from the verified 0.1.6 application are included.
+
 ## 0.1.6 (preview) — 2026-10-20
 
 - Collect Qoder CN JSONL from `~/.qoder-cn/projects` alongside the international source, with isolated request identities and evidence-based copy reconciliation.

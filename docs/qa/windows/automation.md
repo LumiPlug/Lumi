@@ -50,7 +50,9 @@ node tests/windows/acceptance.mjs
 
 ## 执行记录
 
-2026-10-20 已实际运行通过，代码提交 `009161d957f1e6a13d89c1f019fce75978c17cdc`，基于 `main` 的 `640137e`；后续交付提交只完善人工说明和保存证据。
+2026-10-21 用户另行授权递增版本并发布 0.1.7 预览版，见 [版本说明](../../releases/0.1.7.md)。Windows 启动断言从仓库读取当前发布版本；0.1.7 的实际 CI 与发布链接以 PR #16 和对应 Release 记录为准。下列原始证据保留其 0.1.6 版本，不改写成新版结果。
+
+2026-10-20 已实际运行通过，代码提交 `009161d957f1e6a13d89c1f019fce75978c17cdc`，基于 `main` 的 `640137e`；当日后续交付提交只完善人工说明和保存证据。
 
 - [Windows 原生 CI（success）](https://github.com/LumiPlug/Lumi/actions/runs/39373595132)，[具体 job](https://github.com/LumiPlug/Lumi/actions/runs/39373595132/job/118466869605)。release 应用、standalone sidecars、Rust 单元测试 10 项及 A01–A06 全通过。
 - Windows 原有 Vitest 集合实际为 **406 通过、12 平台跳过、0 失败（418 总数）**。12 项是原来 `tools.test.ts` 的 8 项 POSIX shell/进程信号用例，以及 `terminal-environment.test.ts` 的 4 项 POSIX/zsh 登录环境用例；本任务没有增加或扩大 skip，也没有把跳过算通过。Windows Terminal 正常/失败输出、取消及运行窗等仍须按 M03/M06 人工验证。
@@ -68,4 +70,4 @@ node tests/windows/acceptance.mjs
 | A05  | 暂停后新增记录不入账，点击真实刷新恢复为 4 条/500 Token，再扫不重复                                          | 通过 |
 | A06  | 结束隔离进程后重新启动，英文与 SDK 数据/待办/账本保留；SDK 删除生效                                          | 通过 |
 
-人工 M01–M10 均仍未执行；正式安装包、托盘、正常退出、多窗口、真实客户端、升级卸载不能由上表推定通过。本任务没有产品修复、合并或发布。
+人工 M01–M10 均仍未执行；正式安装包、托盘、正常退出、多窗口、真实客户端、升级卸载不能由上表推定通过。2026-10-20 自动化交付阶段没有产品修复、合并或发布；后续 0.1.7 发布也不把人工项目标为通过。

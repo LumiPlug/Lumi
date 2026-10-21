@@ -2,16 +2,20 @@
 // Small W3C client: exercise the release binary without a test plugin or mocked IPC.
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdtemp, mkdir, writeFile, access } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, access, readFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { setTimeout } from 'node:timers/promises'
+import { URL } from 'node:url'
 
 assert.equal(process.platform, 'win32', 'Run on Windows; macOS cannot provide WebView2 evidence')
 const root = await mkdtemp(path.join(os.tmpdir(), 'Lumi Windows 中文 空格-'))
 const home = path.join(root, '测试 用户')
 const evidence = path.resolve('reports/windows-acceptance')
 const binary = path.resolve('src-tauri/target/release/Lumi.exe')
+const appVersion = JSON.parse(
+  await readFile(new URL('../../package.json', import.meta.url), 'utf8'),
+).version
 const driverBinary = path.join(os.homedir(), '.cargo/bin/tauri-driver.exe')
 const edgeDriver = process.env.LUMI_EDGE_DRIVER
 assert.ok(edgeDriver, 'Set LUMI_EDGE_DRIVER to the matching Microsoft Edge Driver')
@@ -229,7 +233,7 @@ try {
     await start()
     const status = await ipc('get_core_status')
     assert.equal(status.userDataPathAvailable, true)
-    assert.equal(status.coreVersion, '0.1.6')
+    assert.equal(status.coreVersion, appVersion)
   })
   await check('WIN-A02 pages and native language persistence', async () => {
     for (const label of ['工具', 'Skills', '知识库', 'AI 用量', '设置']) await navigate(label)

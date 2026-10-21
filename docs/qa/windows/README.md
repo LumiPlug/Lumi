@@ -2,11 +2,11 @@
 
 # Windows 验收入口
 
-适用基线：`main` 的 `640137eba4a50703e55af4d6b0dd466e8270242b`，应用 0.1.6，已发布安装包 `v0.1.6-preview.23`。本目录随测试代码评审；测试分支没有发布新版。自动化结果与人工结果必须分开记录。
+本次发布目标为 0.1.7 预览版，应用行为沿用 main `640137e` 的 0.1.6 基线，加入 Windows 自动化与验收文档；预览 tag 由 Desktop Build 运行序号生成。2026-10-20 的原始证据对应 0.1.6，保留不改；0.1.7 需以本轮 CI 和发布记录核验。自动化结果与人工结果分别记录。
 
 ## 在 Windows 上直接照做（约 20 分钟）
 
-不需要 Node、Rust、Git、开发者工具或编译。下载 [preview.23 发布页](https://github.com/LumiPlug/Lumi/releases/tag/v0.1.6-preview.23) 的 Windows x64 安装包；核对发布页随包校验值。选 NSIS `.exe` 或 `.msi` 一种即可，另一种留扩展验收。优先使用专门的 Windows 测试账户，避免把测试配置写到日常账户。
+不需要 Node、Rust、Git、开发者工具或编译。从 [预览发布页](https://github.com/LumiPlug/Lumi/releases) 选择本次 `v0.1.7-preview.*` 的 Windows x64 安装包；核对发布页随包校验值。选 NSIS `.exe` 或 `.msi` 一种即可，另一种留扩展验收。优先使用专门的 Windows 测试账户，避免把测试配置写到日常账户。
 
 1. **M01** 安装并打开，等待设置中 Core「已连接」，检查工作台、工具、Skills、知识库、AI 用量能打开。
 2. **M02** 展开通知区域隐藏图标，找到 Lumi，打开托盘菜单；关闭主窗口后从托盘重开，最后用「退出 Lumi」退出，再从开始菜单启动。

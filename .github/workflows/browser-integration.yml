@@ -5,7 +5,6 @@ name: Browser integration desktop validation
 on:
   pull_request:
     paths:
-      - 'packages/browser-native-host/**'
       - 'packages/core/src/browser/**'
       - 'packages/shared/**'
       - 'packages/core/src/service.ts'

@@ -10,7 +10,6 @@ export interface CoreRuntimeConfig {
   port: number
   sessionToken: string
   hostToken?: string
-  browserNativeHostPath?: string
   userDataDir: string
 }
 
@@ -68,9 +67,6 @@ export function parseRuntimeConfig(
     port: positivePort(argumentValue(args, '--port') ?? environment.LUMIPLUG_CORE_PORT),
     sessionToken,
     hostToken,
-    browserNativeHostPath: environment.LUMI_BROWSER_NATIVE_HOST_PATH
-      ? path.resolve(environment.LUMI_BROWSER_NATIVE_HOST_PATH)
-      : undefined,
     userDataDir: path.resolve(userDataDir),
   }
 }

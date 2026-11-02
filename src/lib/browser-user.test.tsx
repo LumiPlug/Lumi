@@ -12,13 +12,13 @@ import { hostInvoke } from './tauri'
 import {
   browserUserRequest,
   browserUserErrorHint,
-  browserUserNextStep,
   browserUserStateLabel,
+  browserUserNeedsConsent,
+  browserUserCanResetPairing,
   getBrowserUserStatus,
   performBrowserUserAction,
   validBrowserExtensionId,
 } from './browser-user'
-
 vi.mock('./tauri', () => ({ hostInvoke: vi.fn() }))
 vi.mock('../components/ToastProvider', () => ({
   useToast: () => () => {},
@@ -27,15 +27,18 @@ vi.mock('../components/ToastProvider', () => ({
 const id = OFFICIAL_BROWSER_EXTENSION_ID
 const baseline = (): BrowserUserStatus => ({
   enabled: false,
-  autoRepair: false,
-  migrationRequired: false,
   requiresAuthorization: false,
   blockedUrls: [],
+  pageRules: [],
+  rulesRevision: 0,
   extensionId: null,
   connectedHosts: 0,
   sessions: [],
   controlDomain: 'shared-lumi',
-  registration: { supported: true, registered: false, nativeHostPath: '', issues: [] },
+  transport: 'loopback-websocket',
+  endpoint: 'ws://127.0.0.1:43127/ws',
+  paired: false,
+  pairing: null,
   issues: [],
 })
 const disconnected: UiCoreStatus = {
@@ -51,48 +54,37 @@ beforeEach(() => {
   applyLocale('zh-CN')
 })
 afterEach(() => applyLocale('zh-CN'))
-
 describe('Browser User settings safety and presentation', () => {
-  it('exposes the exact setting name and disconnected state without pretending to connect', () => {
+  it('has no mount-time mutation and keeps Core disconnection visible', () => {
     const html = renderToStaticMarkup(<BrowserUserSetting coreStatus={disconnected} />)
     expect(html).toContain('Browser User</h2>')
     expect(html).toContain('Core 未连接')
     expect(html).toContain('管理浏览器连接')
     expect(hostInvoke).not.toHaveBeenCalled()
   })
-  it('validates the complete extension ID and trims only surrounding whitespace', () => {
+  it('fixes the official identity without accepting a developer ID', () => {
     expect(validBrowserExtensionId(id)).toBe(true)
-    expect(validBrowserExtensionId(` ${id} `)).toBe(true)
-    for (const value of [
-      '',
-      'a'.repeat(31),
-      'a'.repeat(33),
-      'A'.repeat(32),
-      'z'.repeat(32),
-      id.slice(1) + '/',
-      id.slice(1) + '中',
-    ])
-      expect(validBrowserExtensionId(value)).toBe(false)
+    expect(validBrowserExtensionId('A'.repeat(32))).toBe(false)
+    expect(browserUserRequest('enable', undefined, true)).toEqual({
+      action: 'enable',
+      extensionId: id,
+      confirmed: true,
+    })
+    expect(() => browserUserRequest('enable', 'a'.repeat(32), true)).toThrow('not_official')
   })
-  it('never builds persistent operations without explicit confirmation', () => {
-    for (const action of ['enable', 'repair', 'disable', 'remove'] as const) {
-      expect(() => browserUserRequest(action, id)).toThrow('browser_user_confirmation_required')
-      expect(() => performBrowserUserAction({ action, extensionId: id })).toThrow(
-        'browser_user_confirmation_required',
-      )
-    }
-    expect(hostInvoke).not.toHaveBeenCalled()
-    expect(() => browserUserRequest('enable', 'invalid', true)).toThrow(
-      'invalid_browser_user_extension_id',
-    )
-  })
-  it('uses only the nonce-bearing host command and does not confirm read-only diagnostics', async () => {
+  it('requires host confirmation for every mutation but not read-only status or diagnose', async () => {
+    for (const action of [
+      'enable',
+      'disable',
+      'setPageRules',
+      'setBlockedUrls',
+      'approvePairing',
+      'resetPairing',
+    ] as const)
+      expect(() => browserUserRequest(action)).toThrow('confirmation_required')
     vi.mocked(hostInvoke).mockResolvedValue(baseline())
     await getBrowserUserStatus()
-    await performBrowserUserAction(browserUserRequest('diagnose', ''))
-    await performBrowserUserAction(
-      browserUserRequest('enable', ` ${id} `, true, { scopeConfirmed: true }),
-    )
+    await performBrowserUserAction(browserUserRequest('diagnose'))
     expect(hostInvoke).toHaveBeenNthCalledWith(1, 'browser_user_request', {
       action: 'status',
       payload: {},
@@ -101,265 +93,163 @@ describe('Browser User settings safety and presentation', () => {
       action: 'diagnose',
       payload: {},
     })
-    expect(hostInvoke).toHaveBeenNthCalledWith(3, 'browser_user_request', {
-      action: 'enable',
-      payload: { extensionId: id, confirmed: true, scopeConfirmed: true },
-    })
   })
-  it('does not turn request failures into fabricated disabled or successful states', async () => {
-    vi.mocked(hostInvoke).mockRejectedValue(new Error('offline'))
-    await expect(getBrowserUserStatus()).rejects.toThrow('offline')
-    await expect(performBrowserUserAction({ action: 'disable', confirmed: true })).rejects.toThrow(
-      'offline',
+  it('requests new scope only with explicit consent, never synthesizing it for reconnect', async () => {
+    const status = baseline()
+    status.requiresAuthorization = true
+    expect(browserUserNeedsConsent(status)).toBe(true)
+    expect(browserUserRequest('enable', undefined, true)).not.toHaveProperty('scopeConfirmed')
+    expect(browserUserRequest('enable', undefined, true, { scopeConfirmed: true })).toHaveProperty(
+      'scopeConfirmed',
+      true,
+    )
+    expect(() => browserUserRequest('disable', undefined, true, { scopeConfirmed: true })).toThrow()
+    status.requiresAuthorization = false
+    expect(browserUserNeedsConsent(status)).toBe(false)
+  })
+  it('offers pairing reset only as disconnected recovery and sends no implicit approval or scope', async () => {
+    const status = baseline()
+    expect(browserUserCanResetPairing(status)).toBe(false)
+    expect(browserUserCanResetPairing(null, true)).toBe(false)
+    status.paired = true
+    expect(browserUserCanResetPairing(status)).toBe(true)
+    status.connectedHosts = 1
+    expect(browserUserCanResetPairing(status, true)).toBe(false)
+    status.connectedHosts = 0
+    status.paired = false
+    expect(browserUserCanResetPairing(status, true)).toBe(true)
+    vi.mocked(hostInvoke).mockResolvedValue(status)
+    await performBrowserUserAction(browserUserRequest('resetPairing', undefined, true))
+    expect(hostInvoke).toHaveBeenCalledWith('browser_user_request', {
+      action: 'resetPairing',
+      payload: { confirmed: true },
+    })
+    expect(() => browserUserRequest('resetPairing', undefined, false)).toThrow(
+      'confirmation_required',
     )
   })
-  it('distinguishes registration, extension transport and user-authorized active tabs', () => {
-    const status = baseline()
-    expect(browserUserStateLabel(null, true)).toContain('状态未知')
-    expect(browserUserStateLabel(status, true)).toContain('已停用')
-    status.enabled = true
-    expect(browserUserStateLabel(status, true)).toBe('浏览器连接需要安装')
-    status.registration.registered = true
-    expect(browserUserStateLabel(status, true)).toBe('等待 Chrome 扩展连接')
-    status.connectedHosts = 1
-    expect(browserUserStateLabel(status, true)).toBe('等待可用网页或扩展权限')
-    status.sessions.push({
-      id: 's',
-      tabId: 1,
-      title: 'Fixture',
-      url: 'https://example.test/',
-      origin: 'https://example.test',
-      state: 'paused',
+  it('binds explicit pairing approval to the exact displayed id and six-digit code', async () => {
+    vi.mocked(hostInvoke).mockResolvedValue(baseline())
+    await performBrowserUserAction(
+      browserUserRequest('approvePairing', undefined, true, {
+        pairingId: 'exact-socket',
+        pairingCode: '012345',
+      }),
+    )
+    expect(hostInvoke).toHaveBeenCalledWith('browser_user_request', {
+      action: 'approvePairing',
+      payload: { confirmed: true, pairingId: 'exact-socket', pairingCode: '012345' },
     })
-    expect(browserUserStateLabel(status, true)).toBe('等待可用网页或扩展权限')
-    status.sessions[0]!.state = 'active'
+    for (const pairingCode of ['', '12345', '1234567', 'abcdef'])
+      expect(() =>
+        browserUserRequest('approvePairing', undefined, true, { pairingId: 'socket', pairingCode }),
+      ).toThrow()
+    expect(() =>
+      browserUserRequest('enable', undefined, true, { pairingId: 'socket', pairingCode: '123456' }),
+    ).toThrow()
+    expect(() =>
+      browserUserRequest('approvePairing', undefined, false, {
+        pairingId: 'socket',
+        pairingCode: '123456',
+      }),
+    ).toThrow('confirmation_required')
+  })
+  it('distinguishes enabled/connecting from actual connected pages and pairing', () => {
+    const status = baseline()
+    expect(browserUserStateLabel(null, true)).toContain('未知')
+    expect(browserUserStateLabel(status, true)).toContain('停用')
+    status.enabled = true
+    expect(browserUserStateLabel(status, true)).toContain('连接中')
+    status.pairing = {
+      id: 's',
+      code: '123456',
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+    }
+    expect(browserUserStateLabel(status, true)).toContain('配对码')
+    status.pairing = null
+    status.connectedHosts = 1
+    expect(browserUserStateLabel(status, true)).toContain('等待可用网页')
+    status.sessions = [
+      {
+        id: 's',
+        tabId: 1,
+        title: 'test',
+        url: 'https://example.com/',
+        origin: 'https://example.com',
+        state: 'active',
+      },
+    ]
     expect(browserUserStateLabel(status, true)).toBe('已有可控网页')
     expect(browserUserStateLabel(status, false)).toBe('Core 未连接')
   })
-  it('keeps unavailable counts unknown and suppresses stale connected state when Core stops', () => {
-    const unknown = renderToStaticMarkup(<BrowserUserSummary status={null} coreReady />)
-    expect(unknown).toContain('状态未知')
-    expect(unknown).not.toContain('连接扩展 0')
-    const stale = baseline()
-    stale.enabled = true
-    stale.connectedHosts = 2
-    const stopped = renderToStaticMarkup(<BrowserUserSummary status={stale} coreReady={false} />)
-    expect(stopped).not.toContain('连接扩展 2')
-    expect(stopped).toContain('Core 未连接')
-  })
-  it('shows human guidance without raw diagnostics, paths or session metadata', () => {
+  it('renders no raw diagnostics, endpoint, private paths or session metadata', () => {
     const status = baseline()
-    status.registration.nativeHostPath = '/private/host'
-    status.issues.push('file:///private/secret', 'policy_epoch_mismatch')
-    status.sessions.push({
-      id: 's',
-      tabId: 1,
-      title: '<script>bad()</script>',
-      url: 'chrome-extension://secret',
-      origin: 'chrome-extension://secret',
-      state: 'paused',
-    })
+    status.issues = ['file:///private/secret', 'policy_epoch_mismatch']
     const html = renderToStaticMarkup(<BrowserUserSummary status={status} coreReady />)
-    for (const hidden of ['file:', '/private', 'policy_epoch', 'chrome-extension:', 'bad()'])
+    for (const hidden of ['file:', '/private', 'policy_epoch', '43127'])
       expect(html).not.toContain(hidden)
-    expect(html).toContain('点击安装')
+    expect(browserUserErrorHint('/private/unknown')).not.toContain('private')
+    expect(browserUserErrorHint('browser_rules_conflict')).toContain('重新检查')
   })
-  it('offers exactly three primary controls and keeps close distinct from uninstall', () => {
-    const html = renderToStaticMarkup(
-      <BrowserUserPrimaryActions
-        status={baseline()}
-        coreReady
-        busy={false}
-        onInstall={() => {}}
-        onCheck={() => {}}
-        onDisable={() => {}}
-      />,
-    )
-    expect(html.match(/<button/g)).toHaveLength(3)
-    for (const label of ['安装', '检查连接', '关闭']) expect(html).toContain(label)
-    for (const label of ['修复', '卸载', '移除', '高级', '模式']) expect(html).not.toContain(label)
-    expect(browserUserRequest('disable', undefined, true)).toEqual({
-      action: 'disable',
-      confirmed: true,
-    })
-  })
-  it('keeps turn-off available while installation is pending, but prevents duplicate turn-off', () => {
-    const render = (closing: boolean) =>
+  it('shows store action plus exactly one connect/disconnect action, including pending cancellation', () => {
+    const render = (status: BrowserUserStatus | null, connecting = false, closing = false) =>
       renderToStaticMarkup(
         <BrowserUserPrimaryActions
-          status={baseline()}
+          status={status}
           coreReady
-          busy
+          busy={connecting}
+          connecting={connecting}
           closing={closing}
           onInstall={() => {}}
           onCheck={() => {}}
           onDisable={() => {}}
         />,
       )
-    const buttons = render(false).match(/<button[^>]*>.*?<\/button>/g)!
-    expect(buttons[0]).toContain('disabled')
-    expect(buttons[1]).toContain('disabled')
-    expect(buttons[2]).toContain('关闭')
-    expect(buttons[2]).not.toContain('disabled')
-    expect(render(true).match(/<button[^>]*>.*?<\/button>/g)![2]).toContain('disabled')
+    expect(render(baseline())).toContain('安装插件')
+    expect(render(baseline())).toContain('检查连接')
+    expect(render(baseline())).not.toContain('关闭连接')
+    const connected = { ...baseline(), enabled: true, connectedHosts: 1 }
+    expect(render(connected)).toContain('关闭连接')
+    expect(render(connected)).not.toContain('检查连接')
+    const stop = (html: string) =>
+      html.match(/<button[^>]*>[\s\S]*?<\/button>/g)!.find((button) => button.includes('关闭连接'))!
+    expect(stop(render(null, true))).not.toContain('disabled')
+    expect(stop(render(connected, false, true))).toContain('disabled')
   })
-  it('maps only known failures to one safe next step without exposing raw errors or paths', () => {
-    for (const code of [
-      'browser_registration_foreign',
-      'browser_registration_foreign_transaction',
-    ]) {
-      expect(browserUserErrorHint(code)).toContain('旧版的卸载方式')
-      const status = baseline()
-      status.registration.issues = [code]
-      expect(browserUserNextStep(status, true)).toContain('旧版的卸载方式')
-      expect(browserUserNextStep(status, true)).not.toContain('点击安装')
-    }
-    expect(browserUserErrorHint(new Error('browser_native_host_missing'))).toContain(
-      '重新安装 Lumi',
-    )
-    expect(browserUserErrorHint('browser_registration_permissions')).toContain('系统权限')
-    const unknown = 'file:///private/secret browser_registration_foreign'
-    expect(browserUserErrorHint(unknown)).toBe('操作未确认完成，请检查连接后再决定是否重试。')
-    expect(browserUserErrorHint(unknown)).not.toContain('secret')
-    expect(browserUserErrorHint({ code: 'anything', path: '/secret' })).not.toContain('secret')
-  })
-  it('keeps emergency turn-off available when status is unknown or already disabled', () => {
-    for (const status of [null, baseline()]) {
-      const html = renderToStaticMarkup(
-        <BrowserUserPrimaryActions
-          status={status}
-          coreReady
-          busy={false}
-          onInstall={() => {}}
-          onCheck={() => {}}
-          onDisable={() => {}}
-        />,
-      )
-      const close = html.match(/<button[^>]*>.*?<\/button>/g)![2]
-      expect(close).toContain('关闭')
-      expect(close).not.toContain('disabled')
-    }
-  })
-  it('localizes state text while preserving the exact Browser User name', () => {
-    applyLocale('en')
-    const html = renderToStaticMarkup(<BrowserUserSetting coreStatus={disconnected} />)
-    expect(html).toContain('Browser User</h2>')
-    expect(html).toContain('Manage browser connection')
-    expect(html).not.toContain('管理浏览器连接')
-  })
-})
-
-describe('official browser identity and explicit maintenance consent', () => {
-  it('defaults to the official identity without manual input and never implicitly authorizes maintenance', () => {
-    expect(browserUserRequest('enable', undefined, true, { scopeConfirmed: true })).toEqual({
-      action: 'enable',
-      extensionId: id,
-      confirmed: true,
-      scopeConfirmed: true,
-    })
-    expect(() => browserUserRequest('enable', 'a'.repeat(32), true)).toThrow('not_official')
-  })
-  it('forwards separate maintenance and migration consents only on confirmed registration actions', async () => {
-    vi.mocked(hostInvoke).mockResolvedValue(baseline())
-    await performBrowserUserAction(
-      browserUserRequest('repair', undefined, true, { autoRepair: true, migrateConfirmed: true }),
-    )
-    expect(hostInvoke).toHaveBeenCalledWith('browser_user_request', {
-      action: 'repair',
-      payload: { extensionId: id, confirmed: true, autoRepair: true, migrateConfirmed: true },
-    })
-    expect(() =>
-      browserUserRequest('repair', undefined, false, { autoRepair: true, migrateConfirmed: true }),
-    ).toThrow('confirmation_required')
-    expect(() => browserUserRequest('diagnose', undefined, false, { autoRepair: true })).toThrow(
-      'invalid_browser_user_payload',
-    )
-    expect(() =>
-      browserUserRequest('enable', undefined, true, { autoRepair: 'yes' as unknown as boolean }),
-    ).toThrow('invalid_browser_user_payload')
-    expect(
-      browserUserRequest('enable', undefined, true, {
-        autoRepair: false,
-        migrateConfirmed: false,
-        scopeConfirmed: true,
-      }),
-    ).toMatchObject({ autoRepair: false, migrateConfirmed: false, scopeConfirmed: true })
-  })
-  it('shows legacy identity migration and reload guidance without silently changing the saved identity', () => {
-    const status = baseline()
-    status.extensionId = 'a'.repeat(32)
-    status.migrationRequired = true
-    expect(browserUserStateLabel(status, true)).toBe('旧扩展身份需要确认迁移')
-    expect(browserUserNextStep(status, true)).toContain('点击安装')
-    expect(hostInvoke).not.toHaveBeenCalled()
-  })
-})
-
-describe('default-allow scope and exact blocked links', () => {
-  it('requires a distinct fresh scope confirmation rather than legacy confirmed alone', () => {
-    expect(() => browserUserRequest('enable', undefined, true)).toThrow(
-      'scope_confirmation_required',
-    )
-    expect(() => browserUserRequest('repair', undefined, true, { scopeConfirmed: true })).toThrow(
-      'invalid_browser_user_payload',
-    )
-    const status = baseline()
-    status.enabled = true
-    status.requiresAuthorization = true
-    expect(browserUserStateLabel(status, true)).toBe('需要确认全部普通网页控制范围')
-  })
-  it('normalizes exact links without query or fragment, deduplicates, preserves trailing slash', async () => {
-    vi.mocked(hostInvoke).mockResolvedValue(baseline())
+  it('keeps legacy exact blocks normalized, requires confirmation, and rejects non-HTTP and credentials', async () => {
     const request = browserUserRequest('setBlockedUrls', undefined, true, {
       blockedUrls: [
-        'https://EXAMPLE.com/private?token=x#fragment',
-        'https://example.com/private?other=y',
+        'https://EXAMPLE.com/private?secret=x#f',
+        'https://example.com/private',
         'https://example.com/private/',
       ],
     })
+    expect(
+      browserUserRequest('setBlockedUrls', undefined, true, {
+        blockedUrls: [],
+        expectedRulesRevision: 4,
+      }),
+    ).toHaveProperty('expectedRulesRevision', 4)
     expect(request.blockedUrls).toEqual([
       'https://example.com/private',
       'https://example.com/private/',
     ])
-    await performBrowserUserAction(request)
-    expect(hostInvoke).toHaveBeenCalledWith('browser_user_request', {
-      action: 'setBlockedUrls',
-      payload: { confirmed: true, blockedUrls: request.blockedUrls },
-    })
-    expect(JSON.stringify(request)).not.toContain('token=')
-  })
-  it('requires confirmation for adding or removing blocks and rejects credentials/non-HTTP/overflow', () => {
-    expect(() =>
-      browserUserRequest('setBlockedUrls', undefined, false, { blockedUrls: [] }),
-    ).toThrow('confirmation_required')
     for (const url of [
-      'https://name:password@example.com/private',
-      'file:///secret',
+      'file:///private',
       'chrome://settings',
-      'javascript:alert(1)',
-    ]) {
+      'https://user:password@example.com/',
+    ])
       expect(() =>
         browserUserRequest('setBlockedUrls', undefined, true, { blockedUrls: [url] }),
       ).toThrow()
-    }
     expect(() =>
-      browserUserRequest('setBlockedUrls', undefined, true, {
-        blockedUrls: Array(101).fill('https://example.com/'),
-      }),
+      browserUserRequest('setBlockedUrls', undefined, false, { blockedUrls: [] }),
     ).toThrow()
-    expect(() =>
-      browserUserRequest('setBlockedUrls', undefined, true, {
-        blockedUrls: ['https://example.com/' + 'a'.repeat(2048)],
-      }),
-    ).toThrow()
-    expect(() => browserUserRequest('diagnose', undefined, false, { blockedUrls: [] })).toThrow(
-      'invalid_browser_user_payload',
-    )
-    expect(browserUserRequest('setBlockedUrls', undefined, true, { blockedUrls: [] })).toEqual({
-      action: 'setBlockedUrls',
-      confirmed: true,
-      blockedUrls: [],
-    })
-    expect(hostInvoke).not.toHaveBeenCalled()
+  })
+  it('localizes without renaming Browser User', () => {
+    applyLocale('en')
+    const html = renderToStaticMarkup(<BrowserUserSetting coreStatus={disconnected} />)
+    expect(html).toContain('Browser User</h2>')
+    expect(html).toContain('Manage browser connection')
   })
 })

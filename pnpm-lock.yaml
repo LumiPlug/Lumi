@@ -79,8 +79,6 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(supports-color@7.1.0)(yaml@2.9.1)
 
-  packages/browser-native-host: {}
-
   packages/core:
     dependencies:
       '@lumiplug/shared':
@@ -110,6 +108,9 @@ importers:
       undici:
         specifier: 7.27.2
         version: 7.27.2
+      ws:
+        specifier: 8.22.0
+        version: 8.22.0
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
@@ -117,6 +118,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: 1.29.0
         version: 1.29.0(supports-color@7.1.0)(zod@3.25.76)
+      '@types/ws':
+        specifier: 8.18.1
+        version: 8.18.1
       bonjour-service:
         specifier: 1.4.1
         version: 1.4.1
@@ -861,6 +865,9 @@ packages:
 
   '@types/unist@3.0.3':
     resolution: {integrity: sha512-ko/gIFJRv177XgZsZcBwnqJN5x/Gien8qNOn0D5bQU/zAzVf9Zt3BlcUiLqhV9y4ARk0GbT3tnUiPNgnTXzc/Q==}
+
+  '@types/ws@8.18.1':
+    resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
 
   '@typescript-eslint/eslint-plugin@8.69.0':
     resolution: {integrity: sha512-t5jQTKPIgVW1PE6dR6H6Qz5gm8zjMlX5/2gRaOGd9eO6V7J+tQc6iWKukEe7dY8u9HyYasQ0yfF0/FSSTEO2gA==}
@@ -3123,6 +3130,10 @@ snapshots:
   '@types/unist@2.0.11': {}
 
   '@types/unist@3.0.3': {}
+
+  '@types/ws@8.18.1':
+    dependencies:
+      '@types/node': 24.13.3
 
   '@typescript-eslint/eslint-plugin@8.69.0(@typescript-eslint/parser@8.69.0(eslint@9.39.5(supports-color@7.1.0))(supports-color@7.1.0)(typescript@5.9.2))(eslint@9.39.5(supports-color@7.1.0))(supports-color@7.1.0)(typescript@5.9.2)':
     dependencies:

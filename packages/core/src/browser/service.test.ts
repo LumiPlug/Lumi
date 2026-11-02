@@ -5,8 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { Duplex, PassThrough } from 'node:stream'
 import type { TransformCallback } from 'node:stream'
-import { EventEmitter, once } from 'node:events'
-import type net from 'node:net'
+import { once } from 'node:events'
 import { describe, expect, it } from 'vitest'
 import { BrowserService } from './service'
 import {
@@ -66,31 +65,24 @@ class FakeSocket extends Duplex {
 }
 async function fixture() {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'lumi-browser-core-'))
-  let handler: (socket: net.Socket) => void = () => {}
-  const serverFactory = ((listener: (socket: net.Socket) => void) => {
-    handler = listener
-    const server = new EventEmitter() as EventEmitter & {
-      listen: (address: string, callback: () => void) => void
-      close: (callback: () => void) => void
-    }
-    let address = ''
-    server.listen = (value, callback) => {
-      address = value
-      if (process.platform !== 'win32') fs.writeFileSync(address, 'fixture socket stand-in')
-      queueMicrotask(callback)
-    }
-    server.close = (callback) => {
-      if (process.platform !== 'win32' && address) fs.rmSync(address, { force: true })
-      queueMicrotask(callback)
-    }
-    return server
-  }) as unknown as typeof net.createServer
+  let handler: (socket: Duplex) => void = () => {}
+  const transport = {
+    async start(listener: (socket: Duplex) => void) {
+      handler = listener
+    },
+    async stop() {},
+    status() {
+      return { paired: true, pairing: null }
+    },
+    async approvePairing() {},
+    async resetPairing() {},
+  }
   const service = new BrowserService({
     userDataDir: directory,
-    serverFactory,
+    transportFactory: () => transport,
     requestTimeoutMs: 20,
   })
-  async function host(origin = `chrome-extension://${extensionId}/`, tokenOverride?: string) {
+  async function host() {
     const socket = new FakeSocket(),
       peer = new FakeSocket()
     socket.peer = peer
@@ -99,11 +91,7 @@ async function fixture() {
     const frames = new BrowserFrames()
     socket.pipe(frames)
     const next = inbox(frames)
-    handler(peer as unknown as net.Socket)
-    const runtime = tokenOverride
-      ? { token: tokenOverride }
-      : (JSON.parse(fs.readFileSync(service.runtimeFile, 'utf8')) as { token: string })
-    writeBrowserFrame(socket, { role: 'native', token: runtime.token, origin })
+    handler(peer)
     return { socket, next }
   }
   return {
@@ -137,14 +125,13 @@ async function readyFixture() {
 }
 
 describe('Browser User Core service', () => {
-  it('constructs disabled, tools cannot enable it, and stop removes runtime credentials', async () => {
+  it('constructs disabled, tools cannot enable it, and stop disconnects transport', async () => {
     const context = await fixture()
     try {
       expect(context.service.status()).toMatchObject({
         enabled: false,
         controlDomain: 'shared-lumi',
       })
-      expect(fs.existsSync(context.service.runtimeFile)).toBe(false)
       await expect(
         context.service.call('snapshot', { sessionId: sample.id }),
       ).rejects.toMatchObject({ code: 'browser_disabled' })
@@ -152,26 +139,7 @@ describe('Browser User Core service', () => {
         code: 'unknown_tool',
       })
       await context.service.start(extensionId)
-      const runtime = JSON.parse(fs.readFileSync(context.service.runtimeFile, 'utf8')) as Record<
-        string,
-        unknown
-      >
-      expect(runtime).toMatchObject({ version: 1 })
-      expect(runtime.token).toMatch(/^[a-f0-9]{64}$/)
       await context.service.disable()
-      expect(fs.existsSync(context.service.runtimeFile)).toBe(false)
-    } finally {
-      await context.stop()
-    }
-  })
-  it('rejects a different Chrome extension origin', async () => {
-    const context = await fixture()
-    try {
-      await context.service.start(extensionId)
-      const host = await context.host(`chrome-extension://${'b'.repeat(32)}/`)
-      await tick()
-      expect(host.socket.destroyed).toBe(true)
-      expect(context.service.status().connectedHosts).toBe(0)
     } finally {
       await context.stop()
     }
@@ -248,7 +216,7 @@ describe('Browser User Core service', () => {
       await context.stop()
     }
   })
-  it('revoke and disable invalidate queues and disconnect native host', async () => {
+  it('revoke and disable invalidate queues and disconnect extension connection', async () => {
     const context = await readyFixture()
     try {
       const first = context.service.call('click', { sessionId: sample.id, ref: 'r' })
@@ -376,7 +344,7 @@ it('times out once, emits cancellation, and never replays the operation', async 
   }
 })
 
-it('revoke disconnects only the owning native host and a second host cannot steal its session ID', async () => {
+it('revoke disconnects only the owning extension connection and a second host cannot steal its session ID', async () => {
   const context = await readyFixture()
   try {
     const second = await context.host()
@@ -407,20 +375,6 @@ it('revoke disconnects only the owning native host and a second host cannot stea
     })
     await tick()
     expect(context.service.status().sessions).toEqual([])
-  } finally {
-    await context.stop()
-  }
-})
-
-it('does not delete a runtime descriptor replaced by a different Core generation', async () => {
-  const context = await readyFixture()
-  try {
-    fs.writeFileSync(
-      context.service.runtimeFile,
-      JSON.stringify({ version: 1, token: 'different-generation' }),
-    )
-    await context.service.disable()
-    expect(fs.existsSync(context.service.runtimeFile)).toBe(true)
   } finally {
     await context.stop()
   }
@@ -574,16 +528,12 @@ it('same-origin navigation into a denied exact link revokes reads, without block
   }
 })
 
-it('disabled service rejects late native handshakes even with the previous valid credential', async () => {
+it('disabled service rejects late authenticated transport callbacks', async () => {
   const context = await readyFixture()
   try {
-    const previous = JSON.parse(fs.readFileSync(context.service.runtimeFile, 'utf8')) as {
-      token: string
-    }
     await context.service.disable()
     expect(context.native.socket.destroyed).toBe(true)
-    expect(fs.existsSync(context.service.runtimeFile)).toBe(false)
-    const late = await context.host(`chrome-extension://${extensionId}/`, previous.token)
+    const late = await context.host()
     await tick()
     expect(late.socket.destroyed).toBe(true)
     expect(context.service.status()).toMatchObject({
@@ -594,6 +544,79 @@ it('disabled service rejects late native handshakes even with the previous valid
     await expect(
       context.service.call('click', { sessionId: sample.id, ref: 'old-ref' }),
     ).rejects.toMatchObject({ code: 'browser_disabled' })
+  } finally {
+    await context.stop()
+  }
+})
+
+it('current-page contexts stay private, are socket bound and consumed once', async () => {
+  const context = await readyFixture()
+  try {
+    const saved: unknown[] = []
+    context.service.setPageRuleHandler(async (rule, guard) => {
+      guard()
+      saved.push(rule)
+      return { rulesRevision: 1 }
+    })
+    const policyEpoch = context.service.status().policyEpoch
+    writeBrowserFrame(context.native.socket, {
+      type: 'page_context',
+      id: 'c1',
+      tabId: 99,
+      url: 'https://private.test/secret',
+      title: 'Private title',
+      policyEpoch,
+    })
+    const response = await context.native.next()
+    const contextId = (response.result as { contextId: string }).contextId
+    expect(JSON.stringify(await context.service.call('list_sessions', {}))).not.toContain(
+      'Private title',
+    )
+    const second = await context.host()
+    await second.next()
+    await second.next()
+    writeBrowserFrame(second.socket, {
+      type: 'page_rule',
+      id: 'wrong',
+      contextId,
+      permission: 'block',
+      policyEpoch,
+    })
+    expect(await second.next()).toMatchObject({ error: { code: 'context_expired' } })
+    writeBrowserFrame(context.native.socket, {
+      type: 'page_rule',
+      id: 'right',
+      contextId,
+      permission: 'block',
+      policyEpoch,
+    })
+    expect(await context.native.next()).toMatchObject({
+      result: { permission: 'block', rulesRevision: 1 },
+    })
+    expect(saved).toEqual([
+      { url: 'https://private.test/secret', label: 'Private title', permission: 'block' },
+    ])
+    writeBrowserFrame(context.native.socket, {
+      type: 'page_rule',
+      id: 'replay',
+      contextId,
+      permission: 'allow',
+      policyEpoch,
+    })
+    expect(await context.native.next()).toMatchObject({ error: { code: 'context_expired' } })
+  } finally {
+    await context.stop()
+  }
+})
+
+it('disable supersedes an already queued enable before it can accept transport input', async () => {
+  const context = await fixture()
+  try {
+    const start = context.service.start(extensionId)
+    const close = context.service.disable()
+    await Promise.all([start, close])
+    expect(context.service.status().enabled).toBe(false)
+    expect(context.service.status().connectedHosts).toBe(0)
   } finally {
     await context.stop()
   }

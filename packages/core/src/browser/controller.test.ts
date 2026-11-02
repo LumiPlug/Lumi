@@ -1,23 +1,27 @@
 // SPDX-License-Identifier: MPL-2.0
-
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { BrowserUserController } from './controller'
-import type { BrowserService } from './service'
-import type { BrowserRegistration } from './registration'
+import type { BrowserPageRule, BrowserUserActionRequest } from '@lumiplug/shared'
 import { OFFICIAL_BROWSER_EXTENSION_ID as officialId } from '@lumiplug/shared'
+import { BrowserUserController } from './controller'
+import type { BrowserService, BrowserPageRuleHandler } from './service'
 
 const roots: string[] = []
 afterEach(() => {
+  vi.restoreAllMocks()
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true })
 })
-function fixture() {
+function fixture(preference?: unknown) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lumi-browser-controller-'))
   roots.push(root)
+  const file = path.join(root, 'browser-user.json')
+  if (preference !== undefined) fs.writeFileSync(file, JSON.stringify(preference))
   let enabled = false,
-    extensionId: string | null = null
+    extensionId: string | null = null,
+    paired = false
+  let handler: BrowserPageRuleHandler | undefined
   const browser = {
     status: () => ({
       enabled,
@@ -25,415 +29,445 @@ function fixture() {
       connectedHosts: 0,
       sessions: [],
       controlDomain: 'shared-lumi' as const,
+      blockedUrls: [],
+      policyEpoch: 1,
+      transport: 'loopback-websocket' as const,
+      endpoint: 'ws://127.0.0.1:43127/ws',
+      paired,
+      pairing: null,
     }),
     start: vi.fn(async (id: string) => {
       enabled = true
       extensionId = id
     }),
-    setBlockedUrls: vi.fn(),
     disable: vi.fn(async () => {
       enabled = false
     }),
     close: vi.fn(async () => {
       enabled = false
     }),
+    approvePairing: vi.fn(async () => {
+      paired = true
+    }),
+    resetPairing: vi.fn(async () => {
+      paired = false
+    }),
+    setBlockedUrls: vi.fn(),
+    setPageRuleHandler: vi.fn((value: BrowserPageRuleHandler) => {
+      handler = value
+    }),
   }
-  const registration = {
-    status: vi.fn(async () => ({
-      registered: true,
-      supported: true,
-      nativeHostPath: '/fixture/native-host',
-      issues: [] as string[],
-    })),
-    register: vi.fn(async () => ({ registered: true })),
-    repairOwnedPath: vi.fn(async () => ({ registered: true })),
-    remove: vi.fn(async () => {}),
-  }
-  const dependencies = {
-    browser: browser as unknown as BrowserService,
-    registration: registration as unknown as BrowserRegistration,
-  }
+  const dependencies = { browser: browser as unknown as BrowserService }
+  const controller = new BrowserUserController({ userDataDir: root }, dependencies)
   return {
     root,
+    file,
     browser,
-    registration,
-    controller: new BrowserUserController({ userDataDir: root }, dependencies),
+    controller,
     dependencies,
+    popup: (rule: BrowserPageRule, guard = () => {}) => handler!(rule, guard),
   }
 }
-describe('Browser User host-only lifecycle', () => {
-  it('defaults off; confirmation is required before persistent registration', async () => {
+const enable: BrowserUserActionRequest = { action: 'enable', confirmed: true, scopeConfirmed: true }
+const rule = (
+  url = 'https://example.com/private',
+  permission: 'block' | 'allow' = 'block',
+  label = 'Private',
+): BrowserPageRule => ({ url, permission, label })
+const stored = (overrides: Record<string, unknown> = {}) => ({
+  transport: 'loopback-websocket',
+  enabled: true,
+  extensionId: officialId,
+  consentVersion: 2,
+  blockedUrls: [],
+  pageRules: [],
+  rulesRevision: 0,
+  ...overrides,
+})
+function deferred() {
+  let resolve!: () => void
+  const promise = new Promise<void>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
+describe('Browser User controller direct Core transport consent and lifecycle', () => {
+  it('defaults off; reading status and diagnose never starts a listener or creates preferences', async () => {
     const f = fixture()
     expect((await f.controller.status()).enabled).toBe(false)
-    await expect(
-      f.controller.action({ action: 'enable', extensionId: officialId }),
-    ).rejects.toThrow('browser_confirmation_required')
-    expect(f.registration.register).not.toHaveBeenCalled()
-    expect(fs.existsSync(path.join(f.root, 'browser-user.json'))).toBe(false)
+    await f.controller.action({ action: 'diagnose' })
+    await f.controller.restore()
+    expect(f.browser.start).not.toHaveBeenCalled()
+    expect(fs.existsSync(f.file)).toBe(false)
+    await expect(f.controller.action({ action: 'enable' })).rejects.toThrow('confirmation_required')
+    await expect(f.controller.action({ action: 'enable', confirmed: true })).rejects.toThrow(
+      'scope_confirmation_required',
+    )
   })
-  it('enables explicitly, persists preference, disables without removing unrelated registration', async () => {
-    const f = fixture(),
-      id = officialId
-    expect(
-      (
-        await f.controller.action({
-          action: 'enable',
-          extensionId: id,
-          confirmed: true,
-          scopeConfirmed: true,
-        })
-      ).enabled,
-    ).toBe(true)
-    expect(f.registration.register).toHaveBeenCalledWith(id, true)
-    expect(JSON.parse(fs.readFileSync(path.join(f.root, 'browser-user.json'), 'utf8'))).toEqual({
-      enabled: true,
-      extensionId: id,
-      autoRepair: false,
-      blockedUrls: [],
-      consentVersion: 2,
-    })
+  it('enables only the official extension and stores WS consent; repeated connection is idempotent', async () => {
+    const f = fixture()
+    expect((await f.controller.action(enable)).enabled).toBe(true)
+    expect(f.browser.start).toHaveBeenCalledWith(officialId, [])
+    expect(JSON.parse(fs.readFileSync(f.file, 'utf8'))).toEqual(stored())
+    await f.controller.action({ action: 'enable', confirmed: true })
+    expect(f.browser.start).toHaveBeenCalledTimes(1)
+    await expect(f.controller.action({ ...enable, extensionId: 'a'.repeat(32) })).rejects.toThrow(
+      'not_official',
+    )
     await f.controller.action({ action: 'disable', confirmed: true })
     expect((await f.controller.status()).enabled).toBe(false)
-    expect(f.registration.remove).not.toHaveBeenCalled()
+    expect(JSON.parse(fs.readFileSync(f.file, 'utf8')).enabled).toBe(false)
+    await f.controller.action({ action: 'enable', confirmed: true })
+    expect(f.browser.start).toHaveBeenCalledTimes(2)
   })
-  it('restores only already-consented settings with matching registration; never silently repairs', async () => {
-    const f = fixture()
-    fs.writeFileSync(
-      path.join(f.root, 'browser-user.json'),
-      JSON.stringify({ enabled: true, consentVersion: 2, extensionId: officialId }),
-    )
-    f.registration.status.mockResolvedValue({
-      registered: false,
-      supported: true,
-      nativeHostPath: '/fixture/native-host',
-      issues: ['moved'],
+  it('does not restore old Native Messaging consent as permission to listen on the network', async () => {
+    const f = fixture({
+      enabled: true,
+      extensionId: officialId,
+      autoRepair: true,
+      consentVersion: 2,
+      blockedUrls: ['https://example.com/private?q=x'],
+      rulesRevision: 7,
     })
-    const restored = new BrowserUserController({ userDataDir: f.root }, f.dependencies)
-    await restored.restore()
+    await f.controller.restore()
+    const status = await f.controller.status()
+    expect(status.enabled).toBe(false)
+    expect(status.requiresAuthorization).toBe(true)
+    expect(status.pageRules).toEqual([rule('https://example.com/private', 'block', '')])
+    expect(status.rulesRevision).toBe(7)
     expect(f.browser.start).not.toHaveBeenCalled()
-    expect(f.registration.register).not.toHaveBeenCalled()
-    expect((await restored.status()).issues).toContain('browser_registration_repair_required')
+    await expect(f.controller.action({ action: 'enable', confirmed: true })).rejects.toThrow(
+      'scope_confirmation_required',
+    )
+    await f.controller.action(enable)
+    expect(f.browser.start).toHaveBeenCalledWith(officialId, ['https://example.com/private'])
+    expect(JSON.parse(fs.readFileSync(f.file, 'utf8')).transport).toBe('loopback-websocket')
   })
-  it('keeps browser off after registration failure and removes only on explicit confirmation', async () => {
-    const f = fixture()
-    f.registration.register.mockRejectedValueOnce(new Error('registration failed'))
-    await expect(
-      f.controller.action({
-        action: 'enable',
-        extensionId: officialId,
-        confirmed: true,
-        scopeConfirmed: true,
-      }),
-    ).rejects.toThrow('registration failed')
-    expect((await f.controller.status()).enabled).toBe(false)
-    await f.controller.action({ action: 'remove', confirmed: true })
-    expect(f.registration.remove).toHaveBeenCalledWith(true)
-    expect((await f.controller.status()).extensionId).toBeNull()
-  })
-  it('serializes restore with disable and cannot reopen after close while registration is pending', async () => {
-    for (const action of ['disable', 'close'] as const) {
-      const f = fixture()
-      fs.writeFileSync(
-        path.join(f.root, 'browser-user.json'),
-        JSON.stringify({ enabled: true, consentVersion: 2, extensionId: officialId }),
-      )
-      let resolve!: (value: Awaited<ReturnType<typeof f.registration.status>>) => void
-      f.registration.status.mockImplementationOnce(
-        () =>
-          new Promise((done) => {
-            resolve = done
-          }),
-      )
-      const restored = new BrowserUserController({ userDataDir: f.root }, f.dependencies)
-      const restoring = restored.restore()
-      await Promise.resolve()
-      const stopping =
-        action === 'close'
-          ? restored.close()
-          : restored.action({ action: 'disable', confirmed: true })
-      resolve({
-        registered: true,
-        supported: true,
-        nativeHostPath: '/fixture/native-host',
-        issues: [],
-      })
-      await restoring
-      await stopping
-      expect(f.browser.status().enabled).toBe(false)
-      if (action === 'close') expect(f.browser.start).not.toHaveBeenCalled()
+  it('restores only current transport, current scope and official identity', async () => {
+    const valid = fixture(stored())
+    await valid.controller.restore()
+    expect(valid.browser.start).toHaveBeenCalledOnce()
+    for (const overrides of [
+      { enabled: false },
+      { consentVersion: 0 },
+      { extensionId: 'a'.repeat(32) },
+    ]) {
+      const f = fixture(stored(overrides))
+      await f.controller.restore()
+      expect(f.browser.start).not.toHaveBeenCalled()
     }
   })
-})
-
-it('defaults enable to the official ID and is idempotent without renewing consent', async () => {
-  const f = fixture()
-  await f.controller.action({ action: 'enable', confirmed: true, scopeConfirmed: true })
-  expect(f.registration.register).toHaveBeenCalledWith(officialId, true)
-  expect((await f.controller.status()).autoRepair).toBe(false)
-  await f.controller.action({ action: 'enable', confirmed: true, scopeConfirmed: true })
-  expect(f.registration.register).toHaveBeenCalledTimes(1)
-  expect(f.browser.start).toHaveBeenCalledTimes(1)
-  await f.controller.action({
-    action: 'enable',
-    confirmed: true,
-    scopeConfirmed: true,
-    autoRepair: true,
-  })
-  expect((await f.controller.status()).autoRepair).toBe(true)
-  expect(f.registration.register).toHaveBeenCalledTimes(1)
-})
-
-it('does not silently restore or migrate a previously saved other extension ID', async () => {
-  const f = fixture()
-  const legacyId = 'b'.repeat(32)
-  fs.writeFileSync(
-    path.join(f.root, 'browser-user.json'),
-    JSON.stringify({ enabled: true, extensionId: legacyId, autoRepair: true }),
-  )
-  const controller = new BrowserUserController({ userDataDir: f.root }, f.dependencies)
-  await controller.restore()
-  expect(f.browser.start).not.toHaveBeenCalled()
-  expect(f.registration.repairOwnedPath).not.toHaveBeenCalled()
-  expect((await controller.status()).migrationRequired).toBe(true)
-  await expect(
-    controller.action({ action: 'enable', confirmed: true, scopeConfirmed: true }),
-  ).rejects.toThrow('migration_confirmation_required')
-  expect(f.registration.register).not.toHaveBeenCalled()
-  await controller.action({
-    action: 'enable',
-    confirmed: true,
-    scopeConfirmed: true,
-    migrateConfirmed: true,
-  })
-  expect(f.registration.register).toHaveBeenCalledWith(officialId, true, { migrateConfirmed: true })
-  expect((await controller.status()).autoRepair).toBe(false)
-  await expect(
-    controller.action({
-      action: 'enable',
-      confirmed: true,
-      scopeConfirmed: true,
-      extensionId: legacyId,
-    }),
-  ).rejects.toThrow('not_official')
-})
-
-it('also requires migration confirmation for an existing registered ID without saved preferences', async () => {
-  const f = fixture()
-  f.registration.status.mockResolvedValue({
-    ...(await f.registration.status()),
-    extensionId: 'b'.repeat(32),
-  } as Awaited<ReturnType<typeof f.registration.status>>)
-  await expect(
-    f.controller.action({ action: 'enable', confirmed: true, scopeConfirmed: true }),
-  ).rejects.toThrow('migration_confirmation_required')
-  expect(f.registration.register).not.toHaveBeenCalled()
-})
-
-it('restores path repair only after a saved same-ID maintenance authorization', async () => {
-  for (const autoRepair of [false, true]) {
-    const f = fixture()
-    fs.writeFileSync(
-      path.join(f.root, 'browser-user.json'),
-      JSON.stringify({ enabled: true, consentVersion: 2, extensionId: officialId, autoRepair }),
-    )
-    f.registration.status.mockResolvedValue({
-      registered: false,
-      supported: true,
-      nativeHostPath: '/fixture/native-host',
-      issues: ['browser_registration_path_changed'],
+  it('fails closed if restoration opens partially and then fails', async () => {
+    const f = fixture(stored())
+    const original = f.browser.start.getMockImplementation()!
+    f.browser.start.mockImplementationOnce(async (id) => {
+      await original(id)
+      throw new Error('startup interrupted')
     })
-    const controller = new BrowserUserController({ userDataDir: f.root }, f.dependencies)
-    await controller.restore()
-    expect(f.registration.register).not.toHaveBeenCalled()
-    expect(f.registration.repairOwnedPath).toHaveBeenCalledTimes(autoRepair ? 1 : 0)
-    expect(f.browser.start).toHaveBeenCalledTimes(autoRepair ? 1 : 0)
-  }
+    await f.controller.restore()
+    expect((await f.controller.status()).enabled).toBe(false)
+    expect((await f.controller.status()).issues).toContain('browser_start_failed')
+    expect(f.browser.disable).toHaveBeenCalledOnce()
+  })
+  it('rejects obsolete native registration fields and unrelated action fields before effects', async () => {
+    const f = fixture()
+    const invalid = [
+      { ...enable, autoRepair: true },
+      { ...enable, migrateConfirmed: true },
+      { action: 'repair', confirmed: true },
+      { action: 'remove', confirmed: true },
+      { action: 'diagnose', pageRules: [] },
+      { action: 'disable', confirmed: true, extensionId: officialId },
+    ]
+    for (const request of invalid)
+      await expect(f.controller.action(request as BrowserUserActionRequest)).rejects.toThrow(
+        'action_invalid',
+      )
+    expect(f.browser.start).not.toHaveBeenCalled()
+    expect(f.browser.disable).not.toHaveBeenCalled()
+    expect(fs.existsSync(f.file)).toBe(false)
+  })
+  it('stops immediately during a pending activation and never allows its late completion to reopen', async () => {
+    const f = fixture(),
+      waiting = deferred(),
+      entered = deferred()
+    const original = f.browser.start.getMockImplementation()!
+    f.browser.start.mockImplementationOnce(async (id) => {
+      entered.resolve()
+      await waiting.promise
+      await original(id)
+    })
+    const activating = f.controller.action(enable)
+    const rejected = expect(activating).rejects.toThrow('activation_cancelled')
+    await entered.promise
+    const stopping = f.controller.action({ action: 'disable', confirmed: true })
+    expect(f.browser.disable).toHaveBeenCalledOnce()
+    expect(JSON.parse(fs.readFileSync(f.file, 'utf8')).enabled).toBe(false)
+    waiting.resolve()
+    await rejected
+    await stopping
+    expect((await f.controller.status()).enabled).toBe(false)
+    expect(JSON.parse(fs.readFileSync(f.file, 'utf8')).enabled).toBe(false)
+  })
+  it('stops a pending restore and close prevents future actions', async () => {
+    const f = fixture(stored()),
+      waiting = deferred(),
+      entered = deferred()
+    const original = f.browser.start.getMockImplementation()!
+    f.browser.start.mockImplementationOnce(async (id) => {
+      entered.resolve()
+      await waiting.promise
+      await original(id)
+    })
+    const restoring = f.controller.restore()
+    await entered.promise
+    const stopping = f.controller.action({ action: 'disable', confirmed: true })
+    waiting.resolve()
+    await restoring
+    await stopping
+    expect((await f.controller.status()).enabled).toBe(false)
+    await f.controller.close()
+    await expect(f.controller.action(enable)).rejects.toThrow('stopping')
+  })
+  it('does not keep a listener or enabled preference after start or preference-save failure', async () => {
+    const f = fixture()
+    f.browser.start.mockRejectedValueOnce(new Error('port occupied'))
+    await expect(f.controller.action(enable)).rejects.toThrow('port occupied')
+    expect((await f.controller.status()).enabled).toBe(false)
+    expect(JSON.parse(fs.readFileSync(f.file, 'utf8')).enabled).toBe(false)
+    const rename = fs.renameSync
+    const spy = vi.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
+      const value = JSON.parse(fs.readFileSync(from, 'utf8'))
+      if (value.enabled) throw new Error('disk full')
+      return rename(from, to)
+    })
+    await expect(f.controller.action(enable)).rejects.toThrow('disk full')
+    expect((await f.controller.status()).enabled).toBe(false)
+    spy.mockRestore()
+  })
+  it('preserves corrupt configuration rather than replacing rules or authorizing a listener', async () => {
+    const f = fixture({ enabled: true, extensionId: officialId, blockedUrls: ['file:///private'] })
+    const before = fs.readFileSync(f.file, 'utf8')
+    expect((await f.controller.status()).issues).toContain('browser_settings_invalid')
+    await expect(f.controller.action(enable)).rejects.toThrow('settings_invalid')
+    await expect(f.controller.action({ action: 'disable', confirmed: true })).rejects.toThrow(
+      'settings_invalid',
+    )
+    expect(f.browser.disable).toHaveBeenCalled()
+    expect(f.browser.start).not.toHaveBeenCalled()
+    expect(fs.readFileSync(f.file, 'utf8')).toBe(before)
+  })
 })
 
-it('does not start on ineligible auto-repair and close wins during an authorized repair', async () => {
-  const f = fixture()
-  fs.writeFileSync(
-    path.join(f.root, 'browser-user.json'),
-    JSON.stringify({ enabled: true, consentVersion: 2, extensionId: officialId, autoRepair: true }),
-  )
-  f.registration.status.mockResolvedValue({
-    registered: false,
-    supported: true,
-    nativeHostPath: '/fixture/native-host',
-    issues: ['browser_registration_path_changed'],
+describe('Browser User explicit candidate approval', () => {
+  it('requires enabled scope and exact id/code, forwarding only the clicked candidate', async () => {
+    const f = fixture(),
+      approval: BrowserUserActionRequest = {
+        action: 'approvePairing',
+        confirmed: true,
+        pairingId: 'candidate-a',
+        pairingCode: '012345',
+      }
+    await expect(f.controller.action(approval)).rejects.toThrow('disabled')
+    await f.controller.action(enable)
+    await f.controller.action(approval)
+    expect(f.browser.approvePairing).toHaveBeenCalledWith('candidate-a', '012345')
+    expect((await f.controller.status()).paired).toBe(true)
+    await expect(f.controller.action({ ...approval, confirmed: false })).rejects.toThrow(
+      'confirmation_required',
+    )
+    await expect(f.controller.action({ ...approval, pairingCode: '12345' })).rejects.toThrow(
+      'pairing_invalid',
+    )
   })
-  f.registration.repairOwnedPath.mockRejectedValueOnce(
-    new Error('browser_auto_repair_not_eligible'),
-  )
-  const controller = new BrowserUserController({ userDataDir: f.root }, f.dependencies)
-  await controller.restore()
-  expect(f.browser.start).not.toHaveBeenCalled()
-  let finish!: (value: { registered: boolean }) => void
-  f.registration.repairOwnedPath.mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        finish = resolve
+  it('resets only on explicit host confirmation, revokes pairing and remains off until reconnect', async () => {
+    const f = fixture()
+    await f.controller.action(enable)
+    await f.controller.action({
+      action: 'setPageRules',
+      confirmed: true,
+      expectedRulesRevision: 0,
+      pageRules: [rule()],
+    })
+    await f.controller.action({
+      action: 'approvePairing',
+      confirmed: true,
+      pairingId: 'a',
+      pairingCode: '123456',
+    })
+    await expect(f.controller.action({ action: 'resetPairing' })).rejects.toThrow(
+      'confirmation_required',
+    )
+    expect(f.browser.resetPairing).not.toHaveBeenCalled()
+    const state = await f.controller.action({ action: 'resetPairing', confirmed: true })
+    expect(state.pageRules).toEqual([rule()])
+    expect(state.rulesRevision).toBe(1)
+    expect(state.paired).toBe(false)
+    expect(state.enabled).toBe(false)
+    expect(JSON.parse(fs.readFileSync(f.file, 'utf8')).enabled).toBe(false)
+    expect(f.browser.resetPairing).toHaveBeenCalledOnce()
+    await f.controller.action({ action: 'enable', confirmed: true })
+    expect((await f.controller.status()).paired).toBe(false)
+    expect(f.browser.approvePairing).toHaveBeenCalledTimes(1)
+  })
+  it('does not retry a rejected candidate or transfer approval to a later one', async () => {
+    const f = fixture()
+    await f.controller.action(enable)
+    f.browser.approvePairing.mockRejectedValueOnce(new Error('browser_pairing_expired'))
+    await expect(
+      f.controller.action({
+        action: 'approvePairing',
+        confirmed: true,
+        pairingId: 'expired',
+        pairingCode: '123456',
       }),
-  )
-  const restoring = controller.restore()
-  for (let index = 0; index < 5 && !finish; index++) await Promise.resolve()
-  const closing = controller.close()
-  finish({ registered: true })
-  await restoring
-  await closing
-  expect(f.browser.start).not.toHaveBeenCalled()
-})
-
-it('does not enable when registration writes return an unverified result', async () => {
-  const f = fixture()
-  f.registration.register.mockResolvedValueOnce({ registered: false })
-  await expect(
-    f.controller.action({ action: 'enable', confirmed: true, scopeConfirmed: true }),
-  ).rejects.toThrow('repair_required')
-  expect(f.browser.start).not.toHaveBeenCalled()
-  expect(JSON.parse(fs.readFileSync(path.join(f.root, 'browser-user.json'), 'utf8')).enabled).toBe(
-    false,
-  )
-})
-
-it('requires new scope consent before restoring or enabling old per-tab preferences', async () => {
-  const f = fixture()
-  fs.writeFileSync(
-    path.join(f.root, 'browser-user.json'),
-    JSON.stringify({ enabled: true, extensionId: officialId, autoRepair: true }),
-  )
-  const controller = new BrowserUserController({ userDataDir: f.root }, f.dependencies)
-  await controller.restore()
-  expect(f.browser.start).not.toHaveBeenCalled()
-  expect(f.registration.repairOwnedPath).not.toHaveBeenCalled()
-  expect((await controller.status()).requiresAuthorization).toBe(true)
-  await expect(controller.action({ action: 'enable', confirmed: true })).rejects.toThrow(
-    'scope_confirmation_required',
-  )
-  await controller.action({ action: 'repair', confirmed: true })
-  expect(f.browser.start).not.toHaveBeenCalled()
-  expect((await controller.status()).requiresAuthorization).toBe(true)
-  await controller.action({ action: 'enable', confirmed: true, scopeConfirmed: true })
-  expect((await controller.status()).requiresAuthorization).toBe(false)
-  expect(
-    JSON.parse(fs.readFileSync(path.join(f.root, 'browser-user.json'), 'utf8')).consentVersion,
-  ).toBe(2)
-})
-
-it('persists canonical blocked links with host confirmation without restarting or registering', async () => {
-  const f = fixture()
-  await f.controller.action({ action: 'enable', confirmed: true, scopeConfirmed: true })
-  f.browser.start.mockClear()
-  f.browser.disable.mockClear()
-  f.registration.register.mockClear()
-  await expect(
-    f.controller.action({
-      action: 'setBlockedUrls',
-      blockedUrls: ['https://example.test/private'],
-    }),
-  ).rejects.toThrow('confirmation_required')
-  await f.controller.action({
-    action: 'setBlockedUrls',
-    confirmed: true,
-    blockedUrls: ['https://example.test/private?q=1#x', 'https://example.test/private?q=2'],
+    ).rejects.toThrow('pairing_expired')
+    expect(f.browser.approvePairing).toHaveBeenCalledTimes(1)
+    expect((await f.controller.status()).paired).toBe(false)
   })
-  expect((await f.controller.status()).blockedUrls).toEqual(['https://example.test/private'])
-  expect(f.browser.setBlockedUrls).toHaveBeenCalledWith(['https://example.test/private'])
-  expect(f.browser.start).not.toHaveBeenCalled()
-  expect(f.browser.disable).not.toHaveBeenCalled()
-  expect(f.registration.register).not.toHaveBeenCalled()
-  const saved = JSON.parse(fs.readFileSync(path.join(f.root, 'browser-user.json'), 'utf8'))
-  expect(saved).toMatchObject({
-    enabled: true,
-    consentVersion: 2,
-    blockedUrls: ['https://example.test/private'],
+  it('invalidates pending approval when disconnect is requested', async () => {
+    const f = fixture()
+    await f.controller.action(enable)
+    const waiting = deferred(),
+      entered = deferred()
+    f.browser.approvePairing.mockImplementationOnce(async () => {
+      entered.resolve()
+      await waiting.promise
+    })
+    const approving = f.controller.action({
+      action: 'approvePairing',
+      confirmed: true,
+      pairingId: 'a',
+      pairingCode: '123456',
+    })
+    const rejected = expect(approving).rejects.toThrow('activation_cancelled')
+    await entered.promise
+    const stop = f.controller.action({ action: 'disable', confirmed: true })
+    expect((await f.controller.status()).enabled).toBe(false)
+    waiting.resolve()
+    await rejected
+    await stop
   })
-  await expect(
-    f.controller.action({
+})
+
+describe('Browser User persistent rules and cross-window compare-and-swap', () => {
+  it('normalizes rules, preserves labels and rejects duplicate canonical links', async () => {
+    const f = fixture()
+    await f.controller.action({
+      action: 'setPageRules',
+      confirmed: true,
+      expectedRulesRevision: 0,
+      pageRules: [rule('https://EXAMPLE.com/private?x=1#h')],
+    })
+    expect((await f.controller.status()).pageRules).toEqual([rule()])
+    expect((await f.controller.status()).rulesRevision).toBe(1)
+    expect(f.browser.setBlockedUrls).toHaveBeenCalledWith(['https://example.com/private'])
+    await expect(
+      f.controller.action({
+        action: 'setPageRules',
+        confirmed: true,
+        expectedRulesRevision: 1,
+        pageRules: [rule(), rule('https://example.com/private?q=2', 'allow')],
+      }),
+    ).rejects.toThrow('page_rules_invalid')
+    expect((await f.controller.status()).rulesRevision).toBe(1)
+  })
+  it('rejects stale full-table revisions across restart, including label-only edits', async () => {
+    const f = fixture()
+    await f.controller.action({
+      action: 'setPageRules',
+      confirmed: true,
+      expectedRulesRevision: 0,
+      pageRules: [rule()],
+    })
+    await f.controller.action({
+      action: 'setPageRules',
+      confirmed: true,
+      expectedRulesRevision: 1,
+      pageRules: [rule(undefined, 'block', 'Renamed')],
+    })
+    const reopened = new BrowserUserController({ userDataDir: f.root }, f.dependencies)
+    expect((await reopened.status()).rulesRevision).toBe(2)
+    await expect(
+      reopened.action({
+        action: 'setPageRules',
+        confirmed: true,
+        expectedRulesRevision: 1,
+        pageRules: [],
+      }),
+    ).rejects.toThrow('rules_conflict')
+    expect((await reopened.status()).pageRules[0]?.label).toBe('Renamed')
+  })
+  it('keeps old policy and revision when disk commit fails', async () => {
+    const f = fixture()
+    await f.controller.action({
+      action: 'setPageRules',
+      confirmed: true,
+      expectedRulesRevision: 0,
+      pageRules: [rule()],
+    })
+    const before = fs.readFileSync(f.file, 'utf8')
+    f.browser.setBlockedUrls.mockClear()
+    vi.spyOn(fs, 'renameSync').mockImplementationOnce(() => {
+      throw new Error('disk full')
+    })
+    await expect(
+      f.controller.action({
+        action: 'setPageRules',
+        confirmed: true,
+        expectedRulesRevision: 1,
+        pageRules: [],
+      }),
+    ).rejects.toThrow('disk full')
+    expect((await f.controller.status()).blockedUrls).toEqual([rule().url])
+    expect((await f.controller.status()).rulesRevision).toBe(1)
+    expect(fs.readFileSync(f.file, 'utf8')).toBe(before)
+    expect(f.browser.setBlockedUrls).not.toHaveBeenCalled()
+  })
+  it('allows only initial legacy list writes without revision and preserves unrelated allow labels', async () => {
+    const f = fixture()
+    await f.controller.action({
       action: 'setBlockedUrls',
       confirmed: true,
-      blockedUrls: ['file:///private'],
-    }),
-  ).rejects.toThrow('url_invalid')
-  expect(
-    JSON.parse(fs.readFileSync(path.join(f.root, 'browser-user.json'), 'utf8')).blockedUrls,
-  ).toEqual(['https://example.test/private'])
-})
-
-it('confirmed close stops input and persists disabled immediately while an earlier diagnostic is pending', async () => {
-  const f = fixture()
-  await f.controller.action({ action: 'enable', confirmed: true, scopeConfirmed: true })
-  let release!: (value: Awaited<ReturnType<typeof f.registration.status>>) => void
-  f.registration.status.mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        release = resolve
-      }),
-  )
-  const diagnosing = f.controller.action({ action: 'diagnose' })
-  for (let index = 0; index < 5 && !release; index++) await Promise.resolve()
-  const closing = f.controller.action({ action: 'disable', confirmed: true })
-  expect(f.browser.status().enabled).toBe(false)
-  expect(JSON.parse(fs.readFileSync(path.join(f.root, 'browser-user.json'), 'utf8')).enabled).toBe(
-    false,
-  )
-  release({ registered: true, supported: true, nativeHostPath: '/fixture/native-host', issues: [] })
-  expect((await diagnosing).enabled).toBe(false)
-  await closing
-  expect(f.browser.status().enabled).toBe(false)
-})
-
-it('close invalidates an in-progress owned registration instead of reopening the browser afterward', async () => {
-  const f = fixture()
-  let release!: (value: { registered: boolean }) => void
-  f.registration.register.mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        release = resolve
-      }),
-  )
-  const installing = f.controller.action({
-    action: 'enable',
-    confirmed: true,
-    scopeConfirmed: true,
-  })
-  const installedOutcome = Promise.allSettled([installing])
-  for (let index = 0; index < 10 && !release; index++) await Promise.resolve()
-  const closing = f.controller.action({ action: 'disable', confirmed: true })
-  expect(f.browser.status().enabled).toBe(false)
-  release({ registered: true })
-  expect((await installedOutcome)[0]).toMatchObject({
-    status: 'rejected',
-    reason: { message: 'browser_activation_cancelled' },
-  })
-  await closing
-  expect(f.browser.start).not.toHaveBeenCalled()
-  expect(JSON.parse(fs.readFileSync(path.join(f.root, 'browser-user.json'), 'utf8')).enabled).toBe(
-    false,
-  )
-  expect(f.registration.remove).not.toHaveBeenCalled()
-})
-
-it('install confirmation repairs an owned upgrade through the enable path and keeps foreign rejection intact', async () => {
-  const f = fixture()
-  f.registration.status.mockResolvedValueOnce({
-    registered: false,
-    supported: true,
-    nativeHostPath: '/new-app/native-host',
-    issues: ['browser_registration_path_changed'],
-  })
-  await f.controller.action({ action: 'enable', confirmed: true, scopeConfirmed: true })
-  expect(f.registration.register).toHaveBeenCalledWith(officialId, true)
-  expect(f.browser.start).toHaveBeenCalledWith(officialId, [])
-  await f.controller.action({ action: 'disable', confirmed: true })
-  f.registration.register.mockRejectedValueOnce(new Error('browser_registration_foreign'))
-  await expect(
-    f.controller.action({
-      action: 'enable',
+      blockedUrls: [rule().url],
+    })
+    await expect(
+      f.controller.action({ action: 'setBlockedUrls', confirmed: true, blockedUrls: [] }),
+    ).rejects.toThrow('rules_conflict')
+    await f.controller.action({
+      action: 'setBlockedUrls',
       confirmed: true,
-      migrateConfirmed: true,
-      scopeConfirmed: true,
-    }),
-  ).rejects.toThrow('foreign')
-  expect(f.browser.status().enabled).toBe(false)
+      expectedRulesRevision: 1,
+      blockedUrls: [],
+    })
+    expect((await f.controller.status()).pageRules).toEqual([rule(undefined, 'allow', '')])
+  })
+  it('applies guarded extension current-page edits without overriding stored labels or other rules', async () => {
+    const f = fixture()
+    await f.controller.action(enable)
+    await f.controller.action({
+      action: 'setPageRules',
+      confirmed: true,
+      expectedRulesRevision: 0,
+      pageRules: [rule(), rule('https://other.test/', 'allow', 'Other')],
+    })
+    const guard = vi.fn()
+    await f.popup(rule(undefined, 'allow', 'Untrusted replacement title'), guard)
+    expect(guard).toHaveBeenCalledTimes(2)
+    const status = await f.controller.status()
+    expect(status.pageRules).toEqual([
+      rule(undefined, 'allow'),
+      rule('https://other.test/', 'allow', 'Other'),
+    ])
+    expect(status.rulesRevision).toBe(2)
+    await expect(
+      f.popup(rule('https://new.test/'), () => {
+        throw new Error('stale page')
+      }),
+    ).rejects.toThrow('stale page')
+    await f.controller.action({ action: 'disable', confirmed: true })
+    await expect(f.popup(rule('https://new.test/'))).rejects.toThrow('disabled')
+    expect((await f.controller.status()).rulesRevision).toBe(2)
+  })
 })

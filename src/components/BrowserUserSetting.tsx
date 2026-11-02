@@ -1,22 +1,28 @@
 // SPDX-License-Identifier: MPL-2.0
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { BrowserUserAction, BrowserUserStatus, UiCoreStatus } from '@lumiplug/shared'
-import {
-  OFFICIAL_BROWSER_EXTENSION_ID,
-  normalizeBrowserUrl,
-  normalizeBrowserBlockedUrls,
+import type {
+  BrowserPageRule,
+  BrowserUserActionRequest,
+  BrowserUserStatus,
+  UiCoreStatus,
 } from '@lumiplug/shared'
+import { OFFICIAL_BROWSER_EXTENSION_ID } from '@lumiplug/shared'
 import { t, useLocale } from '../i18n'
-import { Badge, Button, Card, DataText, Field, FieldGroup, Checkbox, Input, Modal } from './ui'
+import { Badge, Button, DataText, FieldGroup, Checkbox, Input, Select, Modal, Tooltip } from './ui'
 import ConfirmationDialog from './ConfirmationDialog'
 import { useToast } from './ToastProvider'
 import {
-  browserUserActionLabel,
+  browserUserConnectionActive,
+  browserUserCanResetPairing,
+  browserPairingCanApprove,
+  browserUserNeedsConsent,
   browserUserErrorHint,
-  browserUserNextStep,
+  browserUserIssueHint,
   browserUserRequest,
+  browserUserRuleUpdate,
   browserUserStateLabel,
   getBrowserUserStatus,
+  openBrowserExtensionStore,
   performBrowserUserAction,
 } from '../lib/browser-user'
 
@@ -30,29 +36,23 @@ export function BrowserUserSummary({
   errorHint?: string | null
 }) {
   useLocale()
-  const active = status?.sessions.filter((session) => session.state === 'active').length ?? 0
+  const issueHint = status ? status.issues.map(browserUserIssueHint).find(Boolean) : null
   return (
-    <div className="browser-user-fields">
-      <div className="browser-user-status" role="status" aria-live="polite">
-        <Badge
-          tone={
-            coreReady &&
-            status?.enabled &&
-            !status.requiresAuthorization &&
-            !status.migrationRequired &&
-            active > 0 &&
-            status.connectedHosts > 0 &&
-            status.registration.registered
-              ? 'success'
-              : 'neutral'
-          }
-        >
-          {browserUserStateLabel(status, coreReady)}
-        </Badge>
-      </div>
-      <DataText muted>
-        {coreReady && errorHint ? errorHint : browserUserNextStep(status, coreReady)}
-      </DataText>
+    <div className="browser-user-fields" role="status" aria-live="polite">
+      <Badge
+        tone={
+          coreReady && status?.enabled && status.connectedHosts > 0 && !status.requiresAuthorization
+            ? 'success'
+            : 'neutral'
+        }
+      >
+        {browserUserStateLabel(status, coreReady)}
+      </Badge>
+      {coreReady && (errorHint || issueHint) && (
+        <div id="browser-user-error">
+          <DataText muted>{errorHint || issueHint}</DataText>
+        </div>
+      )}
     </div>
   )
 }
@@ -61,39 +61,114 @@ export function BrowserUserPrimaryActions({
   status,
   coreReady,
   busy,
+  connecting = false,
+  closing = false,
   onInstall,
   onCheck,
-  closing = false,
   onDisable,
 }: {
   status: BrowserUserStatus | null
   coreReady: boolean
   busy: boolean
+  connecting?: boolean
   closing?: boolean
   onInstall: () => void
   onCheck: () => void
   onDisable: () => void
 }) {
   useLocale()
+  const active = browserUserConnectionActive(status, connecting)
   return (
     <div className="settings-row-controls">
-      <Button
-        variant="primary"
-        disabled={!coreReady || !status || !status.registration.supported || busy}
-        onClick={onInstall}
+      <Button onClick={onInstall}>{t('安装插件')}</Button>
+      <Tooltip label={t('安装插件')} icon="help">
+        {t(
+          '在默认浏览器中打开官方 Chrome 扩展商店页。若尚未发布，商店可能显示不可用；Lumi 不会自动安装插件。',
+        )}
+      </Tooltip>
+      {active ? (
+        <Button disabled={!coreReady || closing} onClick={onDisable}>
+          {t('关闭连接')}
+        </Button>
+      ) : (
+        <Button variant="primary" disabled={!coreReady || busy} onClick={onCheck}>
+          {t('检查连接')}
+        </Button>
+      )}
+    </div>
+  )
+}
+
+export function BrowserPageRuleRow({
+  rule,
+  disabled,
+  changed,
+  invalid = false,
+  onChange,
+  onSave,
+  onRemove,
+}: {
+  rule: BrowserPageRule
+  disabled: boolean
+  changed: boolean
+  invalid?: boolean
+  onChange: (rule: BrowserPageRule) => void
+  onSave: () => void
+  onRemove: () => void
+}) {
+  useLocale()
+  return (
+    <div className="browser-page-rule-row" data-editing={changed || undefined}>
+      <Input
+        aria-label={t('网页标签')}
+        maxLength={120}
+        value={rule.label}
+        disabled={disabled}
+        onChange={(event) => onChange({ ...rule, label: event.target.value })}
+        placeholder={t('标签')}
+      />
+      <Input
+        aria-label={t('网页链接')}
+        aria-invalid={invalid || undefined}
+        aria-describedby={invalid ? 'browser-user-error' : undefined}
+        maxLength={2048}
+        value={rule.url}
+        disabled={disabled}
+        spellCheck={false}
+        onChange={(event) => onChange({ ...rule, url: event.target.value })}
+        placeholder="https://example.com/page"
+      />
+      <Select
+        aria-label={t('网页权限')}
+        value={rule.permission}
+        disabled={disabled}
+        onChange={(event) =>
+          onChange({ ...rule, permission: event.target.value as BrowserPageRule['permission'] })
+        }
       >
-        {t('安装')}
+        <option value="allow">{t('允许')}</option>
+        <option value="block">{t('禁止')}</option>
+      </Select>
+      <Button disabled={disabled || !changed} onClick={onSave}>
+        {t('保存')}
       </Button>
-      <Button disabled={!coreReady || busy} onClick={onCheck}>
-        {t('检查连接')}
-      </Button>
-      <Button disabled={!coreReady || closing} onClick={onDisable}>
-        {t('关闭')}
+      <Button disabled={disabled} onClick={onRemove}>
+        {t('删除')}
       </Button>
     </div>
   )
 }
 
+type RuleEdit = {
+  base: BrowserPageRule[]
+  revision: number
+  index: number | null
+  draft: BrowserPageRule
+}
+type Pending = {
+  request: BrowserUserActionRequest
+  pairing?: { id: string; code: string; expiresAt: string }
+}
 export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreStatus }) {
   useLocale()
   const toast = useToast()
@@ -101,28 +176,19 @@ export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreS
   const [status, setStatus] = useState<BrowserUserStatus | null>(null)
   const [open, setOpen] = useState(false)
   const [errorHint, setErrorHint] = useState<string | null>(null)
-  const [autoRepair, setAutoRepair] = useState(false)
-  const [migrateConfirmed, setMigrateConfirmed] = useState(false)
-  const [blockedInput, setBlockedInput] = useState('')
-  const [blockedError, setBlockedError] = useState('')
-  const blockedInputRef = useRef<HTMLInputElement>(null)
+  const [edit, setEdit] = useState<RuleEdit | null>(null)
+  const [ruleInvalid, setRuleInvalid] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [busy, setBusy] = useState<BrowserUserAction | null>(null)
-  const [confirmation, setConfirmation] = useState<{
-    action: Exclude<BrowserUserAction, 'diagnose'>
-    autoRepair: boolean
-    migrationRequired: boolean
-    blockedUrls?: string[]
-    previousBlockedUrls?: string[]
-    changedUrl?: string
-    blocking?: boolean
-  } | null>(null)
+  const [connectionIntent, setConnectionIntent] = useState(false)
+  const [busy, setBusy] = useState<BrowserUserActionRequest['action'] | null>(null)
+  const [confirmation, setConfirmation] = useState<Pending | null>(null)
+  const [pairingConfirmed, setPairingConfirmed] = useState(false)
   const trigger = useRef<HTMLButtonElement | null>(null)
+  const listRef = useRef<HTMLDivElement | null>(null)
   const reading = useRef(false)
-  const lock = useRef(false),
-    dirty = useRef(false),
-    sequence = useRef(0),
-    mounted = useRef(true)
+  const lock = useRef(false)
+  const sequence = useRef(0)
+  const mounted = useRef(true)
   useEffect(() => {
     mounted.current = true
     return () => {
@@ -130,176 +196,183 @@ export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreS
       sequence.current++
     }
   }, [])
-  const refresh = useCallback(
-    async (notify = false) => {
-      if (!coreReady || lock.current || reading.current) return
-      reading.current = true
-      const request = ++sequence.current
-      setLoading(true)
-      try {
-        const next = await getBrowserUserStatus()
-        if (!mounted.current || request !== sequence.current) return
-        setStatus(next)
-        if (!dirty.current) setAutoRepair(next.autoRepair)
-        if (notify) toast(browserUserStateLabel(next, true), 'info')
-      } catch {
-        if (!mounted.current || request !== sequence.current) return
-        setStatus(null)
-        if (notify) toast(t('无法读取 Browser User 状态，请检查 Core 后重试。'), 'error')
-      } finally {
-        reading.current = false
-        if (mounted.current && request === sequence.current) setLoading(false)
-      }
-    },
-    [coreReady, toast],
-  )
+  const refresh = useCallback(async () => {
+    if (!coreReady || lock.current || reading.current) return
+    reading.current = true
+    const request = ++sequence.current
+    setLoading(true)
+    try {
+      const next = await getBrowserUserStatus()
+      if (!mounted.current || request !== sequence.current) return
+      setStatus(next)
+      setConnectionIntent(next.enabled || next.connectedHosts > 0)
+    } catch (error) {
+      if (!mounted.current || request !== sequence.current) return
+      setStatus(null)
+      setErrorHint(browserUserErrorHint(error))
+    } finally {
+      reading.current = false
+      if (mounted.current && request === sequence.current) setLoading(false)
+    }
+  }, [coreReady])
   useEffect(() => {
     if (!coreReady) {
       sequence.current++
       lock.current = false
       setBusy(null)
+      setConnectionIntent(false)
       setStatus(null)
       setConfirmation(null)
       setLoading(false)
-      return
-    }
-    void refresh()
-  }, [coreReady, refresh])
+    } else if (open) void refresh()
+  }, [coreReady, open, refresh])
+  // Only read while waiting for the extension; opening the panel never enables it.
   useEffect(() => {
-    if (!open || !coreReady) return
+    if (!open || !coreReady || !status?.enabled) return
     const timer = setInterval(() => {
       if (document.visibilityState === 'visible') void refresh()
-    }, 5000)
+    }, 3000)
     return () => clearInterval(timer)
-  }, [open, coreReady, refresh])
-  async function perform(
-    action: BrowserUserAction,
-    confirmed: boolean,
-    preference?: boolean,
-    migrate = false,
-    blockedUrls?: string[],
-  ) {
-    if ((lock.current && action !== 'disable') || !coreReady) return
+  }, [open, coreReady, status?.enabled, refresh])
+
+  async function perform(request: BrowserUserActionRequest) {
+    if ((lock.current && request.action !== 'disable') || !coreReady) return
     lock.current = true
-    const request = ++sequence.current
+    const current = ++sequence.current
+    setBusy(request.action)
+    if (request.action === 'enable') setConnectionIntent(true)
     setLoading(false)
-    setBusy(action)
     try {
-      const next = await performBrowserUserAction(
-        browserUserRequest(
-          action,
-          OFFICIAL_BROWSER_EXTENSION_ID,
-          confirmed,
-          action === 'enable' || action === 'repair'
-            ? {
-                autoRepair: preference ?? autoRepair,
-                migrateConfirmed: migrate,
-                ...(action === 'enable' ? { scopeConfirmed: true } : {}),
-              }
-            : action === 'setBlockedUrls'
-              ? { blockedUrls }
-              : {},
-        ),
-      )
-      if (!mounted.current || request !== sequence.current) return
+      const next = await performBrowserUserAction(request)
+      if (!mounted.current || current !== sequence.current) return
       setStatus(next)
+      setConnectionIntent(next.enabled || next.connectedHosts > 0)
       setErrorHint(null)
-      setConfirmation((pending) =>
-        pending?.action === 'disable' && action !== 'disable' ? pending : null,
-      )
-      if (action === 'setBlockedUrls') {
-        setBlockedInput('')
-        setBlockedError('')
+      if (request.action === 'setPageRules') {
+        setEdit(null)
+        setRuleInvalid(false)
       }
-      if (
-        action === 'enable' ||
-        action === 'repair' ||
-        action === 'disable' ||
-        action === 'remove'
-      ) {
-        dirty.current = false
-        setAutoRepair(next.autoRepair)
-      } else if (!dirty.current) setAutoRepair(next.autoRepair)
+      setConfirmation(null)
       toast(browserUserStateLabel(next, true), 'info')
     } catch (error) {
-      if (mounted.current && request === sequence.current) {
-        setStatus(null)
-        setConfirmation((pending) =>
-          pending?.action === 'disable' && action !== 'disable' ? pending : null,
-        )
-        const hint = browserUserErrorHint(error)
-        setErrorHint(hint)
-        toast(hint, 'error')
-      }
+      if (!mounted.current || current !== sequence.current) return
+      // Keep the persisted rules and local draft; a failed save never changes policy locally.
+      const hint = browserUserErrorHint(error)
+      setErrorHint(hint)
+      setConfirmation(null)
+      toast(hint, 'error')
     } finally {
-      if (request === sequence.current) {
+      if (current === sequence.current) {
         lock.current = false
         if (mounted.current) setBusy(null)
       }
     }
   }
-  function ask(action: Exclude<BrowserUserAction, 'diagnose'>) {
-    if ((lock.current && action !== 'disable') || !coreReady || (!status && action !== 'disable'))
-      return
-    setMigrateConfirmed(false)
-    setConfirmation({
-      action,
-      autoRepair,
-      migrationRequired:
-        !!status?.migrationRequired && (action === 'enable' || action === 'repair'),
-    })
-  }
-  function askBlockedUrl(url?: string) {
-    if (lock.current || !coreReady || !status) return
+  async function connect() {
+    if (!coreReady || lock.current || reading.current) return
+    // Refresh before choosing consent so stale status never implicitly widens scope.
+    reading.current = true
+    const current = ++sequence.current
+    setLoading(true)
     try {
-      const normalized = normalizeBrowserUrl(url ?? blockedInput)
-      const blocking = url === undefined
-      const existing = status.blockedUrls
-      if (blocking && existing.includes(normalized)) {
-        toast(t('此链接已在禁止列表中。'), 'info')
-        return
+      const next = await getBrowserUserStatus()
+      if (!mounted.current || current !== sequence.current) return
+      setStatus(next)
+      if (browserUserNeedsConsent(next)) {
+        setPairingConfirmed(false)
+        setConfirmation({
+          request: browserUserRequest('enable', OFFICIAL_BROWSER_EXTENSION_ID, true, {
+            scopeConfirmed: true,
+          }),
+        })
+      } else {
+        void perform(browserUserRequest('enable', OFFICIAL_BROWSER_EXTENSION_ID, true))
       }
-      const next = blocking
-        ? [...existing, normalized]
-        : existing.filter((value) => value !== normalized)
-      const checked = normalizeBrowserBlockedUrls(next)
-      setBlockedError('')
-      setConfirmation({
-        action: 'setBlockedUrls',
-        autoRepair,
-        migrationRequired: false,
-        blockedUrls: checked,
-        previousBlockedUrls: [...existing],
-        changedUrl: normalized,
-        blocking,
-      })
-    } catch {
-      const message = t(
-        '请输入不含用户名或密码的完整 HTTP(S) 链接；最多 100 条，每条规范化后不超过 2048 字符。参数和片段不会参与匹配。',
+    } catch (error) {
+      if (mounted.current && current === sequence.current) {
+        const hint = browserUserErrorHint(error)
+        setErrorHint(hint)
+        toast(hint, 'error')
+      }
+    } finally {
+      reading.current = false
+      if (mounted.current && current === sequence.current) setLoading(false)
+    }
+  }
+  function closeConnection() {
+    // Immediate explicitly clicked stop, even while enable is awaiting the Core listener.
+    void perform(browserUserRequest('disable', undefined, true))
+  }
+  async function installPlugin() {
+    try {
+      await openBrowserExtensionStore()
+      toast(t('已请求打开商店页；插件是否可安装以商店页面为准。'), 'info')
+    } catch (error) {
+      const hint = browserUserErrorHint(error)
+      setErrorHint(hint)
+      toast(hint, 'error')
+    }
+  }
+  function startEdit(index: number | null) {
+    if (!status || lock.current) return
+    setEdit({
+      base: status.pageRules.map((rule) => ({ ...rule })),
+      revision: status.rulesRevision,
+      index,
+      draft:
+        index === null
+          ? { label: '', url: '', permission: 'block' }
+          : { ...status.pageRules[index]! },
+    })
+    setErrorHint(null)
+    setRuleInvalid(false)
+  }
+  function saveRule(remove = false) {
+    if (!edit || lock.current) return
+    try {
+      const request = browserUserRuleUpdate(
+        edit.base,
+        edit.revision,
+        edit.index,
+        remove ? null : edit.draft,
       )
-      setBlockedError(message)
-      toast(message, 'error')
-      blockedInputRef.current?.focus()
+      setConfirmation({ request })
+    } catch {
+      const hint = t('请输入有效的 HTTP(S) 链接；链接不能重复，标签最多 120 字符。')
+      setErrorHint(hint)
+      setRuleInvalid(true)
+      toast(hint, 'error')
+      listRef.current?.querySelectorAll<HTMLInputElement>('[data-editing] input')[1]?.focus()
     }
   }
-  function confirmPending() {
-    if (!confirmation) return
-    if (
-      confirmation.action === 'setBlockedUrls' &&
-      JSON.stringify(confirmation.previousBlockedUrls) !== JSON.stringify(status?.blockedUrls)
-    ) {
-      setConfirmation(null)
-      toast(t('禁止列表已变化，请检查最新列表后重新确认。'), 'info')
-      return
+  async function reloadRules() {
+    if (!edit || lock.current || reading.current) return
+    // Conflict recovery explicitly reloads the base but preserves the entered draft.
+    reading.current = true
+    const current = ++sequence.current
+    setLoading(true)
+    try {
+      const next = await getBrowserUserStatus()
+      if (!mounted.current || current !== sequence.current) return
+      const oldUrl = edit.index === null ? null : edit.base[edit.index]?.url
+      const nextIndex =
+        oldUrl === null ? null : next.pageRules.findIndex((rule) => rule.url === oldUrl)
+      setStatus(next)
+      setEdit({
+        ...edit,
+        base: next.pageRules,
+        revision: next.rulesRevision,
+        index: nextIndex === -1 ? null : nextIndex,
+      })
+      setErrorHint(t('已更新规则，请核对草稿后重新保存。'))
+    } catch (error) {
+      if (mounted.current && current === sequence.current) setErrorHint(browserUserErrorHint(error))
+    } finally {
+      reading.current = false
+      if (mounted.current && current === sequence.current) setLoading(false)
     }
-    void perform(
-      confirmation.action,
-      true,
-      confirmation.autoRepair,
-      migrateConfirmed,
-      confirmation.blockedUrls,
-    )
   }
+  const displayed = edit?.base ?? status?.pageRules ?? []
   return (
     <section className="settings-row" aria-labelledby="browser-user-title">
       <div className="settings-row-label">
@@ -311,10 +384,7 @@ export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreS
           className="settings-button"
           onClick={(event) => {
             trigger.current = event.currentTarget
-            dirty.current = false
-            setAutoRepair(status?.autoRepair ?? false)
             setOpen(true)
-            void refresh()
           }}
         >
           {t('管理浏览器连接')}
@@ -335,54 +405,144 @@ export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreS
               status={status}
               coreReady={coreReady}
               busy={busy !== null || loading}
+              connecting={busy === 'enable' || connectionIntent}
               closing={busy === 'disable'}
-              onInstall={() => ask('enable')}
-              onCheck={() => void perform('diagnose', false)}
-              onDisable={() => ask('disable')}
+              onInstall={() => void installPlugin()}
+              onCheck={() => void connect()}
+              onDisable={closeConnection}
             />
-            <FieldGroup label={t('禁止的单个链接')}>
-              <Field
-                label={t('链接')}
-                error={blockedError}
-                description={t(
-                  '只禁止这个链接，忽略问号后的参数和片段；不影响同网站其他页面。尾斜杠不同的链接需分别添加。',
-                )}
-              >
-                <Input
-                  ref={blockedInputRef}
-                  value={blockedInput}
-                  maxLength={2048}
-                  spellCheck={false}
-                  disabled={busy !== null || !coreReady || !status}
-                  onChange={(event) => {
-                    setBlockedInput(event.target.value)
-                    setBlockedError('')
-                  }}
-                  placeholder="https://example.com/private"
-                />
-              </Field>
-              <Button
-                disabled={busy !== null || !coreReady || !status || !blockedInput.trim()}
-                onClick={() => askBlockedUrl()}
-              >
-                {t('禁止此链接')}
-              </Button>
-              {status?.blockedUrls.map((url) => (
-                <Card key={url} density="compact">
-                  <DataText mono>{url}</DataText>
-                  <Button
-                    aria-label={`${t('从禁止列表移除')}: ${url}`}
-                    disabled={busy !== null || !coreReady}
-                    onClick={() => askBlockedUrl(url)}
-                  >
-                    {t('从禁止列表移除')}
-                  </Button>
-                </Card>
-              ))}
-              {status?.blockedUrls.length === 0 && (
-                <DataText muted>
-                  {t('暂无禁止链接；已确认范围内的普通 HTTP(S) 网页默认允许。')}
+            {browserUserCanResetPairing(status, !!errorHint) && (
+              <div className="browser-user-status">
+                <Button
+                  disabled={!coreReady || busy !== null}
+                  onClick={() =>
+                    setConfirmation({
+                      request: browserUserRequest('resetPairing', undefined, true),
+                    })
+                  }
+                >
+                  {t('重新配对')}
+                </Button>
+              </div>
+            )}
+            {status?.pairing && (
+              <div className="browser-user-status">
+                <DataText mono>
+                  {t('配对码')}: {status.pairing.code}
                 </DataText>
+                <Button
+                  disabled={busy !== null}
+                  onClick={() => {
+                    const pairing = status.pairing
+                    if (!pairing) return
+                    setPairingConfirmed(false)
+                    setConfirmation({
+                      request: browserUserRequest('approvePairing', undefined, true, {
+                        pairingId: pairing.id,
+                        pairingCode: pairing.code,
+                      }),
+                      pairing: { ...pairing },
+                    })
+                  }}
+                >
+                  {t('核对配对码')}
+                </Button>
+              </div>
+            )}
+            <FieldGroup label={t('网页权限')}>
+              <div className="browser-user-status">
+                <Button
+                  disabled={
+                    !coreReady || !status || busy !== null || !!edit || displayed.length >= 100
+                  }
+                  onClick={() => startEdit(null)}
+                >
+                  {t('添加网页')}
+                </Button>
+                <Tooltip label={t('网页权限')} icon="help">
+                  {t(
+                    '未列出的普通网页默认允许。链接忽略参数和片段，保留尾斜杠。修改后保存才生效；暂停和接管始终优先。',
+                  )}
+                </Tooltip>
+              </div>
+              <div
+                className="browser-page-rules"
+                ref={listRef}
+                tabIndex={0}
+                aria-label={t('网页权限列表')}
+              >
+                {displayed.map((rule, index) => (
+                  <BrowserPageRuleRow
+                    key={rule.url}
+                    rule={edit?.index === index ? edit.draft : rule}
+                    disabled={
+                      !coreReady || loading || busy !== null || (!!edit && edit.index !== index)
+                    }
+                    changed={edit?.index === index}
+                    invalid={edit?.index === index && ruleInvalid}
+                    onChange={(draft) => {
+                      setRuleInvalid(false)
+                      if (!edit) {
+                        startEdit(index)
+                        setEdit({
+                          base: displayed.map((row) => ({ ...row })),
+                          revision: status!.rulesRevision,
+                          index,
+                          draft,
+                        })
+                      } else setEdit({ ...edit, draft })
+                    }}
+                    onSave={() => saveRule()}
+                    onRemove={() => {
+                      if (edit?.index === index) saveRule(true)
+                      else {
+                        setEdit({
+                          base: displayed.map((row) => ({ ...row })),
+                          revision: status!.rulesRevision,
+                          index,
+                          draft: { ...rule },
+                        })
+                        const request = browserUserRuleUpdate(
+                          displayed,
+                          status!.rulesRevision,
+                          index,
+                          null,
+                        )
+                        setConfirmation({ request })
+                      }
+                    }}
+                  />
+                ))}
+                {edit?.index === null && (
+                  <BrowserPageRuleRow
+                    rule={edit.draft}
+                    disabled={busy !== null || loading || !coreReady}
+                    changed
+                    invalid={ruleInvalid}
+                    onChange={(draft) => {
+                      setRuleInvalid(false)
+                      setEdit({ ...edit, draft })
+                    }}
+                    onSave={() => saveRule()}
+                    onRemove={() => setEdit(null)}
+                  />
+                )}
+                {!displayed.length && edit?.index !== null && (
+                  <DataText muted>{t('暂无网页规则')}</DataText>
+                )}
+              </div>
+              {edit && (
+                <div className="settings-row-controls">
+                  <Button disabled={busy !== null || loading} onClick={() => setEdit(null)}>
+                    {t('取消编辑')}
+                  </Button>
+                  <Button
+                    disabled={busy !== null || loading || !coreReady}
+                    onClick={() => void reloadRules()}
+                  >
+                    {t('重新检查规则')}
+                  </Button>
+                </div>
               )}
             </FieldGroup>
           </div>
@@ -390,53 +550,62 @@ export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreS
       )}
       {confirmation && (
         <ConfirmationDialog
-          title={browserUserActionLabel(confirmation.action)}
-          confirmLabel={browserUserActionLabel(confirmation.action)}
-          busy={busy !== null && (confirmation.action !== 'disable' || busy === 'disable')}
-          disabled={!coreReady || (confirmation.migrationRequired && !migrateConfirmed)}
-          danger={confirmation.action === 'disable'}
+          title={
+            confirmation.request.action === 'setPageRules'
+              ? t('保存网页规则')
+              : confirmation.request.action === 'resetPairing'
+                ? t('重新配对')
+                : confirmation.pairing
+                  ? t('核对配对码')
+                  : t('连接浏览器')
+          }
+          confirmLabel={t('确认')}
+          busy={busy !== null}
+          disabled={
+            !coreReady ||
+            (!!confirmation.pairing &&
+              !browserPairingCanApprove(status?.pairing, confirmation.pairing, pairingConfirmed))
+          }
           cancel={() => {
-            if (!lock.current || (confirmation.action === 'disable' && busy !== 'disable'))
-              setConfirmation(null)
+            if (!lock.current) setConfirmation(null)
           }}
-          confirm={confirmPending}
+          confirm={() => {
+            const request = {
+              ...confirmation.request,
+            }
+            setConfirmation(null)
+            void perform(request)
+          }}
         >
-          <p>
-            {confirmation.action === 'setBlockedUrls'
-              ? confirmation.blocking
-                ? t('确认禁止此精确链接的所有参数和片段变体；相关操作将立即取消。')
-                : t('确认移除此禁止项；此链接将回到默认允许范围，但不会恢复暂停或接管状态。')
-              : confirmation.action === 'enable' || confirmation.action === 'repair'
-                ? t('安装 Lumi 的浏览器连接。Chrome 扩展仍需你在浏览器中安装并确认权限。')
-                : t('关闭后停止浏览器控制，但保留安装。已执行的网页操作无法撤回。')}
-          </p>
-          {confirmation.changedUrl && (
-            <div className="browser-user-fields">
-              <DataText mono>{confirmation.changedUrl}</DataText>
-            </div>
+          {confirmation.request.action === 'resetPairing' ? (
+            <p>{t('撤销此 Lumi 的旧配对并关闭连接。之后请检查连接，再与插件核对新的配对码。')}</p>
+          ) : confirmation.pairing ? (
+            <>
+              <DataText mono>{confirmation.pairing.code}</DataText>
+              <Checkbox
+                label={t('此配对码与 Chrome 插件中显示的相同')}
+                checked={pairingConfirmed}
+                onChange={(event) => setPairingConfirmed(event.target.checked)}
+                disabled={busy !== null}
+              />
+              <DataText muted>
+                {t('仅确认你正在使用的插件。配对码过期或不同，请取消后重新连接。')}
+              </DataText>
+            </>
+          ) : confirmation.request.action === 'setPageRules' ? (
+            <p>{t('保存后立即生效，禁止的网页操作将停止。')}</p>
+          ) : (
+            <>
+              <p>
+                {t(
+                  '连接官方插件并允许控制普通 HTTP(S) 网页，禁止项除外；Chrome 仍需确认插件权限。',
+                )}
+              </p>
+              <Tooltip label={t('浏览器控制')} icon="help">
+                {t('所有连接到 Lumi 的 Agent 共享浏览器控制。')}
+              </Tooltip>
+            </>
           )}
-          {confirmation.action === 'enable' && (
-            <p>{t('允许 Lumi 控制所有普通 HTTP(S) 网页，禁止列表除外。暂停和接管始终优先。')}</p>
-          )}
-          {(confirmation.action === 'enable' || confirmation.action === 'repair') && (
-            <Checkbox
-              label={t('允许 Lumi 更新或移动后自动保持连接（仅本安装和同一官方扩展）')}
-              checked={confirmation.autoRepair}
-              disabled={busy !== null}
-              onChange={(event) =>
-                setConfirmation({ ...confirmation, autoRepair: event.target.checked })
-              }
-            />
-          )}
-          {confirmation.migrationRequired && (
-            <Checkbox
-              label={t('我确认将旧版连接切换到官方扩展；仍需在 Chrome 中确认权限。')}
-              checked={migrateConfirmed}
-              disabled={busy !== null}
-              onChange={(event) => setMigrateConfirmed(event.target.checked)}
-            />
-          )}
-          <p>{t('所有连接到 Lumi 的 Agent 共享浏览器控制。')}</p>
         </ConfirmationDialog>
       )}
     </section>

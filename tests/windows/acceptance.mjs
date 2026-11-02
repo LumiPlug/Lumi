@@ -242,10 +242,12 @@ try {
       assert.equal(status.enabled, false)
       assert.equal(status.connectedHosts, 0)
       assert.deepEqual(status.sessions, [])
-      assert.equal(status.registration.supported, true)
-      assert.equal(status.registration.registered, false)
-      assert.equal(typeof status.registration.nativeHostPath, 'string')
-      assert.ok(Array.isArray(status.registration.issues))
+      assert.equal(status.transport, 'loopback-websocket')
+      assert.equal(status.endpoint, 'ws://127.0.0.1:43127/ws')
+      assert.equal(status.paired, false)
+      assert.equal(status.pairing, null)
+      assert.ok(Array.isArray(status.pageRules))
+      assert.equal(status.rulesRevision, 0)
       assert.ok(Array.isArray(status.blockedUrls))
     }
   })
@@ -254,6 +256,29 @@ try {
     await waitFor(
       () => execute('return !!document.querySelector(".settings-core-status[data-state=ready]")'),
       'Settings did not show connected Core',
+    )
+    await execute(`document.querySelectorAll('button').forEach(button => {
+      if (button.textContent.trim() === '管理浏览器连接') button.click();
+    });`)
+    await waitFor(
+      () => execute('return !!document.querySelector("dialog .browser-page-rules")'),
+      'Browser User rule list did not open',
+    )
+    await waitFor(
+      () =>
+        execute(
+          'const text = document.querySelector("dialog")?.textContent ?? ""; return text.includes("Browser User 已停用") || text.includes("需要确认全部普通网页控制范围")',
+        ),
+      'Opening Browser User did not complete its real status check',
+    )
+    assert.equal(
+      (await ipc('browser_user_request', { action: 'status', payload: {} })).enabled,
+      false,
+    )
+    await click('dialog button[aria-label="关闭预览"]')
+    await waitFor(
+      () => execute('return !document.querySelector("dialog")'),
+      'Browser User panel did not close',
     )
     await click('select[aria-label="语言 / Language"] option[value="en"]')
     await waitFor(

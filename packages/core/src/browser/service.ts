@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-import fs from 'node:fs'
-import path from 'node:path'
-import net from 'node:net'
-import type { Server, Socket } from 'node:net'
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
+import type { Duplex } from 'node:stream'
+import { randomUUID } from 'node:crypto'
+import { BrowserWebSocketTransport } from './websocket-transport'
+import { BROWSER_WEBSOCKET_ENDPOINT } from './transport-types'
+import type { BrowserTransport, BrowserPairing } from './transport-types'
 import {
   BrowserError,
   BrowserFrames,
@@ -13,6 +13,7 @@ import {
   writeBrowserFrame,
 } from './protocol'
 import type { BrowserMessage } from './protocol'
+import type { BrowserPageRule } from '@lumiplug/shared'
 import { normalizeBrowserBlockedUrls, normalizeBrowserUrl } from '@lumiplug/shared'
 
 export { BrowserError } from './protocol'
@@ -32,12 +33,31 @@ export interface BrowserStatus {
   controlDomain: 'shared-lumi'
   blockedUrls: string[]
   policyEpoch: number
+  transport: 'loopback-websocket'
+  endpoint: string
+  paired: boolean
+  pairing: BrowserPairing | null
+}
+interface PageContext {
+  tabId: number
+  url: string
+  label: string
+  policyEpoch: number
+  serviceEpoch: number
+  expiresAt: number
 }
 interface Host {
-  socket: Socket
+  socket: Duplex
   authenticated: boolean
   sessions: Set<string>
+  contexts: Map<string, PageContext>
+  rulePending: boolean
 }
+export type BrowserPageRuleHandler = (
+  rule: BrowserPageRule,
+  guard: () => void,
+) => Promise<{ rulesRevision: number }>
+
 interface Session {
   item: BrowserSession
   host: Host
@@ -54,37 +74,30 @@ export interface BrowserServiceOptions {
   userDataDir: string
   extensionId?: string
   requestTimeoutMs?: number
-  serverFactory?: typeof net.createServer
+  transportFactory?: () => BrowserTransport
 }
 
 /** One Lumi control domain. HTTP MCP request lifetimes are not agent identities. */
 export class BrowserService {
   private enabled = false
   private extensionId: string | null
-  private server?: Server
-  private token: string | null = null
+  private readonly transport: BrowserTransport
   private epoch = 0
+  private activationEpoch = 0
   private policyEpoch = 1
   private blockedUrls: string[] = []
+  private pageRuleHandler?: BrowserPageRuleHandler
   private hosts = new Set<Host>()
   private sessions = new Map<string, Session>()
   private pending?: Pending
   private queue: Promise<unknown> = Promise.resolve()
   private queued = 0
   private lifecycle: Promise<void> = Promise.resolve()
-  readonly runtimeFile: string
-  private readonly directory: string
-  private readonly address: string
-
   constructor(private readonly options: BrowserServiceOptions) {
     this.extensionId = options.extensionId ?? null
-    this.directory = path.join(path.resolve(options.userDataDir), 'browser-user')
-    this.runtimeFile = path.join(this.directory, 'runtime.json')
-    const identity = createHash('sha256').update(this.directory).digest('hex').slice(0, 24)
-    this.address =
-      process.platform === 'win32'
-        ? `\\\\.\\pipe\\lumi-browser-user-${identity}`
-        : path.join(this.directory, 'core.sock')
+    this.transport =
+      options.transportFactory?.() ??
+      new BrowserWebSocketTransport({ userDataDir: options.userDataDir })
   }
 
   status(): BrowserStatus {
@@ -98,10 +111,30 @@ export class BrowserService {
       controlDomain: 'shared-lumi',
       blockedUrls: [...this.blockedUrls],
       policyEpoch: this.policyEpoch,
+      transport: 'loopback-websocket',
+      endpoint: BROWSER_WEBSOCKET_ENDPOINT,
+      ...this.transport.status(),
     }
   }
+  async resetPairing(): Promise<void> {
+    this.epoch++
+    for (const host of [...this.hosts])
+      this.disconnect(host, 'Browser pairing reset after dispatch')
+    await this.transport.resetPairing()
+  }
+
+  async approvePairing(id: string, code: string): Promise<void> {
+    if (!this.enabled) throw new BrowserError('browser_disabled', 'Browser User is closed')
+    await this.transport.approvePairing(id, code)
+  }
+
   diagnose(): BrowserStatus {
     return this.status()
+  }
+
+  /** Persistence is owned by the host-authorized controller, never an MCP tool. */
+  setPageRuleHandler(handler: BrowserPageRuleHandler): void {
+    this.pageRuleHandler = handler
   }
 
   /** Host-only policy mutation; MCP tools cannot call this method. */
@@ -111,6 +144,7 @@ export class BrowserService {
     this.blockedUrls = normalized
     this.policyEpoch++
     this.epoch++
+    for (const host of this.hosts) host.contexts.clear()
     const pending = this.pending
     if (pending) {
       this.block(pending.session)
@@ -150,6 +184,7 @@ export class BrowserService {
     blockedUrls: string[] = this.blockedUrls,
   ): Promise<void> {
     const normalized = normalizeBrowserBlockedUrls(blockedUrls)
+    const activation = this.activationEpoch
     if (!/^[a-p]{32}$/.test(extensionId))
       return Promise.reject(
         new BrowserError('invalid_extension_id', 'A concrete Chrome extension ID is required'),
@@ -157,51 +192,21 @@ export class BrowserService {
     const operation = this.lifecycle
       .catch(() => {})
       .then(async () => {
+        if (activation !== this.activationEpoch) return
         this.setBlockedUrls(normalized)
         if (this.enabled && this.extensionId === extensionId) return
         await this.stopInternal()
+        if (activation !== this.activationEpoch) return
         this.extensionId = extensionId
-        fs.mkdirSync(this.directory, { recursive: true, mode: 0o700 })
-        const directory = fs.lstatSync(this.directory)
-        if (
-          !directory.isDirectory() ||
-          directory.isSymbolicLink() ||
-          (process.platform !== 'win32' &&
-            (directory.uid !== process.getuid?.() || directory.mode & 0o077))
-        )
-          throw new BrowserError(
-            'unsafe_ipc_directory',
-            'Browser User requires an owner-private directory',
-          )
-        if (process.platform !== 'win32') await this.removeStaleSocket()
-        const token = randomBytes(32).toString('hex')
-        this.token = token
-        const server = (this.options.serverFactory ?? net.createServer)((socket) =>
-          this.accept(socket),
-        )
-        this.server = server
-        server.on('error', () => {})
         try {
-          await new Promise<void>((resolve, reject) => {
-            server.once('error', reject)
-            server.listen(this.address, () => {
-              server.removeListener('error', reject)
-              resolve()
-            })
+          const generation = this.epoch
+          await this.transport.start((socket) => {
+            if (generation !== this.epoch) socket.destroy()
+            else this.accept(socket)
           })
-          if (process.platform !== 'win32') fs.chmodSync(this.address, 0o600)
-          const temporary = path.join(this.directory, `runtime-${randomUUID()}.tmp`)
-          try {
-            fs.writeFileSync(
-              temporary,
-              JSON.stringify({ version: 1, address: this.address, token }),
-              { flag: 'wx', mode: 0o600 },
-            )
-            if (fs.existsSync(this.runtimeFile) && fs.lstatSync(this.runtimeFile).isSymbolicLink())
-              throw new BrowserError('unsafe_runtime', 'Refusing symlink runtime descriptor')
-            fs.renameSync(temporary, this.runtimeFile)
-          } finally {
-            fs.rmSync(temporary, { force: true })
+          if (generation !== this.epoch || activation !== this.activationEpoch) {
+            await this.transport.stop()
+            return
           }
           this.enabled = true
         } catch (error) {
@@ -214,10 +219,20 @@ export class BrowserService {
   }
 
   disable(): Promise<void> {
+    this.activationEpoch++
     // Cancel queued calls immediately, before waiting for a startup transition.
     this.epoch++
     this.enabled = false
-    const operation = this.lifecycle.catch(() => {}).then(() => this.stopInternal())
+    for (const host of [...this.hosts])
+      this.disconnect(host, 'Browser control disabled after dispatch')
+    const stopping = this.transport.stop()
+    void stopping.catch(() => {})
+    const operation = this.lifecycle
+      .catch(() => {})
+      .then(async () => {
+        await stopping
+        await this.stopInternal()
+      })
     this.lifecycle = operation
     return operation
   }
@@ -352,39 +367,36 @@ export class BrowserService {
     session.item.state = 'paused'
   }
 
-  private accept(socket: Socket): void {
-    const host: Host = { socket, authenticated: false, sessions: new Set() }
+  private accept(socket: Duplex): void {
+    if (!this.enabled) {
+      socket.destroy()
+      return
+    }
+    const host: Host = {
+      socket,
+      authenticated: true,
+      sessions: new Set(),
+      contexts: new Map(),
+      rulePending: false,
+    }
     this.hosts.add(host)
-    const frames = new BrowserFrames(),
-      timer = setTimeout(() => socket.destroy(), 3000)
+    const frames = new BrowserFrames()
     socket.pipe(frames)
     socket.on('error', () => {})
     frames.on('error', () => socket.destroy())
-    socket.on('close', () => {
-      clearTimeout(timer)
-      this.disconnect(host, 'Native host disconnected after dispatch')
-    })
+    socket.on('close', () =>
+      this.disconnect(host, 'Authenticated browser connection closed after dispatch'),
+    )
+    this.send(host, { type: 'ready' })
+    this.sendPolicy(host)
     frames.on('data', (message: BrowserMessage) => {
-      if (!host.authenticated) {
-        if (
-          !this.enabled ||
-          !this.token ||
-          message.role !== 'native' ||
-          message.origin !== `chrome-extension://${this.extensionId}/` ||
-          typeof message.token !== 'string' ||
-          Buffer.byteLength(message.token) !== Buffer.byteLength(this.token) ||
-          !timingSafeEqual(Buffer.from(message.token), Buffer.from(this.token))
-        ) {
-          socket.destroy()
-          return
-        }
-        host.authenticated = true
-        clearTimeout(timer)
-        this.send(host, { type: 'ready' })
-        this.sendPolicy(host)
+      if (!this.enabled || !this.hosts.has(host)) {
+        socket.destroy()
         return
       }
-      if (message.type === 'sessions') {
+      if (message.type === 'page_context' || message.type === 'page_rule') {
+        void this.handlePageRuleMessage(host, message)
+      } else if (message.type === 'sessions') {
         if (message.policyEpoch === this.policyEpoch) this.updateSessions(host, message.sessions)
       } else if (message.type === 'response' && typeof message.id === 'string') {
         const pending = this.pending
@@ -414,6 +426,129 @@ export class BrowserService {
         }
       } else socket.destroy()
     })
+  }
+
+  private async handlePageRuleMessage(host: Host, message: BrowserMessage): Promise<void> {
+    const id =
+      typeof message.id === 'string' && message.id.length > 0 && message.id.length <= 128
+        ? message.id
+        : null
+    const type = message.type === 'page_context' ? 'page_context_result' : 'page_rule_result'
+    if (id === null) {
+      host.socket.destroy()
+      return
+    }
+    try {
+      if (!this.enabled || !host.authenticated || host.socket.destroyed || !this.hosts.has(host))
+        throw new BrowserError('browser_disabled', 'Browser User is closed')
+      if (message.policyEpoch !== this.policyEpoch)
+        throw new BrowserError('policy_changed', 'Refresh the current page policy')
+      if (message.type === 'page_context') {
+        if (
+          Object.keys(message).some(
+            (key) => !['type', 'id', 'tabId', 'url', 'title', 'policyEpoch'].includes(key),
+          ) ||
+          !Number.isSafeInteger(message.tabId) ||
+          (message.tabId as number) < 0 ||
+          typeof message.url !== 'string' ||
+          message.url.length > 2048 ||
+          (message.title !== undefined &&
+            (typeof message.title !== 'string' || message.title.length > 4096))
+        )
+          throw new BrowserError('invalid_arguments', 'Invalid current-page context')
+        const url = normalizeBrowserUrl(message.url)
+        if (url !== message.url)
+          throw new BrowserError('invalid_arguments', 'Current-page URL must already be normalized')
+        for (const [key, context] of host.contexts)
+          if (context.expiresAt < Date.now()) host.contexts.delete(key)
+        if (host.contexts.size >= 8)
+          throw new BrowserError('busy', 'Too many current-page contexts')
+        const contextId = randomUUID()
+        host.contexts.set(contextId, {
+          tabId: message.tabId as number,
+          url,
+          label:
+            typeof message.title === 'string'
+              ? message.title.replace(/\s+/g, ' ').trim().slice(0, 120)
+              : '',
+          policyEpoch: this.policyEpoch,
+          serviceEpoch: this.epoch,
+          expiresAt: Date.now() + 30000,
+        })
+        this.send(host, { type, id, result: { contextId, url, policyEpoch: this.policyEpoch } })
+        return
+      }
+      if (
+        Object.keys(message).some(
+          (key) => !['type', 'id', 'contextId', 'permission', 'policyEpoch'].includes(key),
+        ) ||
+        typeof message.contextId !== 'string' ||
+        typeof message.permission !== 'string' ||
+        !['allow', 'block'].includes(message.permission)
+      )
+        throw new BrowserError('invalid_arguments', 'Invalid current-page rule')
+      const context = host.contexts.get(message.contextId)
+      host.contexts.delete(message.contextId)
+      if (!context)
+        throw new BrowserError('context_expired', 'Current-page context is absent or already used')
+      const guard = () => {
+        if (!this.enabled || !host.authenticated || host.socket.destroyed || !this.hosts.has(host))
+          throw new BrowserError('browser_disabled', 'Browser User is closed')
+        if (
+          context.expiresAt < Date.now() ||
+          context.policyEpoch !== this.policyEpoch ||
+          context.serviceEpoch !== this.epoch
+        )
+          throw new BrowserError(
+            'context_expired',
+            'Current-page context expired or policy changed',
+          )
+      }
+      guard()
+      if (host.rulePending) throw new BrowserError('busy', 'Another page rule is being saved')
+      if (!this.pageRuleHandler)
+        throw new BrowserError('page_rules_unavailable', 'Page rule persistence is unavailable')
+      host.rulePending = true
+      try {
+        const result = await this.pageRuleHandler(
+          {
+            url: context.url,
+            label: context.label,
+            permission: message.permission as 'allow' | 'block',
+          },
+          guard,
+        )
+        // Successful persistence may change policy epoch and broadcasts policy before this ACK.
+        if (this.enabled && this.hosts.has(host) && !host.socket.destroyed)
+          this.send(host, {
+            type,
+            id,
+            result: {
+              url: context.url,
+              permission: message.permission,
+              policyEpoch: this.policyEpoch,
+              rulesRevision: result.rulesRevision,
+            },
+          })
+      } finally {
+        host.rulePending = false
+      }
+    } catch (error) {
+      const code =
+        error instanceof BrowserError
+          ? error.code
+          : error instanceof Error && /^browser_[a-z_]+$/.test(error.message)
+            ? error.message
+            : 'page_rule_failed'
+      this.send(host, {
+        type,
+        id,
+        error: {
+          code,
+          message: 'Page rule was not confirmed. Refresh the page state before trying again.',
+        },
+      })
+    }
   }
 
   private updateSessions(host: Host, value: unknown): void {
@@ -486,6 +621,7 @@ export class BrowserService {
   }
   private disconnect(host: Host, message: string): void {
     if (!this.hosts.delete(host)) return
+    host.contexts.clear()
     if (this.pending?.session.host === host)
       this.pending.finish(
         new BrowserError(
@@ -503,52 +639,6 @@ export class BrowserService {
     for (const host of [...this.hosts])
       this.disconnect(host, 'Browser User disabled after dispatch')
     this.sessions.clear()
-    const server = this.server
-    this.server = undefined
-    if (server) await new Promise<void>((resolve) => server.close(() => resolve()))
-    if (this.token) {
-      try {
-        const item: unknown = JSON.parse(fs.readFileSync(this.runtimeFile, 'utf8'))
-        if (isRecord(item) && item.token === this.token) fs.rmSync(this.runtimeFile)
-      } catch {
-        /* Missing or replaced descriptors are never removed blindly. */
-      }
-    }
-    this.token = null
-  }
-  private async removeStaleSocket(): Promise<void> {
-    let stat: fs.Stats
-    try {
-      stat = fs.lstatSync(this.address)
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
-      throw error
-    }
-    if (!stat.isSocket() || stat.isSymbolicLink() || stat.uid !== process.getuid?.())
-      throw new BrowserError('unsafe_ipc_socket', 'Refusing an unexpected browser IPC path')
-    const active = await new Promise<boolean>((resolve, reject) => {
-      const client = net.createConnection(this.address)
-      const timer = setTimeout(() => {
-        client.destroy()
-        reject(new BrowserError('ipc_busy', 'Existing browser IPC could not be verified'))
-      }, 1000)
-      client.once('connect', () => {
-        clearTimeout(timer)
-        client.destroy()
-        resolve(true)
-      })
-      client.once('error', (error) => {
-        clearTimeout(timer)
-        client.destroy()
-        if ((error as NodeJS.ErrnoException).code === 'ECONNREFUSED') resolve(false)
-        else reject(error)
-      })
-    })
-    if (active)
-      throw new BrowserError(
-        'already_running',
-        'Another Browser User Core service is already listening',
-      )
-    fs.unlinkSync(this.address)
+    await this.transport.stop()
   }
 }

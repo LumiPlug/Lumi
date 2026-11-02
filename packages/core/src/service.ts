@@ -142,7 +142,6 @@ export class CoreService {
     fs.mkdirSync(options.userDataDir, { recursive: true })
     this.browserUser = new BrowserUserController({
       userDataDir: options.userDataDir,
-      nativeHostPath: options.browserNativeHostPath,
     })
     this.database = new CoreDatabase(path.join(options.userDataDir, 'lumiplug.sqlite'))
     this.usage = new UsageService(
@@ -326,35 +325,52 @@ export class CoreService {
     }
     if (route === '/app/browser-user/action' && method === 'POST') {
       const body = await readBody(request, 256 * 1024)
+      const fields: Record<string, string[]> = {
+        enable: ['extensionId', 'confirmed', 'scopeConfirmed'],
+        disable: [],
+        diagnose: [],
+        approvePairing: ['pairingId', 'pairingCode'],
+        resetPairing: ['confirmed'],
+        setBlockedUrls: ['confirmed', 'blockedUrls', 'expectedRulesRevision'],
+        setPageRules: ['confirmed', 'pageRules', 'expectedRulesRevision'],
+      }
       if (
         !isRecord(body) ||
-        !['enable', 'disable', 'repair', 'diagnose', 'remove', 'setBlockedUrls'].includes(
-          String(body.action),
-        ) ||
+        typeof body.action !== 'string' ||
+        !Object.hasOwn(fields, body.action) ||
         Object.keys(body).some(
-          (key) =>
-            ![
-              'action',
-              'extensionId',
-              'confirmed',
-              'autoRepair',
-              'migrateConfirmed',
-              'blockedUrls',
-              'scopeConfirmed',
-            ].includes(key),
+          (key) => key !== 'action' && !fields[body.action as string]!.includes(key),
         ) ||
-        (body.extensionId !== undefined && typeof body.extensionId !== 'string') ||
-        (body.scopeConfirmed !== undefined && body.action !== 'enable') ||
-        (body.action === 'setBlockedUrls'
-          ? !Array.isArray(body.blockedUrls) ||
-            body.blockedUrls.length > 100 ||
-            body.blockedUrls.some((value) => typeof value !== 'string' || value.length > 2048)
-          : body.blockedUrls !== undefined) ||
-        ['confirmed', 'autoRepair', 'migrateConfirmed', 'scopeConfirmed'].some(
+        (body.extensionId !== undefined &&
+          (typeof body.extensionId !== 'string' || body.extensionId.length !== 32)) ||
+        ['confirmed', 'scopeConfirmed'].some(
           (key) => body[key] !== undefined && typeof body[key] !== 'boolean',
         ) ||
-        (!['enable', 'repair'].includes(String(body.action)) &&
-          (body.autoRepair !== undefined || body.migrateConfirmed !== undefined))
+        (body.expectedRulesRevision !== undefined &&
+          (!Number.isSafeInteger(body.expectedRulesRevision) ||
+            (body.expectedRulesRevision as number) < 0)) ||
+        (body.action === 'approvePairing' &&
+          (typeof body.pairingId !== 'string' ||
+            body.pairingId.length > 128 ||
+            typeof body.pairingCode !== 'string' ||
+            !/^\d{6}$/.test(body.pairingCode))) ||
+        (body.action === 'setBlockedUrls' &&
+          (!Array.isArray(body.blockedUrls) ||
+            body.blockedUrls.length > 100 ||
+            body.blockedUrls.some((value) => typeof value !== 'string' || value.length > 2048))) ||
+        (body.action === 'setPageRules' &&
+          (!Array.isArray(body.pageRules) ||
+            body.pageRules.length > 100 ||
+            body.pageRules.some(
+              (value) =>
+                !isRecord(value) ||
+                Object.keys(value).some((key) => !['url', 'label', 'permission'].includes(key)) ||
+                typeof value.url !== 'string' ||
+                value.url.length > 2048 ||
+                typeof value.label !== 'string' ||
+                value.label.length > 120 ||
+                !['allow', 'block'].includes(String(value.permission)),
+            )))
       ) {
         writeJson(
           responseObject,

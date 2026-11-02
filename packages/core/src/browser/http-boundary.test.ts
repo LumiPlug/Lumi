@@ -101,10 +101,45 @@ it('Browser User settings require desktop host credentials, not the shared MCP t
       ok: true,
       data: { blockedUrls: ['https://example.com/private'], enabled: false },
     })
+    const hostHeaders = { ...headers, 'x-lumiplug-host-token': host }
+    const rules = await fetch(`${base}/app/browser-user/action`, {
+      method: 'POST',
+      headers: hostHeaders,
+      body: JSON.stringify({
+        action: 'setPageRules',
+        confirmed: true,
+        expectedRulesRevision: 1,
+        pageRules: [{ url: 'https://example.com/private', label: 'Private', permission: 'block' }],
+      }),
+    })
+    expect(rules.status).toBe(200)
+    expect(await rules.json()).toMatchObject({
+      ok: true,
+      data: { rulesRevision: 2, pageRules: [{ label: 'Private', permission: 'block' }] },
+    })
+    for (const action of [
+      { action: 'resetPairing', confirmed: true },
+      { action: 'approvePairing', pairingId: 'old', pairingCode: '123456' },
+    ]) {
+      const forbidden = await fetch(`${base}/app/browser-user/action`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(action),
+      })
+      expect(forbidden.status).toBe(403)
+    }
+    const unconfirmedReset = await fetch(`${base}/app/browser-user/action`, {
+      method: 'POST',
+      headers: hostHeaders,
+      body: JSON.stringify({ action: 'resetPairing' }),
+    })
+    expect(await unconfirmedReset.json()).toMatchObject({
+      error: { code: 'browser_confirmation_required' },
+    })
     const automaticWithoutConsent = await fetch(`${base}/app/browser-user/action`, {
       method: 'POST',
       headers: { ...headers, 'x-lumiplug-host-token': host },
-      body: JSON.stringify({ action: 'enable', autoRepair: true, migrateConfirmed: true }),
+      body: JSON.stringify({ action: 'enable' }),
     })
     expect(await automaticWithoutConsent.json()).toMatchObject({
       error: { code: 'browser_confirmation_required' },

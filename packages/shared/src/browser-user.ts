@@ -9,33 +9,45 @@ export interface BrowserUserSession {
   state: string
 }
 
+export interface BrowserPageRule {
+  url: string
+  label: string
+  permission: 'allow' | 'block'
+}
+
 export interface BrowserUserStatus {
   enabled: boolean
-  autoRepair: boolean
-  migrationRequired: boolean
   requiresAuthorization: boolean
   blockedUrls: string[]
+  pageRules: BrowserPageRule[]
+  rulesRevision: number
   extensionId: string | null
   connectedHosts: number
   sessions: BrowserUserSession[]
   controlDomain: 'shared-lumi'
-  registration: {
-    registered: boolean
-    supported: boolean
-    nativeHostPath: string
-    issues: string[]
-  }
+  transport: 'loopback-websocket'
+  endpoint: string
+  paired: boolean
+  pairing: { id: string; code: string; expiresAt: string } | null
   issues: string[]
 }
 
 export type BrowserUserAction =
-  'enable' | 'disable' | 'repair' | 'diagnose' | 'remove' | 'setBlockedUrls'
+  | 'enable'
+  | 'disable'
+  | 'diagnose'
+  | 'approvePairing'
+  | 'resetPairing'
+  | 'setBlockedUrls'
+  | 'setPageRules'
 export interface BrowserUserActionRequest {
   action: BrowserUserAction
   extensionId?: string
   confirmed?: boolean
-  autoRepair?: boolean
-  migrateConfirmed?: boolean
+  pairingId?: string
+  pairingCode?: string
   scopeConfirmed?: boolean
   blockedUrls?: string[]
+  pageRules?: BrowserPageRule[]
+  expectedRulesRevision?: number
 }

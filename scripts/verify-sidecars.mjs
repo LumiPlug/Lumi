@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 import assert from 'node:assert/strict'
-import { execFileSync, spawn } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { once } from 'node:events'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { createInterface } from 'node:readline'
@@ -45,16 +45,8 @@ const environment = Object.fromEntries(
 environment.PATH = ''
 environment.NODE_PATH = ''
 environment.NODE_OPTIONS = ''
-// Native host must ship inside the same desktop bundle and work without Node on PATH.
-assert.match(
-  execFileSync(path.join(directory, `lumi-browser-native-host${suffix}`), ['--help'], {
-    cwd: temporary,
-    env: environment,
-    encoding: 'utf8',
-    timeout: 10000,
-  }),
-  /Lumi Chrome Native Messaging host/,
-)
+// Browser MCP and WebSocket run in Core: no independent browser host may ship.
+assert.ok(!(await readdir(directory)).some((name) => name.startsWith('lumi-browser-native-host')))
 
 const core = spawn(
   path.join(directory, `lumi-core${suffix}`),

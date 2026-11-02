@@ -104,7 +104,6 @@ async function collectNotices(inputs) {
 for (const [name, entry] of [
   ['lumi-core', 'packages/core/src/index.ts'],
   ['mcp-stdio-proxy', 'packages/mcp-stdio-proxy/src/index.ts'],
-  ['lumi-browser-native-host', 'packages/browser-native-host/src/index.ts'],
 ]) {
   const bundledScript = path.join(buildDirectory, `${name}.cjs`)
   const result = await build({

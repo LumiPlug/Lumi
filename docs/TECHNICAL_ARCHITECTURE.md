@@ -88,7 +88,6 @@ LumiPlug/
 
 知识库结构校验和全文索引分词放到按需 Worker 线程，限制同时计算与排队数量，结束后释放线程；SQLite 写入仍由 Core 事务统一完成。跨线程计算结束后重新核对构建序号、校验标识、归档和库版本，避免取消／修改／重复发布覆盖新状态。启动时只恢复 validating 构建，不解析已完成历史正文。
 
-
 ```text
 AI Clients ── Streamable HTTP ─┐
 AI Clients ── stdio proxy ─────┼── Node Core Sidecar
@@ -359,10 +358,9 @@ stdio proxy转发默认310000ms，支持--request-timeout-ms及LUMIPLUG_REQUEST_
 
 ## Skills 托管及 MCP 读取（2026-10-14）
 
-SkillsRepository 接收 userDataDir/skills 托管根目录。通过暂存目录、受限文件复制、有效 SKILL.md 校验和原子目录重命名安装；源规范路径的 SHA-256 用作安装槽，同源重试不覆盖已有安装，同名不同来源可共存。单次复制最多 2000 项、12 层、32 MiB，总量及单文件均有界；忽略 .git/node_modules/target/__pycache__，拒绝符号链接和特殊文件。托管扫描与外部扫描共用现有库存，不修改原软件目录。
+SkillsRepository 接收 userDataDir/skills 托管根目录。通过暂存目录、受限文件复制、有效 SKILL.md 校验和原子目录重命名安装；源规范路径的 SHA-256 用作安装槽，同源重试不覆盖已有安装，同名不同来源可共存。单次复制最多 2000 项、12 层、32 MiB，总量及单文件均有界；忽略 .git/node_modules/target/**pycache**，拒绝符号链接和特殊文件。托管扫描与外部扫描共用现有库存，不修改原软件目录。
 
 新增宿主专用 POST /app/skills/import（已扫描 id 或本地绝对 directory 二选一），经过 session 与独立 host token 检查，Tauri skills_request 白名单转发。MCP 会话不能调用安装接口。Registry 注入同一 SkillsRepository，开放 search_skills/get_skill/read_skill_file 三个只读工具；只返回托管、存在、有效、未归档条目。读取每次重新检查可见性和规范目录边界，沿用现有路径穿越/内部链接/文件大小防护，错误通过 MCP isError 和稳定代码返回。搜索分页只返回摘要，不泄露外部扫描位置；正文和附件按需加载。初始化说明及 get_context 提供发现与使用指引。首页 SDK 仍不开放 Skills。
-
 
 ### 2026-10-16 功能验收修复边界
 
@@ -384,12 +382,9 @@ Codex 输入包含缓存读取，不再加缓存；累计总量按差值计量�
 
 `/app/usage` 加入桌面 Core 路径白名单，并采用 30 秒读取超时供增量扫描使用；保留主窗口、宿主 nonce 和双 Token 校验。用量已采集但页面无法读取时，不应归因为适配器无数据。手动 scan 先解除历史暂停状态再扫描；UI 只保留刷新入口。展示层仅为空记录补 0，不改写采集层的未知值或合计语义。
 
-
 2026-10-16 会话名称接入：Codex 名称在扫描结束时由独立只读解析器加载，索引按 updated_at 与追加顺序择新，数据库按 state 版本降序补充；按现有会话哈希规则关联。仅对标准 Codex 根的同级元数据做有界读取，拒绝符号链接，SQLite 仅投影 id/title、使用 readOnly/query_only。名称保存在内存映射，query 为分页明细附加可选 sessionName，不写入 usage_records、usage_files 或 lineage，不修改去重、计数与会话编号。来源缺失或损坏时保留统计并降级为可用名称或脱敏编号。
 
-
 2026-10-16 会话汇总明细：新增宿主专用 sessions 查询，复用用量筛选与合计口径，在 Core 中先对整个筛选集按 software/session 聚合，再对会话分页。会话总量不取自前 200 条明细；同名会话与跨软件相同编号不合并。会话展开时调用既有 query 并带入 software/session，记录分页与会话分页互相独立，日期和模型约束保持。
-
 
 参考看板的数据支持：会话汇总附带真实模型集合，支持按名称/编号/模型搜索以及按时间/总量排序；搜索在全量汇总后、分页前执行。CSV 按同一筛选集导出，保留未知为空、0 为数值 0；转义分隔符并防止表格公式注入。宿主专用保存命令延用 nonce/主窗口/双 Token 校验，使用原生保存面板，取消不报告成功。缓存命中按各来源输入语义计算，界面不把缓存写入当成成功复用，不声称已测量延迟节省。
 
@@ -409,4 +404,4 @@ Codex 输入包含缓存读取，不再加缓存；累计总量按差值计量�
 
 ## Browser User（2026-11-02）
 
-浏览器自动化复用现有 Core Registry/MCP，增加 Core 内 IPC 服务和随 Lumi 分发的只连接 Native Host；不部署第二个 MCP/broker 产品。授权、共享控制域及升级路径边界见 [BROWSER_USER.md](BROWSER_USER.md)。
+浏览器自动化复用现有 Core Registry/MCP，扩展通过固定 loopback WebSocket 直连 Core 进程。新包不包含 Native Messaging host、注册器、IPC broker 或第二个浏览器 MCP 进程。首次双端短码配对后使用认证加密通信，关闭立即断开且不会被插件重试重新启用。授权、共享控制域及历史迁移边界见 [BROWSER_USER.md](BROWSER_USER.md)，协议见 [BROWSER_PROTOCOL.md](BROWSER_PROTOCOL.md)。

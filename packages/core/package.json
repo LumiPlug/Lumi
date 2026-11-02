@@ -15,6 +15,7 @@
     "ignore": "^7.0.12",
     "strip-ansi": "7.2.0",
     "undici": "7.27.2",
+    "ws": "8.22.0",
     "yaml": "^2.9.1"
   },
   "scripts": {
@@ -23,6 +24,7 @@
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
+    "@types/ws": "8.18.1",
     "bonjour-service": "1.4.1",
     "commander": "13.1.0",
     "ink": "7.0.0",

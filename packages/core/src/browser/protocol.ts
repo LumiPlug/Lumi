@@ -8,7 +8,7 @@ export type BrowserMessage = Record<string, unknown>
 export const isRecord = (value: unknown): value is BrowserMessage =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
 
-/** Newline IPC. The native-host executable alone owns Chrome's length framing. */
+/** In-process object framing between secure transport and browser service. */
 export class BrowserFrames extends Transform {
   private buffer: Buffer = Buffer.alloc(0)
   constructor() {
@@ -20,30 +20,31 @@ export class BrowserFrames extends Transform {
       for (;;) {
         const end = this.buffer.indexOf(10)
         if (end < 0) break
-        if (end > MAX_BROWSER_FRAME) throw new Error('Browser IPC frame exceeds limit')
+        if (end > MAX_BROWSER_FRAME) throw new Error('Browser transport frame exceeds limit')
         const line = this.buffer.subarray(0, end)
         this.buffer = this.buffer.subarray(end + 1)
         if (!line.length) continue
         const message: unknown = JSON.parse(line.toString('utf8'))
-        if (!isRecord(message)) throw new Error('Browser IPC requires object messages')
+        if (!isRecord(message)) throw new Error('Browser transport requires object messages')
         this.push(message)
       }
-      if (this.buffer.length > MAX_BROWSER_FRAME) throw new Error('Browser IPC frame exceeds limit')
+      if (this.buffer.length > MAX_BROWSER_FRAME)
+        throw new Error('Browser transport frame exceeds limit')
       done()
     } catch (error) {
       done(error instanceof Error ? error : new Error(String(error)))
     }
   }
   override _flush(done: TransformCallback): void {
-    done(this.buffer.length ? new Error('Truncated browser IPC frame') : undefined)
+    done(this.buffer.length ? new Error('Truncated browser transport frame') : undefined)
   }
 }
 
 export function writeBrowserFrame(stream: Writable, message: BrowserMessage): void {
   const body = Buffer.from(JSON.stringify(message))
-  if (body.length > MAX_BROWSER_FRAME) throw new Error('Browser IPC frame exceeds limit')
+  if (body.length > MAX_BROWSER_FRAME) throw new Error('Browser transport frame exceeds limit')
   if (stream.destroyed || stream.writableLength > 4 * MAX_BROWSER_FRAME)
-    throw new Error('Browser IPC unavailable or backpressured')
+    throw new Error('Browser transport unavailable or backpressured')
   stream.write(Buffer.concat([body, Buffer.from('\n')]))
 }
 

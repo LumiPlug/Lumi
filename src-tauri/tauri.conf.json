@@ -49,11 +49,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": [
-      "binaries/lumi-core",
-      "binaries/mcp-stdio-proxy",
-      "binaries/lumi-browser-native-host"
-    ],
+    "externalBin": ["binaries/lumi-core", "binaries/mcp-stdio-proxy"],
     "resources": [
       "../packages/core/dist",
       "../packages/mcp-stdio-proxy/dist",

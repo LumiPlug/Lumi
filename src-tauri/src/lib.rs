@@ -896,7 +896,14 @@ fn copy_text(
 fn browser_user_payload(action: &str, payload: Option<Value>) -> Result<Option<Value>, String> {
     if !matches!(
         action,
-        "status" | "enable" | "disable" | "repair" | "diagnose" | "remove" | "setBlockedUrls"
+        "status"
+            | "enable"
+            | "disable"
+            | "diagnose"
+            | "setBlockedUrls"
+            | "setPageRules"
+            | "approvePairing"
+            | "resetPairing"
     ) {
         return Err("invalid_browser_user_action".to_string());
     }
@@ -907,10 +914,12 @@ fn browser_user_payload(action: &str, payload: Option<Value>) -> Result<Option<V
             key.as_str(),
             "extensionId"
                 | "confirmed"
-                | "autoRepair"
-                | "migrateConfirmed"
                 | "scopeConfirmed"
                 | "blockedUrls"
+                | "pageRules"
+                | "expectedRulesRevision"
+                | "pairingId"
+                | "pairingCode"
         ) {
             return Err("invalid_browser_user_payload".to_string());
         }
@@ -925,16 +934,12 @@ fn browser_user_payload(action: &str, payload: Option<Value>) -> Result<Option<V
         return Err("browser_user_confirmation_required".to_string());
     }
     if let Some(id) = fields.get("extensionId") {
+        if action != "enable" {
+            return Err("invalid_browser_user_payload".to_string());
+        }
         let id = id.as_str().ok_or("invalid_browser_user_extension_id")?;
         if id.len() != 32 || !id.bytes().all(|byte| (b'a'..=b'p').contains(&byte)) {
             return Err("invalid_browser_user_extension_id".to_string());
-        }
-    }
-    for key in ["autoRepair", "migrateConfirmed"] {
-        if let Some(value) = fields.get(key) {
-            if !matches!(action, "enable" | "repair") || !value.is_boolean() {
-                return Err("invalid_browser_user_payload".to_string());
-            }
         }
     }
     if let Some(value) = fields.get("scopeConfirmed") {
@@ -957,6 +962,61 @@ fn browser_user_payload(action: &str, payload: Option<Value>) -> Result<Option<V
             }
         }
     } else if fields.contains_key("blockedUrls") {
+        return Err("invalid_browser_user_payload".to_string());
+    }
+    if let Some(value) = fields.get("expectedRulesRevision") {
+        if !matches!(action, "setPageRules" | "setBlockedUrls") {
+            return Err("invalid_browser_user_payload".to_string());
+        }
+        let revision = value.as_u64().ok_or("invalid_browser_page_rules")?;
+        if revision > 9_007_199_254_740_991 {
+            return Err("invalid_browser_page_rules".to_string());
+        }
+    }
+    if action == "setPageRules" {
+        if !fields.contains_key("expectedRulesRevision") {
+            return Err("invalid_browser_page_rules".to_string());
+        }
+        let rules = fields
+            .get("pageRules")
+            .and_then(Value::as_array)
+            .ok_or("invalid_browser_page_rules")?;
+        if rules.len() > 100 {
+            return Err("invalid_browser_page_rules".to_string());
+        }
+        for rule in rules {
+            let rule = rule.as_object().ok_or("invalid_browser_page_rules")?;
+            if rule.len() != 3
+                || !rule
+                    .keys()
+                    .all(|key| matches!(key.as_str(), "label" | "url" | "permission"))
+            {
+                return Err("invalid_browser_page_rules".to_string());
+            }
+            let label = rule.get("label").and_then(Value::as_str);
+            let url = rule.get("url").and_then(Value::as_str);
+            let permission = rule.get("permission").and_then(Value::as_str);
+            if label.map_or(true, |value| value.chars().count() > 120)
+                || url.map_or(true, |value| value.len() > 2048)
+                || !matches!(permission, Some("allow" | "block"))
+            {
+                return Err("invalid_browser_page_rules".to_string());
+            }
+        }
+    } else if fields.contains_key("pageRules") {
+        return Err("invalid_browser_user_payload".to_string());
+    }
+    if action == "approvePairing" {
+        let id = fields.get("pairingId").and_then(Value::as_str);
+        let code = fields.get("pairingCode").and_then(Value::as_str);
+        if id.map_or(true, |value| value.is_empty() || value.len() > 128)
+            || code.map_or(true, |value| {
+                value.len() != 6 || !value.bytes().all(|byte| byte.is_ascii_digit())
+            })
+        {
+            return Err("browser_pairing_invalid".to_string());
+        }
+    } else if fields.contains_key("pairingId") || fields.contains_key("pairingCode") {
         return Err("invalid_browser_user_payload".to_string());
     }
     let mut body = fields.clone();
@@ -1173,6 +1233,31 @@ async fn export_usage_csv(
         .await
         .map_err(|_| "usage_export_failed")?;
     Ok(Some(file.path().to_string_lossy().into_owned()))
+}
+
+const BROWSER_EXTENSION_STORE_URL: &str =
+    "https://chromewebstore.google.com/detail/hfhigjgopbjmojflbhhnahpfpnmiaman";
+
+fn browser_extension_store_url(window_label: &str) -> Result<&'static str, String> {
+    if window_label != "main" {
+        return Err("browser_user_host_required".to_string());
+    }
+    Ok(BROWSER_EXTENSION_STORE_URL)
+}
+
+#[tauri::command]
+#[allow(deprecated)]
+fn open_browser_extension_store(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    supervisor: State<'_, Arc<CoreSupervisor>>,
+    host_nonce: String,
+) -> Result<(), String> {
+    supervisor.authorize(&host_nonce)?;
+    let url = browser_extension_store_url(window.label())?;
+    app.shell()
+        .open(url, None)
+        .map_err(|_| "browser_extension_store_open_failed".to_string())
 }
 
 #[tauri::command]
@@ -1446,6 +1531,7 @@ pub fn run() {
                 open_skill_link,
                 tools_request,
                 browser_user_request,
+                open_browser_extension_store,
                 list_capabilities,
                 create_capability_draft
             ];
@@ -1528,6 +1614,50 @@ pub fn run() {
 mod resource_tests {
     use super::*;
     #[test]
+    fn browser_page_rules_need_confirmation_and_bounded_revision() {
+        let payload = json!({
+            "confirmed": true,
+            "expectedRulesRevision": 3,
+            "pageRules": [{"label": "Work", "url": "https://example.com/", "permission": "block"}]
+        });
+        assert!(browser_user_payload("setPageRules", Some(payload.clone())).is_ok());
+        assert!(browser_user_payload("diagnose", Some(payload.clone())).is_err());
+        for field in ["confirmed", "expectedRulesRevision"] {
+            let mut invalid = payload.clone();
+            invalid.as_object_mut().unwrap().remove(field);
+            assert!(browser_user_payload("setPageRules", Some(invalid)).is_err());
+        }
+        for revision in [
+            json!(-1),
+            json!(1.5),
+            json!("3"),
+            json!(9_007_199_254_740_992_u64),
+        ] {
+            let mut invalid = payload.clone();
+            invalid["expectedRulesRevision"] = revision;
+            assert!(browser_user_payload("setPageRules", Some(invalid)).is_err());
+        }
+        let mut invalid = payload.clone();
+        invalid["pageRules"][0]["permission"] = json!("admin");
+        assert!(browser_user_payload("setPageRules", Some(invalid)).is_err());
+        let mut excessive = payload;
+        let rule = json!({"label": "", "url": "https://e.test/", "permission": "allow"});
+        excessive["pageRules"] = json!(vec![rule; 101]);
+        assert!(browser_user_payload("setPageRules", Some(excessive)).is_err());
+    }
+
+    #[test]
+    fn browser_extension_store_is_fixed_https_and_main_window_only() {
+        assert_eq!(
+            browser_extension_store_url("main").unwrap(),
+            "https://chromewebstore.google.com/detail/hfhigjgopbjmojflbhhnahpfpnmiaman"
+        );
+        for label in ["", "run-task-example", "main/", "main?url=file:///private"] {
+            assert!(browser_extension_store_url(label).is_err());
+        }
+    }
+
+    #[test]
     fn browser_user_core_paths_are_exact_and_existing_routes_remain_allowed() {
         for path in [
             "/app/browser-user/status",
@@ -1555,10 +1685,10 @@ mod resource_tests {
     #[test]
     fn browser_user_http_errors_forward_safe_codes_not_private_messages() {
         for code in [
-            "browser_registration_foreign",
-            "browser_registration_foreign_transaction",
-            "browser_native_host_missing",
-            "browser_registration_permissions",
+            "browser_rules_conflict",
+            "browser_pairing_invalid",
+            "browser_pairing_expired",
+            "browser_listener_unavailable",
         ] {
             let body = json!({"error": {"code": code, "message": "/private/secret"}});
             let response = format!("HTTP/1.1 400 Bad Request\r\n\r\n{body}");
@@ -1581,59 +1711,42 @@ mod resource_tests {
     #[test]
     fn browser_user_commands_require_bounded_explicit_consent() {
         assert!(browser_user_payload("status", None).unwrap().is_none());
-        assert!(browser_user_payload("arbitrary", None).is_err());
-        assert!(
-            browser_user_payload("enable", Some(json!({"extensionId": "a".repeat(32)}))).is_err()
-        );
-        assert!(browser_user_payload(
-            "enable",
-            Some(json!({"extensionId": "z".repeat(32), "confirmed": true}))
-        )
-        .is_err());
-        assert!(browser_user_payload(
-            "disable",
-            Some(json!({"confirmed": true, "command": "anything"}))
-        )
-        .is_err());
         assert!(browser_user_payload("diagnose", None).is_ok());
-        let body = browser_user_payload(
-            "enable",
-            Some(json!({"extensionId": "a".repeat(32), "confirmed": true})),
-        )
-        .unwrap()
-        .unwrap();
-        assert_eq!(body["action"], "enable");
-        assert_eq!(body["confirmed"], true);
-        for action in ["disable", "remove", "repair"] {
+        for action in ["arbitrary", "repair", "remove"] {
             assert!(browser_user_payload(action, None).is_err());
         }
-        let official = browser_user_payload(
+        for action in [
             "enable",
-            Some(json!({"confirmed": true, "autoRepair": false})),
-        )
-        .unwrap()
-        .unwrap();
-        assert!(official.get("extensionId").is_none());
-        assert_eq!(official["autoRepair"], false);
-        let migration = json!({"confirmed": true, "migrateConfirmed": true});
-        assert!(browser_user_payload("repair", Some(migration)).is_ok());
-        for action in ["diagnose", "disable", "remove"] {
-            let maintenance = json!({"confirmed": true, "autoRepair": true});
-            assert!(browser_user_payload(action, Some(maintenance)).is_err());
+            "disable",
+            "setBlockedUrls",
+            "setPageRules",
+            "approvePairing",
+            "resetPairing",
+        ] {
+            assert!(browser_user_payload(action, None).is_err());
         }
-        let invalid = json!({"confirmed": true, "migrateConfirmed": "yes"});
-        assert!(browser_user_payload("enable", Some(invalid)).is_err());
         let scope = json!({"confirmed": true, "scopeConfirmed": true});
         assert!(browser_user_payload("enable", Some(scope.clone())).is_ok());
-        assert!(browser_user_payload("repair", Some(scope)).is_err());
+        assert!(browser_user_payload("disable", Some(scope)).is_err());
+        for field in ["autoRepair", "migrateConfirmed"] {
+            let mut obsolete = json!({"confirmed": true});
+            obsolete[field] = json!(true);
+            assert!(browser_user_payload("enable", Some(obsolete)).is_err());
+        }
         let blocked = json!({"confirmed": true, "blockedUrls": ["https://example.com/private"]});
         assert!(browser_user_payload("setBlockedUrls", Some(blocked.clone())).is_ok());
         assert!(browser_user_payload("enable", Some(blocked)).is_err());
-        let unconfirmed = json!({"blockedUrls": []});
-        assert!(browser_user_payload("setBlockedUrls", Some(unconfirmed)).is_err());
         let excessive =
             json!({"confirmed": true, "blockedUrls": vec!["https://example.com/"; 101]});
         assert!(browser_user_payload("setBlockedUrls", Some(excessive)).is_err());
+        let pairing = json!({"confirmed": true, "pairingId": "socket-id", "pairingCode": "123456"});
+        assert!(browser_user_payload("approvePairing", Some(pairing.clone())).is_ok());
+        assert!(browser_user_payload("enable", Some(pairing.clone())).is_err());
+        for code in ["", "12345", "1234567", "abcdef"] {
+            let mut invalid = pairing.clone();
+            invalid["pairingCode"] = json!(code);
+            assert!(browser_user_payload("approvePairing", Some(invalid)).is_err());
+        }
     }
 
     #[test]

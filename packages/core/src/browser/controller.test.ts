@@ -359,3 +359,81 @@ it('persists canonical blocked links with host confirmation without restarting o
     JSON.parse(fs.readFileSync(path.join(f.root, 'browser-user.json'), 'utf8')).blockedUrls,
   ).toEqual(['https://example.test/private'])
 })
+
+it('confirmed close stops input and persists disabled immediately while an earlier diagnostic is pending', async () => {
+  const f = fixture()
+  await f.controller.action({ action: 'enable', confirmed: true, scopeConfirmed: true })
+  let release!: (value: Awaited<ReturnType<typeof f.registration.status>>) => void
+  f.registration.status.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        release = resolve
+      }),
+  )
+  const diagnosing = f.controller.action({ action: 'diagnose' })
+  for (let index = 0; index < 5 && !release; index++) await Promise.resolve()
+  const closing = f.controller.action({ action: 'disable', confirmed: true })
+  expect(f.browser.status().enabled).toBe(false)
+  expect(JSON.parse(fs.readFileSync(path.join(f.root, 'browser-user.json'), 'utf8')).enabled).toBe(
+    false,
+  )
+  release({ registered: true, supported: true, nativeHostPath: '/fixture/native-host', issues: [] })
+  expect((await diagnosing).enabled).toBe(false)
+  await closing
+  expect(f.browser.status().enabled).toBe(false)
+})
+
+it('close invalidates an in-progress owned registration instead of reopening the browser afterward', async () => {
+  const f = fixture()
+  let release!: (value: { registered: boolean }) => void
+  f.registration.register.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        release = resolve
+      }),
+  )
+  const installing = f.controller.action({
+    action: 'enable',
+    confirmed: true,
+    scopeConfirmed: true,
+  })
+  const installedOutcome = Promise.allSettled([installing])
+  for (let index = 0; index < 10 && !release; index++) await Promise.resolve()
+  const closing = f.controller.action({ action: 'disable', confirmed: true })
+  expect(f.browser.status().enabled).toBe(false)
+  release({ registered: true })
+  expect((await installedOutcome)[0]).toMatchObject({
+    status: 'rejected',
+    reason: { message: 'browser_activation_cancelled' },
+  })
+  await closing
+  expect(f.browser.start).not.toHaveBeenCalled()
+  expect(JSON.parse(fs.readFileSync(path.join(f.root, 'browser-user.json'), 'utf8')).enabled).toBe(
+    false,
+  )
+  expect(f.registration.remove).not.toHaveBeenCalled()
+})
+
+it('install confirmation repairs an owned upgrade through the enable path and keeps foreign rejection intact', async () => {
+  const f = fixture()
+  f.registration.status.mockResolvedValueOnce({
+    registered: false,
+    supported: true,
+    nativeHostPath: '/new-app/native-host',
+    issues: ['browser_registration_path_changed'],
+  })
+  await f.controller.action({ action: 'enable', confirmed: true, scopeConfirmed: true })
+  expect(f.registration.register).toHaveBeenCalledWith(officialId, true)
+  expect(f.browser.start).toHaveBeenCalledWith(officialId, [])
+  await f.controller.action({ action: 'disable', confirmed: true })
+  f.registration.register.mockRejectedValueOnce(new Error('browser_registration_foreign'))
+  await expect(
+    f.controller.action({
+      action: 'enable',
+      confirmed: true,
+      migrateConfirmed: true,
+      scopeConfirmed: true,
+    }),
+  ).rejects.toThrow('foreign')
+  expect(f.browser.status().enabled).toBe(false)
+})

@@ -5,12 +5,14 @@ import { OFFICIAL_BROWSER_EXTENSION_ID } from '@lumiplug/shared'
 import type { BrowserUserStatus, UiCoreStatus } from '@lumiplug/shared'
 import BrowserUserSetting, {
   BrowserUserSummary,
-  BrowserUserIdentitySettings,
+  BrowserUserPrimaryActions,
 } from '../components/BrowserUserSetting'
 import { applyLocale } from '../i18n'
 import { hostInvoke } from './tauri'
 import {
   browserUserRequest,
+  browserUserErrorHint,
+  browserUserNextStep,
   browserUserStateLabel,
   getBrowserUserStatus,
   performBrowserUserAction,
@@ -116,7 +118,7 @@ describe('Browser User settings safety and presentation', () => {
     expect(browserUserStateLabel(null, true)).toContain('状态未知')
     expect(browserUserStateLabel(status, true)).toContain('已停用')
     status.enabled = true
-    expect(browserUserStateLabel(status, true)).toBe('等待注册或修复')
+    expect(browserUserStateLabel(status, true)).toBe('浏览器连接需要安装')
     status.registration.registered = true
     expect(browserUserStateLabel(status, true)).toBe('等待 Chrome 扩展连接')
     status.connectedHosts = 1
@@ -145,21 +147,98 @@ describe('Browser User settings safety and presentation', () => {
     expect(stopped).not.toContain('连接扩展 2')
     expect(stopped).toContain('Core 未连接')
   })
-  it('escapes untrusted tab titles and keeps diagnostics as plain data', () => {
+  it('shows human guidance without raw diagnostics, paths or session metadata', () => {
     const status = baseline()
+    status.registration.nativeHostPath = '/private/host'
+    status.issues.push('file:///private/secret', 'policy_epoch_mismatch')
     status.sessions.push({
       id: 's',
       tabId: 1,
       title: '<script>bad()</script>',
-      url: 'https://example.test/',
-      origin: 'https://example.test',
+      url: 'chrome-extension://secret',
+      origin: 'chrome-extension://secret',
       state: 'paused',
     })
-    status.issues.push('<img onerror=bad()>')
     const html = renderToStaticMarkup(<BrowserUserSummary status={status} coreReady />)
-    expect(html).toContain('&lt;script&gt;bad()&lt;/script&gt;')
-    expect(html).not.toContain('<script>')
-    expect(html).toContain('&lt;img onerror=bad()&gt;')
+    for (const hidden of ['file:', '/private', 'policy_epoch', 'chrome-extension:', 'bad()'])
+      expect(html).not.toContain(hidden)
+    expect(html).toContain('点击安装')
+  })
+  it('offers exactly three primary controls and keeps close distinct from uninstall', () => {
+    const html = renderToStaticMarkup(
+      <BrowserUserPrimaryActions
+        status={baseline()}
+        coreReady
+        busy={false}
+        onInstall={() => {}}
+        onCheck={() => {}}
+        onDisable={() => {}}
+      />,
+    )
+    expect(html.match(/<button/g)).toHaveLength(3)
+    for (const label of ['安装', '检查连接', '关闭']) expect(html).toContain(label)
+    for (const label of ['修复', '卸载', '移除', '高级', '模式']) expect(html).not.toContain(label)
+    expect(browserUserRequest('disable', undefined, true)).toEqual({
+      action: 'disable',
+      confirmed: true,
+    })
+  })
+  it('keeps turn-off available while installation is pending, but prevents duplicate turn-off', () => {
+    const render = (closing: boolean) =>
+      renderToStaticMarkup(
+        <BrowserUserPrimaryActions
+          status={baseline()}
+          coreReady
+          busy
+          closing={closing}
+          onInstall={() => {}}
+          onCheck={() => {}}
+          onDisable={() => {}}
+        />,
+      )
+    const buttons = render(false).match(/<button[^>]*>.*?<\/button>/g)!
+    expect(buttons[0]).toContain('disabled')
+    expect(buttons[1]).toContain('disabled')
+    expect(buttons[2]).toContain('关闭')
+    expect(buttons[2]).not.toContain('disabled')
+    expect(render(true).match(/<button[^>]*>.*?<\/button>/g)![2]).toContain('disabled')
+  })
+  it('maps only known failures to one safe next step without exposing raw errors or paths', () => {
+    for (const code of [
+      'browser_registration_foreign',
+      'browser_registration_foreign_transaction',
+    ]) {
+      expect(browserUserErrorHint(code)).toContain('旧版的卸载方式')
+      const status = baseline()
+      status.registration.issues = [code]
+      expect(browserUserNextStep(status, true)).toContain('旧版的卸载方式')
+      expect(browserUserNextStep(status, true)).not.toContain('点击安装')
+    }
+    expect(browserUserErrorHint(new Error('browser_native_host_missing'))).toContain(
+      '重新安装 Lumi',
+    )
+    expect(browserUserErrorHint('browser_registration_permissions')).toContain('系统权限')
+    const unknown = 'file:///private/secret browser_registration_foreign'
+    expect(browserUserErrorHint(unknown)).toBe('操作未确认完成，请检查连接后再决定是否重试。')
+    expect(browserUserErrorHint(unknown)).not.toContain('secret')
+    expect(browserUserErrorHint({ code: 'anything', path: '/secret' })).not.toContain('secret')
+  })
+  it('keeps emergency turn-off available when status is unknown or already disabled', () => {
+    for (const status of [null, baseline()]) {
+      const html = renderToStaticMarkup(
+        <BrowserUserPrimaryActions
+          status={status}
+          coreReady
+          busy={false}
+          onInstall={() => {}}
+          onCheck={() => {}}
+          onDisable={() => {}}
+        />,
+      )
+      const close = html.match(/<button[^>]*>.*?<\/button>/g)![2]
+      expect(close).toContain('关闭')
+      expect(close).not.toContain('disabled')
+    }
   })
   it('localizes state text while preserving the exact Browser User name', () => {
     applyLocale('en')
@@ -179,20 +258,6 @@ describe('official browser identity and explicit maintenance consent', () => {
       scopeConfirmed: true,
     })
     expect(() => browserUserRequest('enable', 'a'.repeat(32), true)).toThrow('not_official')
-    const html = renderToStaticMarkup(
-      <BrowserUserIdentitySettings
-        status={baseline()}
-        autoRepair={false}
-        disabled={false}
-        onAutoRepairChange={() => {}}
-      />,
-    )
-    expect(html).toContain(id)
-    expect(html).toContain('无需复制或填写 ID')
-    expect(html).not.toContain('type="text"')
-    expect(html).toContain('type="checkbox"')
-    expect(html).not.toContain('checked=""')
-    expect(html).toContain('不恢复暂停或接管状态')
   })
   it('forwards separate maintenance and migration consents only on confirmed registration actions', async () => {
     vi.mocked(hostInvoke).mockResolvedValue(baseline())
@@ -225,17 +290,7 @@ describe('official browser identity and explicit maintenance consent', () => {
     status.extensionId = 'a'.repeat(32)
     status.migrationRequired = true
     expect(browserUserStateLabel(status, true)).toBe('旧扩展身份需要确认迁移')
-    const html = renderToStaticMarkup(
-      <BrowserUserIdentitySettings
-        status={status}
-        autoRepair={false}
-        disabled={false}
-        onAutoRepairChange={() => {}}
-      />,
-    )
-    expect(html).toContain('身份迁移与网页范围授权分别确认')
-    expect(html).toContain('重新加载官方扩展')
-    expect(html).toContain(status.extensionId)
+    expect(browserUserNextStep(status, true)).toContain('点击安装')
     expect(hostInvoke).not.toHaveBeenCalled()
   })
 })

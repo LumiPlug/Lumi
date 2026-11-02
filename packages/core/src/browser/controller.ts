@@ -37,6 +37,7 @@ export class BrowserUserController {
   private issues: string[] = []
   private queue: Promise<unknown> = Promise.resolve()
   private closing = false
+  private activationGeneration = 0
 
   public constructor(
     options: { userDataDir: string; nativeHostPath?: string },
@@ -88,8 +89,15 @@ export class BrowserUserController {
   }
 
   public restore(): Promise<void> {
+    const generation = this.activationGeneration
     const operation = this.queue.then(async () => {
-      if (this.closing || !this.preference.enabled || !this.preference.extensionId) return
+      if (
+        this.closing ||
+        generation !== this.activationGeneration ||
+        !this.preference.enabled ||
+        !this.preference.extensionId
+      )
+        return
       const id = this.preference.extensionId
       if (id !== OFFICIAL_BROWSER_EXTENSION_ID) {
         this.issues = ['browser_migration_confirmation_required']
@@ -101,7 +109,7 @@ export class BrowserUserController {
       }
       try {
         let registration = await this.registration.status(id)
-        if (this.closing) return
+        if (this.closing || generation !== this.activationGeneration) return
         if (!registration.registered && this.preference.autoRepair) {
           try {
             registration = await this.registration.repairOwnedPath(id, true)
@@ -110,12 +118,16 @@ export class BrowserUserController {
             return
           }
         }
-        if (this.closing) return
+        if (this.closing || generation !== this.activationGeneration) return
         if (!registration.registered) {
           this.issues = ['browser_registration_repair_required']
           return
         }
         await this.browser.start(id, this.preference.blockedUrls)
+        if (this.closing || generation !== this.activationGeneration) {
+          await this.browser.disable()
+          return
+        }
         this.issues = []
       } catch {
         this.issues = ['browser_start_failed']
@@ -133,8 +145,8 @@ export class BrowserUserController {
   }
 
   public async status(): Promise<BrowserUserStatus> {
-    const state = this.browser.status()
     const registration = await this.registration.status(this.preference.extensionId)
+    const state = this.browser.status()
     const migrationRequired = [this.preference.extensionId, registration.extensionId].some(
       (id) => !!id && id !== OFFICIAL_BROWSER_EXTENSION_ID,
     )
@@ -152,12 +164,43 @@ export class BrowserUserController {
 
   public action(request: BrowserUserActionRequest): Promise<BrowserUserStatus> {
     if (this.closing) return Promise.reject(new Error('browser_stopping'))
-    const result = this.queue.then(() => this.perform(request))
+    // A confirmed close is a stop boundary, not an operation that waits behind
+    // a slow registration/diagnostic request. Already-started registry writes may
+    // finish, but the invalidated activation is never allowed to reopen inputs.
+    let stopping: Promise<void> | undefined
+    if (
+      request.action === 'disable' &&
+      request.confirmed === true &&
+      request.autoRepair === undefined &&
+      request.migrateConfirmed === undefined &&
+      request.scopeConfirmed === undefined &&
+      request.blockedUrls === undefined
+    ) {
+      this.activationGeneration++
+      stopping = this.browser.disable()
+      void stopping.catch(() => {})
+      try {
+        this.save({ ...this.preference, enabled: false })
+      } catch {
+        this.issues = ['browser_settings_write_failed']
+      }
+    }
+    const generation = this.activationGeneration
+    const result = this.queue.then(() => this.perform(request, generation, stopping))
     this.queue = result.catch(() => {})
     return result
   }
 
-  private async perform(request: BrowserUserActionRequest): Promise<BrowserUserStatus> {
+  private assertActivation(generation: number): void {
+    if (this.closing || generation !== this.activationGeneration)
+      throw new Error('browser_activation_cancelled')
+  }
+
+  private async perform(
+    request: BrowserUserActionRequest,
+    generation: number,
+    stopping?: Promise<void>,
+  ): Promise<BrowserUserStatus> {
     if (request.action === 'diagnose') return this.status()
     if (request.confirmed !== true) throw new Error('browser_confirmation_required')
     if (
@@ -184,7 +227,8 @@ export class BrowserUserController {
       return this.status()
     }
     if (request.action === 'disable' || request.action === 'remove') {
-      await this.browser.disable()
+      if (stopping) await stopping
+      else await this.browser.disable()
       this.save({ ...this.preference, enabled: false })
       if (request.action === 'remove') {
         await this.registration.remove(true)
@@ -199,6 +243,7 @@ export class BrowserUserController {
       this.issues = []
       return this.status()
     }
+    this.assertActivation(generation)
     const id = request.extensionId ?? OFFICIAL_BROWSER_EXTENSION_ID
     if (!validId(id)) throw new Error('browser_extension_id_invalid')
     if (id !== OFFICIAL_BROWSER_EXTENSION_ID) throw new Error('browser_extension_id_not_official')
@@ -209,6 +254,7 @@ export class BrowserUserController {
     )
       throw new Error('browser_scope_confirmation_required')
     const registration = await this.registration.status(id)
+    this.assertActivation(generation)
     const migrationRequired = [this.preference.extensionId, registration.extensionId].some(
       (existing) => !!existing && existing !== id,
     )
@@ -241,16 +287,22 @@ export class BrowserUserController {
       return this.status()
     }
     await this.browser.disable()
+    this.assertActivation(generation)
     this.save({ ...nextPreference, enabled: false })
     const written =
       request.migrateConfirmed === true
         ? await this.registration.register(id, true, { migrateConfirmed: true })
         : await this.registration.register(id, true)
+    this.assertActivation(generation)
     if (!written.registered) {
       this.issues = ['browser_registration_repair_required']
       throw new Error('browser_registration_repair_required')
     }
     if (enable) await this.browser.start(id, this.preference.blockedUrls)
+    if (this.closing || generation !== this.activationGeneration) {
+      await this.browser.disable()
+      throw new Error('browser_activation_cancelled')
+    }
     try {
       this.save(nextPreference)
     } catch (error) {
@@ -263,7 +315,10 @@ export class BrowserUserController {
 
   public async close(): Promise<void> {
     this.closing = true
+    this.activationGeneration++
+    const stopping = this.browser.close()
+    void stopping.catch(() => {})
     await this.queue.catch(() => {})
-    await this.browser.close()
+    await stopping
   }
 }

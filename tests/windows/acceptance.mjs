@@ -235,6 +235,20 @@ try {
     assert.equal(status.userDataPathAvailable, true)
     assert.equal(status.coreVersion, appVersion)
   })
+  await check('WIN-BROWSER read-only WebView to Rust to Core bridge', async () => {
+    // Fresh isolated profile: these reads must not register or enable anything.
+    for (const action of ['status', 'diagnose']) {
+      const status = await ipc('browser_user_request', { action, payload: {} })
+      assert.equal(status.enabled, false)
+      assert.equal(status.connectedHosts, 0)
+      assert.deepEqual(status.sessions, [])
+      assert.equal(status.registration.supported, true)
+      assert.equal(status.registration.registered, false)
+      assert.equal(typeof status.registration.nativeHostPath, 'string')
+      assert.ok(Array.isArray(status.registration.issues))
+      assert.ok(Array.isArray(status.blockedUrls))
+    }
+  })
   await check('WIN-A02 pages and native language persistence', async () => {
     for (const label of ['工具', 'Skills', '知识库', 'AI 用量', '设置']) await navigate(label)
     await waitFor(

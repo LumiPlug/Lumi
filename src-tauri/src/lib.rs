@@ -554,31 +554,7 @@ impl CoreSupervisor {
     }
 
     fn call_core(&self, method: &str, path: &str, body: Option<Value>) -> Result<Value, String> {
-        if !matches!(
-            path,
-            "/app/capabilities"
-                | "/app/tools"
-                | "/app/mcp/check"
-                | "/app/mcp/token"
-                | "/app/workbench"
-                | "/app/workbench/publish"
-                | "/app/workbench/apply-template"
-                | "/app/workbench/restore"
-                | "/app/workbench/versions"
-                | "/app/workbench/export"
-                | "/app/workbench/rpc"
-                | "/app/skills"
-                | "/app/skills/scan"
-                | "/app/skills/import"
-                | "/app/skills/archive"
-                | "/app/skills/project"
-                | "/app/skills/directory"
-                | "/app/skills/file"
-                | "/app/knowledge"
-                | "/app/usage"
-                | "/app/core/stop"
-        ) && !path.starts_with("/app/capabilities/")
-        {
+        if !is_allowed_core_path(path) {
             return Err("core_path_not_allowed".to_string());
         }
         let (port, token) = {
@@ -611,6 +587,7 @@ impl CoreSupervisor {
             } else if path.starts_with("/app/skills")
                 || path == "/app/tools"
                 || path == "/app/knowledge"
+                || path == "/app/browser-user/action"
             {
                 30
             } else {
@@ -626,6 +603,35 @@ impl CoreSupervisor {
             .map_err(|_| "core_connection_failed".to_string())?;
         parse_http_json(&bytes)
     }
+}
+
+fn is_allowed_core_path(path: &str) -> bool {
+    matches!(
+        path,
+        "/app/browser-user/status"
+            | "/app/browser-user/action"
+            | "/app/capabilities"
+            | "/app/tools"
+            | "/app/mcp/check"
+            | "/app/mcp/token"
+            | "/app/workbench"
+            | "/app/workbench/publish"
+            | "/app/workbench/apply-template"
+            | "/app/workbench/restore"
+            | "/app/workbench/versions"
+            | "/app/workbench/export"
+            | "/app/workbench/rpc"
+            | "/app/skills"
+            | "/app/skills/scan"
+            | "/app/skills/import"
+            | "/app/skills/archive"
+            | "/app/skills/project"
+            | "/app/skills/directory"
+            | "/app/skills/file"
+            | "/app/knowledge"
+            | "/app/usage"
+            | "/app/core/stop"
+    ) || path.starts_with("/app/capabilities/")
 }
 
 fn parse_http_json(bytes: &[u8]) -> Result<Value, String> {
@@ -1521,6 +1527,57 @@ pub fn run() {
 #[cfg(test)]
 mod resource_tests {
     use super::*;
+    #[test]
+    fn browser_user_core_paths_are_exact_and_existing_routes_remain_allowed() {
+        for path in [
+            "/app/browser-user/status",
+            "/app/browser-user/action",
+            "/app/mcp/check",
+            "/app/capabilities/example",
+        ] {
+            assert!(is_allowed_core_path(path));
+        }
+        for path in [
+            "/app/browser-user",
+            "/app/browser-user/",
+            "/app/browser-user/status/",
+            "/app/browser-user/status?extra=1",
+            "/app/browser-user/actions",
+            "/app/browser-user/action/extra",
+            "/app/browser-user/remove",
+            "/app/unknown",
+            "https://example.com/app/browser-user/status",
+        ] {
+            assert!(!is_allowed_core_path(path));
+        }
+    }
+
+    #[test]
+    fn browser_user_http_errors_forward_safe_codes_not_private_messages() {
+        for code in [
+            "browser_registration_foreign",
+            "browser_registration_foreign_transaction",
+            "browser_native_host_missing",
+            "browser_registration_permissions",
+        ] {
+            let body = json!({"error": {"code": code, "message": "/private/secret"}});
+            let response = format!("HTTP/1.1 400 Bad Request\r\n\r\n{body}");
+            assert_eq!(parse_http_json(response.as_bytes()), Err(code.to_string()));
+        }
+        let body = json!({"error": {"code": "file:///secret", "message": "private"}});
+        let response = format!("HTTP/1.1 400 Bad Request\r\n\r\n{body}");
+        assert_eq!(
+            parse_http_json(response.as_bytes()),
+            Err("core_request_failed".to_string())
+        );
+        let body = json!({"data": {"enabled": false}});
+        let response = format!("HTTP/1.1 200 OK\r\n\r\n{body}");
+        assert_eq!(
+            parse_http_json(response.as_bytes()),
+            Ok(json!({"enabled": false}))
+        );
+    }
+
     #[test]
     fn browser_user_commands_require_bounded_explicit_consent() {
         assert!(browser_user_payload("status", None).unwrap().is_none());

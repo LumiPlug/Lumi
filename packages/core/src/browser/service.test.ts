@@ -90,7 +90,7 @@ async function fixture() {
     serverFactory,
     requestTimeoutMs: 20,
   })
-  async function host(origin = `chrome-extension://${extensionId}/`) {
+  async function host(origin = `chrome-extension://${extensionId}/`, tokenOverride?: string) {
     const socket = new FakeSocket(),
       peer = new FakeSocket()
     socket.peer = peer
@@ -100,7 +100,9 @@ async function fixture() {
     socket.pipe(frames)
     const next = inbox(frames)
     handler(peer as unknown as net.Socket)
-    const runtime = JSON.parse(fs.readFileSync(service.runtimeFile, 'utf8')) as { token: string }
+    const runtime = tokenOverride
+      ? { token: tokenOverride }
+      : (JSON.parse(fs.readFileSync(service.runtimeFile, 'utf8')) as { token: string })
     writeBrowserFrame(socket, { role: 'native', token: runtime.token, origin })
     return { socket, next }
   }
@@ -567,6 +569,31 @@ it('same-origin navigation into a denied exact link revokes reads, without block
       reason: { code: 'outcome_unknown' },
     })
     expect(JSON.stringify(context.service.status())).not.toContain('Hidden private')
+  } finally {
+    await context.stop()
+  }
+})
+
+it('disabled service rejects late native handshakes even with the previous valid credential', async () => {
+  const context = await readyFixture()
+  try {
+    const previous = JSON.parse(fs.readFileSync(context.service.runtimeFile, 'utf8')) as {
+      token: string
+    }
+    await context.service.disable()
+    expect(context.native.socket.destroyed).toBe(true)
+    expect(fs.existsSync(context.service.runtimeFile)).toBe(false)
+    const late = await context.host(`chrome-extension://${extensionId}/`, previous.token)
+    await tick()
+    expect(late.socket.destroyed).toBe(true)
+    expect(context.service.status()).toMatchObject({
+      enabled: false,
+      connectedHosts: 0,
+      sessions: [],
+    })
+    await expect(
+      context.service.call('click', { sessionId: sample.id, ref: 'old-ref' }),
+    ).rejects.toMatchObject({ code: 'browser_disabled' })
   } finally {
     await context.stop()
   }

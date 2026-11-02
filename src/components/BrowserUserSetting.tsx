@@ -12,6 +12,8 @@ import ConfirmationDialog from './ConfirmationDialog'
 import { useToast } from './ToastProvider'
 import {
   browserUserActionLabel,
+  browserUserErrorHint,
+  browserUserNextStep,
   browserUserRequest,
   browserUserStateLabel,
   getBrowserUserStatus,
@@ -21,13 +23,14 @@ import {
 export function BrowserUserSummary({
   status,
   coreReady,
+  errorHint,
 }: {
   status: BrowserUserStatus | null
   coreReady: boolean
+  errorHint?: string | null
 }) {
   useLocale()
   const active = status?.sessions.filter((session) => session.state === 'active').length ?? 0
-  const issues = status ? [...new Set([...status.registration.issues, ...status.issues])] : []
   return (
     <div className="browser-user-fields">
       <div className="browser-user-status" role="status" aria-live="polite">
@@ -35,6 +38,8 @@ export function BrowserUserSummary({
           tone={
             coreReady &&
             status?.enabled &&
+            !status.requiresAuthorization &&
+            !status.migrationRequired &&
             active > 0 &&
             status.connectedHosts > 0 &&
             status.registration.registered
@@ -44,92 +49,48 @@ export function BrowserUserSummary({
         >
           {browserUserStateLabel(status, coreReady)}
         </Badge>
-        {coreReady && status && (
-          <DataText muted>
-            {t('连接扩展 {v0} · 可控网页 {v1}', { v0: status.connectedHosts, v1: active })}
-          </DataText>
-        )}
       </div>
-      {coreReady && status && (
-        <>
-          <DataText muted>
-            {status.registration.registered ? t('本机注册已确认') : t('本机注册未确认')}
-          </DataText>
-          {issues.length > 0 && (
-            <Card density="compact">
-              <DataText muted>{t('诊断信息')}</DataText>
-              <ul>
-                {issues.map((issue) => (
-                  <li key={issue}>
-                    <DataText mono>{issue}</DataText>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          )}
-          {status.sessions.length > 0 && (
-            <FieldGroup label={t('浏览器会话')}>
-              {status.sessions.map((session) => (
-                <Card key={session.id} density="compact">
-                  <div className="browser-user-status">
-                    <DataText>{session.title || session.origin}</DataText>
-                    <Badge>{session.state}</Badge>
-                  </div>
-                  <DataText muted>{session.origin}</DataText>
-                </Card>
-              ))}
-            </FieldGroup>
-          )}
-        </>
-      )}
+      <DataText muted>
+        {coreReady && errorHint ? errorHint : browserUserNextStep(status, coreReady)}
+      </DataText>
     </div>
   )
 }
 
-export function BrowserUserIdentitySettings({
+export function BrowserUserPrimaryActions({
   status,
-  autoRepair,
-  disabled,
-  onAutoRepairChange,
+  coreReady,
+  busy,
+  onInstall,
+  onCheck,
+  closing = false,
+  onDisable,
 }: {
   status: BrowserUserStatus | null
-  autoRepair: boolean
-  disabled: boolean
-  onAutoRepairChange: (value: boolean) => void
+  coreReady: boolean
+  busy: boolean
+  closing?: boolean
+  onInstall: () => void
+  onCheck: () => void
+  onDisable: () => void
 }) {
   useLocale()
   return (
-    <>
-      <Field
-        label={t('官方 Chrome 扩展 ID')}
-        description={t(
-          '使用 Lumi 官方扩展，无需复制或填写 ID。首次启用需确认全部普通网页范围，Chrome 扩展还需你确认浏览器权限。',
-        )}
+    <div className="settings-row-controls">
+      <Button
+        variant="primary"
+        disabled={!coreReady || !status || !status.registration.supported || busy}
+        onClick={onInstall}
       >
-        <DataText mono>{OFFICIAL_BROWSER_EXTENSION_ID}</DataText>
-      </Field>
-      {status?.migrationRequired && (
-        <Card density="compact">
-          <DataText>
-            {t(
-              '检测到旧开发扩展身份。请重新加载官方扩展；身份迁移与网页范围授权分别确认，不会静默扩大权限。',
-            )}
-          </DataText>
-          {status.extensionId && <DataText mono>{status.extensionId}</DataText>}
-        </Card>
-      )}
-      <Checkbox
-        label={t('允许自动维护本安装的官方扩展连接')}
-        checked={autoRepair}
-        disabled={disabled}
-        onChange={(event) => onAutoRepairChange(event.target.checked)}
-      />
-      <DataText muted>
-        {t(
-          '仅在同一官方扩展 ID 下维护本安装升级或移动后的路径；不迁移旧 ID、不覆盖未知注册、不改变网页控制范围，也不恢复暂停或接管状态。',
-        )}
-      </DataText>
-    </>
+        {t('安装')}
+      </Button>
+      <Button disabled={!coreReady || busy} onClick={onCheck}>
+        {t('检查连接')}
+      </Button>
+      <Button disabled={!coreReady || closing} onClick={onDisable}>
+        {t('关闭')}
+      </Button>
+    </div>
   )
 }
 
@@ -139,6 +100,7 @@ export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreS
   const coreReady = coreStatus.state === 'ready'
   const [status, setStatus] = useState<BrowserUserStatus | null>(null)
   const [open, setOpen] = useState(false)
+  const [errorHint, setErrorHint] = useState<string | null>(null)
   const [autoRepair, setAutoRepair] = useState(false)
   const [migrateConfirmed, setMigrateConfirmed] = useState(false)
   const [blockedInput, setBlockedInput] = useState('')
@@ -179,7 +141,7 @@ export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreS
         if (!mounted.current || request !== sequence.current) return
         setStatus(next)
         if (!dirty.current) setAutoRepair(next.autoRepair)
-        if (notify) toast(t('Browser User 状态已刷新。'), 'info')
+        if (notify) toast(browserUserStateLabel(next, true), 'info')
       } catch {
         if (!mounted.current || request !== sequence.current) return
         setStatus(null)
@@ -194,6 +156,8 @@ export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreS
   useEffect(() => {
     if (!coreReady) {
       sequence.current++
+      lock.current = false
+      setBusy(null)
       setStatus(null)
       setConfirmation(null)
       setLoading(false)
@@ -215,7 +179,7 @@ export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreS
     migrate = false,
     blockedUrls?: string[],
   ) {
-    if (lock.current || !coreReady) return
+    if ((lock.current && action !== 'disable') || !coreReady) return
     lock.current = true
     const request = ++sequence.current
     setLoading(false)
@@ -239,7 +203,10 @@ export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreS
       )
       if (!mounted.current || request !== sequence.current) return
       setStatus(next)
-      setConfirmation(null)
+      setErrorHint(null)
+      setConfirmation((pending) =>
+        pending?.action === 'disable' && action !== 'disable' ? pending : null,
+      )
       if (action === 'setBlockedUrls') {
         setBlockedInput('')
         setBlockedError('')
@@ -253,33 +220,33 @@ export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreS
         dirty.current = false
         setAutoRepair(next.autoRepair)
       } else if (!dirty.current) setAutoRepair(next.autoRepair)
-      const issues = [...next.issues, ...next.registration.issues]
-      toast(
-        issues.length > 0
-          ? t('操作已返回诊断问题，请查看真实状态；未确认连接成功。')
-          : action === 'diagnose'
-            ? t('诊断已完成，请查看当前连接与授权状态。')
-            : t('Browser User 设置已更新；浏览器授权仍需在 Chrome 中完成。'),
-        issues.length > 0 || action === 'diagnose' ? 'info' : 'success',
-      )
-    } catch {
+      toast(browserUserStateLabel(next, true), 'info')
+    } catch (error) {
       if (mounted.current && request === sequence.current) {
         setStatus(null)
-        setConfirmation(null)
-        toast(t('Browser User 操作未确认完成。请刷新状态后再决定是否重试。'), 'error')
+        setConfirmation((pending) =>
+          pending?.action === 'disable' && action !== 'disable' ? pending : null,
+        )
+        const hint = browserUserErrorHint(error)
+        setErrorHint(hint)
+        toast(hint, 'error')
       }
     } finally {
-      lock.current = false
-      if (mounted.current) setBusy(null)
+      if (request === sequence.current) {
+        lock.current = false
+        if (mounted.current) setBusy(null)
+      }
     }
   }
   function ask(action: Exclude<BrowserUserAction, 'diagnose'>) {
-    if (lock.current || !coreReady || !status) return
+    if ((lock.current && action !== 'disable') || !coreReady || (!status && action !== 'disable'))
+      return
     setMigrateConfirmed(false)
     setConfirmation({
       action,
       autoRepair,
-      migrationRequired: status.migrationRequired && (action === 'enable' || action === 'repair'),
+      migrationRequired:
+        !!status?.migrationRequired && (action === 'enable' || action === 'repair'),
     })
   }
   function askBlockedUrl(url?: string) {
@@ -361,46 +328,24 @@ export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreS
             if (!confirmation) setOpen(false)
           }}
           busy={busy !== null || confirmation !== null}
-          actions={(close) => (
-            <>
-              <Button
-                disabled={busy !== null || loading || !coreReady}
-                onClick={() => void refresh(true)}
-              >
-                {t('刷新状态')}
-              </Button>
-              <Button disabled={busy !== null || confirmation !== null} onClick={close}>
-                {t('关闭')}
-              </Button>
-            </>
-          )}
         >
           <div className="browser-user-fields" aria-busy={loading || busy !== null}>
-            <BrowserUserSummary status={status} coreReady={coreReady} />
-            <BrowserUserIdentitySettings
+            <BrowserUserSummary status={status} coreReady={coreReady} errorHint={errorHint} />
+            <BrowserUserPrimaryActions
               status={status}
-              autoRepair={autoRepair}
-              disabled={busy !== null || !coreReady || !status}
-              onAutoRepairChange={(value) => {
-                dirty.current = true
-                setAutoRepair(value)
-              }}
+              coreReady={coreReady}
+              busy={busy !== null || loading}
+              closing={busy === 'disable'}
+              onInstall={() => ask('enable')}
+              onCheck={() => void perform('diagnose', false)}
+              onDisable={() => ask('disable')}
             />
-            {status?.requiresAuthorization && (
-              <Card density="compact">
-                <DataText>
-                  {t(
-                    '首次启用或从旧版逐页授权升级，需要明确确认新的全部普通 HTTP(S) 网页范围。未确认前保持停用。',
-                  )}
-                </DataText>
-              </Card>
-            )}
             <FieldGroup label={t('禁止的单个链接')}>
               <Field
                 label={t('链接')}
                 error={blockedError}
                 description={t(
-                  '按 origin + pathname 精确匹配；忽略参数和片段，保留尾斜杠。不是整个域名或前缀规则。',
+                  '只禁止这个链接，忽略问号后的参数和片段；不影响同网站其他页面。尾斜杠不同的链接需分别添加。',
                 )}
               >
                 <Input
@@ -440,64 +385,6 @@ export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreS
                 </DataText>
               )}
             </FieldGroup>
-            <div className="settings-row-controls">
-              <Button
-                variant="primary"
-                disabled={
-                  !coreReady ||
-                  !status ||
-                  (status.enabled && !status.requiresAuthorization) ||
-                  !status.registration.supported ||
-                  busy !== null
-                }
-                onClick={() => ask('enable')}
-              >
-                {status?.requiresAuthorization
-                  ? t('确认网页范围并启用')
-                  : browserUserActionLabel('enable')}
-              </Button>
-              <Button
-                disabled={!coreReady || !status || !status.registration.supported || busy !== null}
-                onClick={() => ask('repair')}
-              >
-                {browserUserActionLabel('repair')}
-              </Button>
-              <Button
-                disabled={!coreReady || !status?.enabled || busy !== null}
-                onClick={() => ask('disable')}
-              >
-                {browserUserActionLabel('disable')}
-              </Button>
-              <Button
-                loading={busy === 'diagnose'}
-                disabled={!coreReady || busy !== null}
-                onClick={() => void perform('diagnose', false)}
-              >
-                {browserUserActionLabel('diagnose')}
-              </Button>
-              <Button
-                variant="danger"
-                disabled={
-                  !coreReady ||
-                  !status ||
-                  (!status.enabled && !status.registration.registered && !status.extensionId) ||
-                  busy !== null
-                }
-                onClick={() => ask('remove')}
-              >
-                {browserUserActionLabel('remove')}
-              </Button>
-            </div>
-            <p>
-              {t(
-                '请在 Chrome 中加载官方扩展并确认浏览器权限。普通 HTTP(S) 网页默认允许，禁止链接除外；暂停与接管始终优先。重新连接创建新会话，不重放先前操作。Agent 不能通过 MCP 启用此功能。',
-              )}
-            </p>
-            <p>
-              {t(
-                '当前所有 Lumi MCP 客户端共享一个浏览器控制域，操作串行执行，并非多 Agent 身份隔离。请勿让互不信任的 Agent 同时控制浏览器。',
-              )}
-            </p>
           </div>
         </Modal>
       )}
@@ -505,11 +392,12 @@ export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreS
         <ConfirmationDialog
           title={browserUserActionLabel(confirmation.action)}
           confirmLabel={browserUserActionLabel(confirmation.action)}
-          busy={busy !== null}
+          busy={busy !== null && (confirmation.action !== 'disable' || busy === 'disable')}
           disabled={!coreReady || (confirmation.migrationRequired && !migrateConfirmed)}
-          danger={confirmation.action === 'remove' || confirmation.action === 'disable'}
+          danger={confirmation.action === 'disable'}
           cancel={() => {
-            if (!lock.current) setConfirmation(null)
+            if (!lock.current || (confirmation.action === 'disable' && busy !== 'disable'))
+              setConfirmation(null)
           }}
           confirm={confirmPending}
         >
@@ -519,16 +407,8 @@ export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreS
                 ? t('确认禁止此精确链接的所有参数和片段变体；相关操作将立即取消。')
                 : t('确认移除此禁止项；此链接将回到默认允许范围，但不会恢复暂停或接管状态。')
               : confirmation.action === 'enable' || confirmation.action === 'repair'
-                ? t(
-                    '此操作将注册或修复 Lumi 官方扩展的本用户连接并诊断状态。修复注册不会代替首次网页范围授权。',
-                  )
-                : confirmation.action === 'disable'
-                  ? t(
-                      '停用将阻止新的浏览器操作并撤销当前 Lumi 浏览器连接。已发出的网页动作无法撤回。',
-                    )
-                  : t(
-                      '移除将撤销 Lumi 浏览器连接并移除本安装的注册；不会卸载 Chrome 扩展或清除浏览器数据。',
-                    )}
+                ? t('安装 Lumi 的浏览器连接。Chrome 扩展仍需你在浏览器中安装并确认权限。')
+                : t('关闭后停止浏览器控制，但保留安装。已执行的网页操作无法撤回。')}
           </p>
           {confirmation.changedUrl && (
             <div className="browser-user-fields">
@@ -536,30 +416,27 @@ export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreS
             </div>
           )}
           {confirmation.action === 'enable' && (
-            <p>
-              {t(
-                '确认后，除禁止链接外，所有普通 HTTP(S) 网页默认允许控制。Chrome 扩展仍需你确认浏览器权限。旧版逐页授权不会自动扩大范围。',
-              )}
-            </p>
+            <p>{t('允许 Lumi 控制所有普通 HTTP(S) 网页，禁止列表除外。暂停和接管始终优先。')}</p>
           )}
           {(confirmation.action === 'enable' || confirmation.action === 'repair') && (
-            <p>
-              {confirmation.autoRepair
-                ? t('你将授权仅维护同一官方 ID、本安装升级或移动后的注册路径。')
-                : t('自动维护未授权；后续路径变化需要手动确认修复。')}
-            </p>
+            <Checkbox
+              label={t('允许 Lumi 更新或移动后自动保持连接（仅本安装和同一官方扩展）')}
+              checked={confirmation.autoRepair}
+              disabled={busy !== null}
+              onChange={(event) =>
+                setConfirmation({ ...confirmation, autoRepair: event.target.checked })
+              }
+            />
           )}
           {confirmation.migrationRequired && (
             <Checkbox
-              label={t(
-                '我确认将旧的本安装扩展身份迁移至官方 ID；此确认不代替网页范围或 Chrome 权限授权。',
-              )}
+              label={t('我确认将旧版连接切换到官方扩展；仍需在 Chrome 中确认权限。')}
               checked={migrateConfirmed}
               disabled={busy !== null}
               onChange={(event) => setMigrateConfirmed(event.target.checked)}
             />
           )}
-          <p>{t('所有 Lumi MCP 客户端共享此控制域。你确认继续吗？')}</p>
+          <p>{t('所有连接到 Lumi 的 Agent 共享浏览器控制。')}</p>
         </ConfirmationDialog>
       )}
     </section>

@@ -1574,7 +1574,8 @@ mod resource_tests {
         assert!(browser_user_payload("enable", Some(blocked)).is_err());
         let unconfirmed = json!({"blockedUrls": []});
         assert!(browser_user_payload("setBlockedUrls", Some(unconfirmed)).is_err());
-        let excessive = json!({"confirmed": true, "blockedUrls": vec!["https://example.com/"; 101]});
+        let excessive =
+            json!({"confirmed": true, "blockedUrls": vec!["https://example.com/"; 101]});
         assert!(browser_user_payload("setBlockedUrls", Some(excessive)).is_err());
     }
 

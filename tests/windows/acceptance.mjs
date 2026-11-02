@@ -235,11 +235,53 @@ try {
     assert.equal(status.userDataPathAvailable, true)
     assert.equal(status.coreVersion, appVersion)
   })
+  await check('WIN-BROWSER read-only WebView to Rust to Core bridge', async () => {
+    // Fresh isolated profile: these reads must not register or enable anything.
+    for (const action of ['status', 'diagnose']) {
+      const status = await ipc('browser_user_request', { action, payload: {} })
+      assert.equal(status.enabled, false)
+      assert.equal(status.connectedHosts, 0)
+      assert.deepEqual(status.sessions, [])
+      assert.equal(status.transport, 'loopback-websocket')
+      assert.equal(status.endpoint, 'ws://127.0.0.1:43127/ws')
+      assert.equal(status.paired, false)
+      assert.equal(status.enrollmentExpiresAt, null)
+      assert.ok(Array.isArray(status.pageRules))
+      assert.equal(status.rulesRevision, 0)
+      assert.ok(Array.isArray(status.blockedUrls))
+    }
+  })
   await check('WIN-A02 pages and native language persistence', async () => {
     for (const label of ['工具', 'Skills', '知识库', 'AI 用量', '设置']) await navigate(label)
     await waitFor(
       () => execute('return !!document.querySelector(".settings-core-status[data-state=ready]")'),
       'Settings did not show connected Core',
+    )
+    const browserManage = '.settings-row[aria-labelledby="browser-user-title"] button'
+    await waitFor(
+      () => execute('return !!document.querySelector(arguments[0])', [browserManage]),
+      'Browser User management button did not mount',
+    )
+    await click(browserManage)
+    await waitFor(
+      () => execute('return !!document.querySelector("dialog .browser-page-rules")'),
+      'Browser User rule list did not open',
+    )
+    await waitFor(
+      () =>
+        execute(
+          'const text = document.querySelector("dialog")?.textContent ?? ""; return text.includes("Browser User 已停用") || text.includes("需要确认全部普通网页控制范围")',
+        ),
+      'Opening Browser User did not complete its real status check',
+    )
+    assert.equal(
+      (await ipc('browser_user_request', { action: 'status', payload: {} })).enabled,
+      false,
+    )
+    await click('dialog button[aria-label="关闭预览"]')
+    await waitFor(
+      () => execute('return !document.querySelector("dialog")'),
+      'Browser User panel did not close',
     )
     await click('select[aria-label="语言 / Language"] option[value="en"]')
     await waitFor(
@@ -360,7 +402,12 @@ try {
   await check('WIN-A06 process restart preserves WebView2 SDK data and locale', async () => {
     await stop()
     await start()
-    assert.equal(await execute('return document.documentElement.lang'), 'en')
+    // Native persistence is authoritative; React applies it asynchronously after startup.
+    assert.equal(await ipc('get_ui_locale'), 'en')
+    await waitFor(
+      () => execute('return document.documentElement.lang === "en"'),
+      'Persisted locale was not applied after process restart',
+    )
     await frame()
     assert.deepEqual(await asyncScript('return await window.lumi.storage.get("windows-qa")'), value)
     await waitFor(

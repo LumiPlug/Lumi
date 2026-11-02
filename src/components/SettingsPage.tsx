@@ -4,6 +4,7 @@ import type { McpConnectionInfo, UiCoreStatus } from '@lumiplug/shared'
 import HomepagePromptSetting from './HomepagePromptSetting'
 import McpConnectionCard from './McpConnectionCard'
 import McpPortSetting from './McpPortSetting'
+import BrowserUserSetting from './BrowserUserSetting'
 import { useLayoutEffect, useRef, useState } from 'react'
 import { useToast } from './ToastProvider'
 import { saveLocale } from '../i18n/preferences'
@@ -120,6 +121,7 @@ export default function SettingsPage({
       </section>
       <McpConnectionCard connection={mcpConnection} onConnectionChange={onMcpConnectionChange} />
       <McpPortSetting coreStatus={coreStatus} />
+      <BrowserUserSetting coreStatus={coreStatus} />
       <HomepagePromptSetting />
       <section className="settings-row" aria-labelledby="core-title">
         <h2 id="core-title" tabIndex={-1}>

@@ -120,7 +120,6 @@ After building the production frontend, run `node scripts/check-dev-ui-productio
 
 ## Documentation and contributing
 
-
 - [Documentation index](docs/README.md)
 - [Product specification](docs/PRODUCT_SPEC.md)
 - [Technical architecture](docs/TECHNICAL_ARCHITECTURE.md)
@@ -136,3 +135,7 @@ Lumi is licensed under the **Mozilla Public License 2.0 (MPL-2.0)**. See [LICENS
 MPL-2.0 permits commercial use, modification, and distribution. When distributing covered files or their modifications, provide the corresponding source as required by the license. Independent new files containing no MPL-covered code may use another license. Third-party dependencies retain their own licenses.
 
 The license does not grant rights to Lumi trademarks or logos.
+
+### Browser User
+
+Open Browser User in Lumi settings to read status without enabling it. **Install extension** opens the fixed official Chrome Web Store listing; availability depends on publication. **Check connection** explicitly authorizes ordinary HTTP(S) control except blocked page rules and connects directly, without a pairing code or extra product confirmation page. Chrome permissions still require approval. First connection uses a short-lived **TOFU** window; it does not guarantee protection against malicious local peers or active first-connection MITM. Previously saved trust is authenticated on reconnect. **Disconnect** stops control; explicit recovery can reset old trust. Inline page-rule edits take effect only after saving. See [Browser User integration](docs/BROWSER_USER.md).

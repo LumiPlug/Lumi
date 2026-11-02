@@ -30,6 +30,8 @@ import type { TaskManager } from '../tools/tasks'
 import { prepareRunArguments } from '../tools/run-parameters'
 import type { SkillsRepository } from '../skills/repository'
 import { SKILL_TOOLS } from '../skills/tools'
+import type { BrowserService } from '../browser/service'
+import { BROWSER_TOOLS } from '../browser/tools'
 import { SkillFileError } from '../skills/files'
 import {
   checkExecutable,
@@ -63,6 +65,7 @@ export class CapabilityRegistry {
     private readonly tasks?: TaskManager,
     private readonly knowledge?: KnowledgeService,
     private readonly skills?: SkillsRepository,
+    private readonly browser?: BrowserService,
   ) {}
 
   public listUiCapabilities(): CapabilitySummary[] {
@@ -80,6 +83,7 @@ export class CapabilityRegistry {
       ...BUILTIN_TOOLS,
       ...(this.knowledge ? KNOWLEDGE_TOOLS : []),
       ...(this.skills ? SKILL_TOOLS : []),
+      ...(this.browser?.status().enabled ? BROWSER_TOOLS : []),
       ...this.listAiTools(),
     ].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
   }
@@ -145,10 +149,19 @@ export class CapabilityRegistry {
       ...BUILTIN_TOOLS,
       ...(this.knowledge ? KNOWLEDGE_TOOLS : []),
       ...(this.skills ? SKILL_TOOLS : []),
+      ...(this.browser?.status().enabled ? BROWSER_TOOLS : []),
     ].find((tool) => tool.name === name)
     const view = builtin ?? this.getAiTool(name)
     if (!view) throw new RegistryError('ai_tool_not_found_or_disabled')
     this.validateArguments(view, argumentsObject)
+
+    if (name.startsWith('Lumi.browser_') && this.browser) {
+      return JSON.parse(
+        JSON.stringify(
+          await this.browser.call(name.slice('Lumi.browser_'.length), argumentsObject, { signal }),
+        ),
+      ) as JsonObject
+    }
 
     if (name === 'Lumi.list_tasks')
       return {
@@ -208,7 +221,11 @@ export class CapabilityRegistry {
       }
     }
     if (name === 'Lumi.get_context')
-      return publicContext(Boolean(this.knowledge), Boolean(this.skills))
+      return publicContext(
+        Boolean(this.knowledge),
+        Boolean(this.skills),
+        Boolean(this.browser?.status().enabled),
+      )
     if (name === 'Lumi.get_workbench_template') return homeTemplate()
     if (
       [

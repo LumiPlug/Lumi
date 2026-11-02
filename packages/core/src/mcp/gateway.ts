@@ -17,6 +17,7 @@ import { TOOL_ERRORS } from '@lumiplug/shared'
 import { ToolError } from '../tools/config'
 import { SKILL_ERRORS } from '../skills/managed'
 import { SKILL_TOOLS } from '../skills/tools'
+import { BrowserError } from '../browser/service'
 
 /** Stateless requests read the live Registry; no duplicated tool catalog or database. */
 export class McpGateway {
@@ -63,7 +64,7 @@ export class McpGateway {
       {
         capabilities: { tools: { listChanged: false } },
         instructions:
-          '连接后先调用 Lumi.get_context，确认实际可用功能。任务开始时用 Lumi.search_skills 查找相关技能，用 Lumi.get_skill 加载说明、Lumi.read_skill_file 按需读取附件，脚本只读不执行。使用 Lumi.list_capabilities 查看工具目录。开发主页时读取 Lumi.get_workbench 的源码、开发模板与版本，构建后通过 Lumi.publish_workbench 保存。能力变化后重新调用 tools/list。AI 仅能保存能力草稿，启用由 Lumi 用户完成。',
+          '连接后先调用 Lumi.get_context，确认实际可用功能。任务开始时用 Lumi.search_skills 查找相关技能，用 Lumi.get_skill 加载说明、Lumi.read_skill_file 按需读取附件，脚本只读不执行。使用 Lumi.list_capabilities 查看工具目录。开发主页时读取 Lumi.get_workbench 的源码、开发模板与版本，构建后通过 Lumi.publish_workbench 保存。能力变化后重新调用 tools/list。AI 仅能保存能力草稿，启用由 Lumi 用户完成。Browser User 仅在用户设置启用后提供 Lumi.browser_*；所有接入 Agent 共享一个 Lumi 控制域并串行操作，不是逐 Agent 隔离。只操作用户已启用策略和 Chrome 权限允许的页面，禁止链接与暂停/接管优先，不确定结果禁止自动重放。',
       },
     )
     server.setRequestHandler('tools/list', async (request) => {
@@ -129,6 +130,22 @@ export class McpGateway {
           structuredContent: result,
         }
       } catch (error) {
+        if (error instanceof BrowserError) {
+          const result = {
+            error: {
+              code: error.code,
+              message: error.message,
+              retryable: false,
+              ...(error.outcome ? { outcome: error.outcome } : {}),
+              ...(error.details !== undefined ? { details: error.details } : {}),
+            },
+          }
+          return {
+            isError: true,
+            structuredContent: result,
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          }
+        }
         if (error instanceof RegistryError && SKILL_ERRORS[error.code]) {
           const result = { error: { code: error.code, message: SKILL_ERRORS[error.code] } }
           return {

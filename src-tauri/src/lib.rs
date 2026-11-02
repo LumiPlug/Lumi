@@ -554,31 +554,7 @@ impl CoreSupervisor {
     }
 
     fn call_core(&self, method: &str, path: &str, body: Option<Value>) -> Result<Value, String> {
-        if !matches!(
-            path,
-            "/app/capabilities"
-                | "/app/tools"
-                | "/app/mcp/check"
-                | "/app/mcp/token"
-                | "/app/workbench"
-                | "/app/workbench/publish"
-                | "/app/workbench/apply-template"
-                | "/app/workbench/restore"
-                | "/app/workbench/versions"
-                | "/app/workbench/export"
-                | "/app/workbench/rpc"
-                | "/app/skills"
-                | "/app/skills/scan"
-                | "/app/skills/import"
-                | "/app/skills/archive"
-                | "/app/skills/project"
-                | "/app/skills/directory"
-                | "/app/skills/file"
-                | "/app/knowledge"
-                | "/app/usage"
-                | "/app/core/stop"
-        ) && !path.starts_with("/app/capabilities/")
-        {
+        if !is_allowed_core_path(path) {
             return Err("core_path_not_allowed".to_string());
         }
         let (port, token) = {
@@ -611,6 +587,7 @@ impl CoreSupervisor {
             } else if path.starts_with("/app/skills")
                 || path == "/app/tools"
                 || path == "/app/knowledge"
+                || path == "/app/browser-user/action"
             {
                 30
             } else {
@@ -626,6 +603,35 @@ impl CoreSupervisor {
             .map_err(|_| "core_connection_failed".to_string())?;
         parse_http_json(&bytes)
     }
+}
+
+fn is_allowed_core_path(path: &str) -> bool {
+    matches!(
+        path,
+        "/app/browser-user/status"
+            | "/app/browser-user/action"
+            | "/app/capabilities"
+            | "/app/tools"
+            | "/app/mcp/check"
+            | "/app/mcp/token"
+            | "/app/workbench"
+            | "/app/workbench/publish"
+            | "/app/workbench/apply-template"
+            | "/app/workbench/restore"
+            | "/app/workbench/versions"
+            | "/app/workbench/export"
+            | "/app/workbench/rpc"
+            | "/app/skills"
+            | "/app/skills/scan"
+            | "/app/skills/import"
+            | "/app/skills/archive"
+            | "/app/skills/project"
+            | "/app/skills/directory"
+            | "/app/skills/file"
+            | "/app/knowledge"
+            | "/app/usage"
+            | "/app/core/stop"
+    ) || path.starts_with("/app/capabilities/")
 }
 
 fn parse_http_json(bytes: &[u8]) -> Result<Value, String> {
@@ -887,6 +893,146 @@ fn copy_text(
         .map_err(|_| "clipboard_write_failed".to_string())
 }
 
+fn browser_user_payload(action: &str, payload: Option<Value>) -> Result<Option<Value>, String> {
+    if !matches!(
+        action,
+        "status"
+            | "enable"
+            | "disable"
+            | "diagnose"
+            | "setBlockedUrls"
+            | "setPageRules"
+            | "resetPairing"
+    ) {
+        return Err("invalid_browser_user_action".to_string());
+    }
+    let value = payload.unwrap_or_else(|| json!({}));
+    let fields = value.as_object().ok_or("invalid_browser_user_payload")?;
+    for key in fields.keys() {
+        if !matches!(
+            key.as_str(),
+            "extensionId"
+                | "confirmed"
+                | "scopeConfirmed"
+                | "blockedUrls"
+                | "pageRules"
+                | "expectedRulesRevision"
+        ) {
+            return Err("invalid_browser_user_payload".to_string());
+        }
+    }
+    if action == "status" {
+        if !fields.is_empty() {
+            return Err("invalid_browser_user_payload".to_string());
+        }
+        return Ok(None);
+    }
+    if action != "diagnose" && fields.get("confirmed") != Some(&Value::Bool(true)) {
+        return Err("browser_user_confirmation_required".to_string());
+    }
+    if let Some(id) = fields.get("extensionId") {
+        if action != "enable" {
+            return Err("invalid_browser_user_payload".to_string());
+        }
+        let id = id.as_str().ok_or("invalid_browser_user_extension_id")?;
+        if id.len() != 32 || !id.bytes().all(|byte| (b'a'..=b'p').contains(&byte)) {
+            return Err("invalid_browser_user_extension_id".to_string());
+        }
+    }
+    if let Some(value) = fields.get("scopeConfirmed") {
+        if action != "enable" || !value.is_boolean() {
+            return Err("invalid_browser_user_payload".to_string());
+        }
+    }
+    if action == "setBlockedUrls" {
+        let urls = fields
+            .get("blockedUrls")
+            .and_then(Value::as_array)
+            .ok_or("invalid_browser_blocked_urls")?;
+        if urls.len() > 100 {
+            return Err("invalid_browser_blocked_urls".to_string());
+        }
+        for value in urls {
+            let url = value.as_str().ok_or("invalid_browser_blocked_urls")?;
+            if url.len() > 2048 {
+                return Err("invalid_browser_blocked_urls".to_string());
+            }
+        }
+    } else if fields.contains_key("blockedUrls") {
+        return Err("invalid_browser_user_payload".to_string());
+    }
+    if let Some(value) = fields.get("expectedRulesRevision") {
+        if !matches!(action, "setPageRules" | "setBlockedUrls") {
+            return Err("invalid_browser_user_payload".to_string());
+        }
+        let revision = value.as_u64().ok_or("invalid_browser_page_rules")?;
+        if revision > 9_007_199_254_740_991 {
+            return Err("invalid_browser_page_rules".to_string());
+        }
+    }
+    if action == "setPageRules" {
+        if !fields.contains_key("expectedRulesRevision") {
+            return Err("invalid_browser_page_rules".to_string());
+        }
+        let rules = fields
+            .get("pageRules")
+            .and_then(Value::as_array)
+            .ok_or("invalid_browser_page_rules")?;
+        if rules.len() > 100 {
+            return Err("invalid_browser_page_rules".to_string());
+        }
+        for rule in rules {
+            let rule = rule.as_object().ok_or("invalid_browser_page_rules")?;
+            if rule.len() != 3
+                || !rule
+                    .keys()
+                    .all(|key| matches!(key.as_str(), "label" | "url" | "permission"))
+            {
+                return Err("invalid_browser_page_rules".to_string());
+            }
+            let label = rule.get("label").and_then(Value::as_str);
+            let url = rule.get("url").and_then(Value::as_str);
+            let permission = rule.get("permission").and_then(Value::as_str);
+            if label.map_or(true, |value| value.chars().count() > 120)
+                || url.map_or(true, |value| value.len() > 2048)
+                || !matches!(permission, Some("allow" | "block"))
+            {
+                return Err("invalid_browser_page_rules".to_string());
+            }
+        }
+    } else if fields.contains_key("pageRules") {
+        return Err("invalid_browser_user_payload".to_string());
+    }
+    let mut body = fields.clone();
+    body.insert("action".to_string(), Value::String(action.to_string()));
+    Ok(Some(Value::Object(body)))
+}
+
+#[tauri::command]
+async fn browser_user_request(
+    window: tauri::WebviewWindow,
+    supervisor: State<'_, Arc<CoreSupervisor>>,
+    host_nonce: String,
+    action: String,
+    payload: Option<Value>,
+) -> Result<Value, String> {
+    supervisor.authorize(&host_nonce)?;
+    if window.label() != "main" {
+        return Err("browser_user_host_required".to_string());
+    }
+    let body = browser_user_payload(&action, payload)?;
+    let core = Arc::clone(supervisor.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        if action == "status" {
+            core.call_core("GET", "/app/browser-user/status", None)
+        } else {
+            core.call_core("POST", "/app/browser-user/action", body)
+        }
+    })
+    .await
+    .map_err(|_| "browser_user_request_failed".to_string())?
+}
+
 #[tauri::command]
 async fn tools_request(
     supervisor: State<'_, Arc<CoreSupervisor>>,
@@ -1071,6 +1217,31 @@ async fn export_usage_csv(
         .await
         .map_err(|_| "usage_export_failed")?;
     Ok(Some(file.path().to_string_lossy().into_owned()))
+}
+
+const BROWSER_EXTENSION_STORE_URL: &str =
+    "https://chromewebstore.google.com/detail/hfhigjgopbjmojflbhhnahpfpnmiaman";
+
+fn browser_extension_store_url(window_label: &str) -> Result<&'static str, String> {
+    if window_label != "main" {
+        return Err("browser_user_host_required".to_string());
+    }
+    Ok(BROWSER_EXTENSION_STORE_URL)
+}
+
+#[tauri::command]
+#[allow(deprecated)]
+fn open_browser_extension_store(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    supervisor: State<'_, Arc<CoreSupervisor>>,
+    host_nonce: String,
+) -> Result<(), String> {
+    supervisor.authorize(&host_nonce)?;
+    let url = browser_extension_store_url(window.label())?;
+    app.shell()
+        .open(url, None)
+        .map_err(|_| "browser_extension_store_open_failed".to_string())
 }
 
 #[tauri::command]
@@ -1343,6 +1514,8 @@ pub fn run() {
                 open_skill_source,
                 open_skill_link,
                 tools_request,
+                browser_user_request,
+                open_browser_extension_store,
                 list_capabilities,
                 create_capability_draft
             ];
@@ -1424,6 +1597,136 @@ pub fn run() {
 #[cfg(test)]
 mod resource_tests {
     use super::*;
+    #[test]
+    fn browser_page_rules_need_confirmation_and_bounded_revision() {
+        let payload = json!({
+            "confirmed": true,
+            "expectedRulesRevision": 3,
+            "pageRules": [{"label": "Work", "url": "https://example.com/", "permission": "block"}]
+        });
+        assert!(browser_user_payload("setPageRules", Some(payload.clone())).is_ok());
+        assert!(browser_user_payload("diagnose", Some(payload.clone())).is_err());
+        for field in ["confirmed", "expectedRulesRevision"] {
+            let mut invalid = payload.clone();
+            invalid.as_object_mut().unwrap().remove(field);
+            assert!(browser_user_payload("setPageRules", Some(invalid)).is_err());
+        }
+        for revision in [
+            json!(-1),
+            json!(1.5),
+            json!("3"),
+            json!(9_007_199_254_740_992_u64),
+        ] {
+            let mut invalid = payload.clone();
+            invalid["expectedRulesRevision"] = revision;
+            assert!(browser_user_payload("setPageRules", Some(invalid)).is_err());
+        }
+        let mut invalid = payload.clone();
+        invalid["pageRules"][0]["permission"] = json!("admin");
+        assert!(browser_user_payload("setPageRules", Some(invalid)).is_err());
+        let mut excessive = payload;
+        let rule = json!({"label": "", "url": "https://e.test/", "permission": "allow"});
+        excessive["pageRules"] = json!(vec![rule; 101]);
+        assert!(browser_user_payload("setPageRules", Some(excessive)).is_err());
+    }
+
+    #[test]
+    fn browser_extension_store_is_fixed_https_and_main_window_only() {
+        assert_eq!(
+            browser_extension_store_url("main").unwrap(),
+            "https://chromewebstore.google.com/detail/hfhigjgopbjmojflbhhnahpfpnmiaman"
+        );
+        for label in ["", "run-task-example", "main/", "main?url=file:///private"] {
+            assert!(browser_extension_store_url(label).is_err());
+        }
+    }
+
+    #[test]
+    fn browser_user_core_paths_are_exact_and_existing_routes_remain_allowed() {
+        for path in [
+            "/app/browser-user/status",
+            "/app/browser-user/action",
+            "/app/mcp/check",
+            "/app/capabilities/example",
+        ] {
+            assert!(is_allowed_core_path(path));
+        }
+        for path in [
+            "/app/browser-user",
+            "/app/browser-user/",
+            "/app/browser-user/status/",
+            "/app/browser-user/status?extra=1",
+            "/app/browser-user/actions",
+            "/app/browser-user/action/extra",
+            "/app/browser-user/remove",
+            "/app/unknown",
+            "https://example.com/app/browser-user/status",
+        ] {
+            assert!(!is_allowed_core_path(path));
+        }
+    }
+
+    #[test]
+    fn browser_user_http_errors_forward_safe_codes_not_private_messages() {
+        for code in [
+            "browser_rules_conflict",
+            "browser_enrollment_expired",
+            "browser_pin_mismatch",
+            "browser_listener_unavailable",
+        ] {
+            let body = json!({"error": {"code": code, "message": "/private/secret"}});
+            let response = format!("HTTP/1.1 400 Bad Request\r\n\r\n{body}");
+            assert_eq!(parse_http_json(response.as_bytes()), Err(code.to_string()));
+        }
+        let body = json!({"error": {"code": "file:///secret", "message": "private"}});
+        let response = format!("HTTP/1.1 400 Bad Request\r\n\r\n{body}");
+        assert_eq!(
+            parse_http_json(response.as_bytes()),
+            Err("core_request_failed".to_string())
+        );
+        let body = json!({"data": {"enabled": false}});
+        let response = format!("HTTP/1.1 200 OK\r\n\r\n{body}");
+        assert_eq!(
+            parse_http_json(response.as_bytes()),
+            Ok(json!({"enabled": false}))
+        );
+    }
+
+    #[test]
+    fn browser_user_commands_require_bounded_explicit_consent() {
+        assert!(browser_user_payload("status", None).unwrap().is_none());
+        assert!(browser_user_payload("diagnose", None).is_ok());
+        for action in ["arbitrary", "repair", "remove"] {
+            assert!(browser_user_payload(action, None).is_err());
+        }
+        for action in [
+            "enable",
+            "disable",
+            "setBlockedUrls",
+            "setPageRules",
+            "resetPairing",
+        ] {
+            assert!(browser_user_payload(action, None).is_err());
+        }
+        let scope = json!({"confirmed": true, "scopeConfirmed": true});
+        assert!(browser_user_payload("enable", Some(scope.clone())).is_ok());
+        assert!(browser_user_payload("disable", Some(scope)).is_err());
+        for field in ["autoRepair", "migrateConfirmed"] {
+            let mut obsolete = json!({"confirmed": true});
+            obsolete[field] = json!(true);
+            assert!(browser_user_payload("enable", Some(obsolete)).is_err());
+        }
+        let blocked = json!({"confirmed": true, "blockedUrls": ["https://example.com/private"]});
+        assert!(browser_user_payload("setBlockedUrls", Some(blocked.clone())).is_ok());
+        assert!(browser_user_payload("enable", Some(blocked)).is_err());
+        let excessive =
+            json!({"confirmed": true, "blockedUrls": vec!["https://example.com/"; 101]});
+        assert!(browser_user_payload("setBlockedUrls", Some(excessive)).is_err());
+        let obsolete = json!({"confirmed": true, "pairingId": "socket", "pairingCode": "123456"});
+        assert!(browser_user_payload("approvePairing", Some(obsolete.clone())).is_err());
+        assert!(browser_user_payload("enable", Some(obsolete)).is_err());
+    }
+
     #[test]
     fn only_releases_a_main_window_after_continuous_hiding() {
         let idle = Some(Duration::from_secs(300));

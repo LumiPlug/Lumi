@@ -103,3 +103,41 @@
 .mcp-port-controls > button {
   margin-top: calc(var(--lumi-control-height) + 8px);
 }
+
+/* Browser User only composes existing fields, cards, badges, and buttons. */
+.browser-user-fields {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.browser-user-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Layout only: all rule inputs/actions retain shared control styling. */
+.browser-page-rules {
+  height: 240px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.browser-page-rule-row {
+  display: grid;
+  grid-template-columns: minmax(80px, 1fr) minmax(140px, 2fr) 80px auto auto;
+  gap: 8px;
+  align-items: center;
+}
+.browser-page-rule-row > input {
+  min-width: 0;
+}
+@media (max-width: 640px) {
+  .browser-page-rule-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  }
+}

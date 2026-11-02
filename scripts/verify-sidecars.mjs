@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { once } from 'node:events'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { createInterface } from 'node:readline'
@@ -45,6 +45,9 @@ const environment = Object.fromEntries(
 environment.PATH = ''
 environment.NODE_PATH = ''
 environment.NODE_OPTIONS = ''
+// Browser MCP and WebSocket run in Core: no independent browser host may ship.
+assert.ok(!(await readdir(directory)).some((name) => name.startsWith('lumi-browser-native-host')))
+
 const core = spawn(
   path.join(directory, `lumi-core${suffix}`),
   [

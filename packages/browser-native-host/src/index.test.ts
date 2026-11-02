@@ -84,13 +84,24 @@ describe('Chrome native host connects only to existing Core', () => {
     socket.push('{"type":"ready"}\n')
     await new Promise((resolve) => setImmediate(resolve))
     expect(JSON.parse(writes[1]!)).toEqual({ type: 'sessions', sessions: [{ title: '中文' }] })
-    const request = { type: 'request', id: '1', tool: 'browser_list_sessions', args: {} }
+    const policy = { type: 'policy', epoch: 4, blockedUrls: ['https://example.com/private'] }
+    socket.push(JSON.stringify(policy) + '\n')
+    const request = {
+      type: 'request',
+      id: '1',
+      tool: 'browser_list_sessions',
+      args: {},
+      policyEpoch: 4,
+    }
     socket.push(JSON.stringify(request) + '\n')
     await new Promise((resolve) => setImmediate(resolve))
     const output = Buffer.concat(received)
     const firstLength = output.readUInt32LE()
     expect(JSON.parse(output.subarray(4, firstLength + 4).toString())).toEqual({ type: 'ready' })
-    const next = output.subarray(firstLength + 4)
+    const policyFrame = output.subarray(firstLength + 4)
+    const policyLength = policyFrame.readUInt32LE()
+    expect(JSON.parse(policyFrame.subarray(4, policyLength + 4).toString())).toEqual(policy)
+    const next = policyFrame.subarray(policyLength + 4)
     expect(next.readUInt32LE()).toBe(next.length - 4)
     expect(JSON.parse(next.subarray(4).toString())).toEqual(request)
     close()

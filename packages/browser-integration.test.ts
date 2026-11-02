@@ -27,6 +27,7 @@ it('routes two MCP clients through the existing Lumi Core/native host in one ser
   let closeNative: (() => void) | undefined,
     active = 0,
     maximum = 0
+  let policyEpoch: number | undefined
   const send = (message: unknown) => {
     const json = Buffer.from(JSON.stringify(message)),
       head = Buffer.alloc(4)
@@ -42,9 +43,16 @@ it('routes two MCP clients through the existing Lumi Core/native host in one ser
         type: string
         id: string
         tool: string
+        epoch?: number
+        policyEpoch?: number
       }
       buffer = buffer.subarray(4 + length)
+      if (request.type === 'policy') {
+        policyEpoch = request.epoch
+        continue
+      }
       if (request.type !== 'request') continue
+      expect(request.policyEpoch).toBe(policyEpoch)
       active++
       maximum = Math.max(maximum, active)
       setTimeout(() => {
@@ -82,8 +90,10 @@ it('routes two MCP clients through the existing Lumi Core/native host in one ser
       configFile: locator,
       streams: { stdin: input, stdout: output, stderr },
     })
+    await vi.waitFor(() => expect(policyEpoch).toBeTypeOf('number'))
     send({
       type: 'sessions',
+      policyEpoch,
       sessions: [
         {
           id: 'fixture-tab',
@@ -129,6 +139,19 @@ it('routes two MCP clients through the existing Lumi Core/native host in one ser
       { text: 'ORDER-1024', tool: 'read_text' },
     ])
     expect(maximum).toBe(1)
+    const oldEpoch = policyEpoch
+    core.browserUser.browser.setBlockedUrls(['https://example.test/?private=1#section'])
+    await vi.waitFor(() => expect(policyEpoch).not.toBe(oldEpoch))
+    const filtered = await clients[0]!.callTool({
+      name: 'Lumi.browser_list_sessions',
+      arguments: {},
+    })
+    expect(filtered.structuredContent).toMatchObject({ sessions: [] })
+    const blocked = await clients[0]!.callTool({
+      name: 'Lumi.browser_read_text',
+      arguments: { sessionId: 'fixture-tab' },
+    })
+    expect(blocked.isError).toBe(true)
     await core.browserUser.browser.disable()
     expect(
       (await clients[0]!.listTools()).tools.some((tool) => tool.name.startsWith('Lumi.browser_')),

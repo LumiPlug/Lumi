@@ -120,7 +120,16 @@ async function readyFixture() {
   await context.service.start(extensionId)
   const host = await context.host()
   expect(await host.next()).toEqual({ type: 'ready' })
-  writeBrowserFrame(host.socket, { type: 'sessions', sessions: [sample] })
+  expect(await host.next()).toMatchObject({
+    type: 'policy',
+    epoch: context.service.status().policyEpoch,
+    blockedUrls: [],
+  })
+  writeBrowserFrame(host.socket, {
+    type: 'sessions',
+    policyEpoch: context.service.status().policyEpoch,
+    sessions: [sample],
+  })
   await tick()
   return { ...context, native: host }
 }
@@ -214,14 +223,23 @@ describe('Browser User Core service', () => {
         reason: { code: 'outcome_unknown', outcome: 'unknown' },
       })
       expect(result[1]).toMatchObject({ status: 'rejected', reason: { code: 'session_inactive' } })
-      writeBrowserFrame(context.native.socket, { type: 'sessions', sessions: [sample] })
+      writeBrowserFrame(context.native.socket, {
+        type: 'sessions',
+        policyEpoch: context.service.status().policyEpoch,
+        sessions: [sample],
+      })
       await tick()
       expect(context.service.status().sessions[0]?.state).toBe('paused')
       writeBrowserFrame(context.native.socket, {
         type: 'sessions',
+        policyEpoch: context.service.status().policyEpoch,
         sessions: [{ ...sample, state: 'paused' }],
       })
-      writeBrowserFrame(context.native.socket, { type: 'sessions', sessions: [sample] })
+      writeBrowserFrame(context.native.socket, {
+        type: 'sessions',
+        policyEpoch: context.service.status().policyEpoch,
+        sessions: [sample],
+      })
       await tick()
       expect(context.service.status().sessions[0]?.state).toBe('active')
     } finally {
@@ -315,6 +333,7 @@ it('preserves pause acknowledgement when unknown response arrives after the paus
     const request = await context.native.next()
     writeBrowserFrame(context.native.socket, {
       type: 'sessions',
+      policyEpoch: context.service.status().policyEpoch,
       sessions: [{ ...sample, state: 'paused' }],
     })
     writeBrowserFrame(context.native.socket, {
@@ -326,7 +345,11 @@ it('preserves pause acknowledgement when unknown response arrives after the paus
       status: 'rejected',
       reason: { code: 'outcome_unknown' },
     })
-    writeBrowserFrame(context.native.socket, { type: 'sessions', sessions: [sample] })
+    writeBrowserFrame(context.native.socket, {
+      type: 'sessions',
+      policyEpoch: context.service.status().policyEpoch,
+      sessions: [sample],
+    })
     await tick()
     expect(context.service.status().sessions[0]?.state).toBe('active')
   } finally {
@@ -356,8 +379,10 @@ it('revoke disconnects only the owning native host and a second host cannot stea
   try {
     const second = await context.host()
     expect(await second.next()).toEqual({ type: 'ready' })
+    expect(await second.next()).toMatchObject({ type: 'policy' })
     writeBrowserFrame(second.socket, {
       type: 'sessions',
+      policyEpoch: context.service.status().policyEpoch,
       sessions: [
         { ...sample, title: 'Collision' },
         { ...sample, id: 'other-session' },
@@ -373,7 +398,11 @@ it('revoke disconnects only the owning native host and a second host cannot stea
     expect(context.service.status().sessions.map((session) => session.id)).toEqual([
       'other-session',
     ])
-    writeBrowserFrame(second.socket, { type: 'sessions', sessions: [] })
+    writeBrowserFrame(second.socket, {
+      type: 'sessions',
+      policyEpoch: context.service.status().policyEpoch,
+      sessions: [],
+    })
     await tick()
     expect(context.service.status().sessions).toEqual([])
   } finally {
@@ -407,6 +436,137 @@ it('treats malformed post-dispatch replies as unknown rather than a successful e
       reason: { code: 'outcome_unknown' },
     })
     expect(context.service.status().sessions[0]?.state).toBe('paused')
+  } finally {
+    await context.stop()
+  }
+})
+
+it('publishes policy after ready and requires the current policy epoch before accepting any session', async () => {
+  const context = await fixture()
+  try {
+    await context.service.start(extensionId, ['https://example.test/private?secret=1'])
+    const native = await context.host()
+    expect(await native.next()).toEqual({ type: 'ready' })
+    const policy = await native.next()
+    expect(policy).toMatchObject({ type: 'policy', blockedUrls: ['https://example.test/private'] })
+    writeBrowserFrame(native.socket, { type: 'sessions', sessions: [sample] })
+    await tick()
+    expect(context.service.status().sessions).toEqual([])
+    writeBrowserFrame(native.socket, {
+      type: 'sessions',
+      policyEpoch: policy.epoch,
+      sessions: [
+        sample,
+        {
+          ...sample,
+          id: 'private',
+          url: 'https://example.test/private?secret=2',
+          title: 'Secret title',
+        },
+        { ...sample, id: 'restricted', url: 'chrome://settings' },
+      ],
+    })
+    await tick()
+    const result = await context.service.call('list_sessions', {})
+    expect(JSON.stringify(result)).not.toContain('Secret')
+    expect(context.service.status().sessions.map((session) => session.id)).toEqual([sample.id])
+    const pending = context.service.call('read_text', { sessionId: sample.id })
+    const request = await native.next()
+    expect(request.policyEpoch).toBe(policy.epoch)
+    writeBrowserFrame(native.socket, {
+      type: 'response',
+      id: request.id,
+      result: { text: 'allowed' },
+    })
+    await expect(pending).resolves.toEqual({ text: 'allowed' })
+    await expect(context.service.call('read_text', { sessionId: 'private' })).rejects.toMatchObject(
+      { code: 'disconnected' },
+    )
+  } finally {
+    await context.stop()
+  }
+})
+
+it('changing blocked links cancels all old-policy work and removes denied metadata immediately', async () => {
+  const context = await readyFixture()
+  try {
+    const oldEpoch = context.service.status().policyEpoch
+    const first = context.service.call('snapshot', { sessionId: sample.id })
+    const second = context.service.call('read_text', { sessionId: sample.id })
+    const outcomes = Promise.allSettled([first, second])
+    const request = await context.native.next()
+    context.service.setBlockedUrls(['https://example.test/?query=ignored#fragment'])
+    expect(await context.native.next()).toEqual({ type: 'cancel', id: request.id })
+    const policy = await context.native.next()
+    expect(policy).toMatchObject({ type: 'policy', blockedUrls: ['https://example.test/'] })
+    expect(policy.epoch).not.toBe(oldEpoch)
+    expect((await outcomes)[0]).toMatchObject({
+      status: 'rejected',
+      reason: { code: 'outcome_unknown' },
+    })
+    expect((await outcomes)[1]).toMatchObject({ status: 'rejected', reason: { code: 'cancelled' } })
+    expect(context.service.status().sessions).toEqual([])
+    writeBrowserFrame(context.native.socket, {
+      type: 'sessions',
+      policyEpoch: oldEpoch,
+      sessions: [sample],
+    })
+    writeBrowserFrame(context.native.socket, {
+      type: 'sessions',
+      policyEpoch: policy.epoch,
+      sessions: [sample],
+    })
+    await tick()
+    expect(await context.service.call('list_sessions', {})).toMatchObject({ sessions: [] })
+    expect(context.native.socket.destroyed).toBe(false)
+    context.service.setBlockedUrls([])
+    const allowedPolicy = await context.native.next()
+    writeBrowserFrame(context.native.socket, {
+      type: 'sessions',
+      policyEpoch: policy.epoch,
+      sessions: [sample],
+    })
+    await tick()
+    expect(context.service.status().sessions).toEqual([])
+    writeBrowserFrame(context.native.socket, {
+      type: 'sessions',
+      policyEpoch: allowedPolicy.epoch,
+      sessions: [{ ...sample, id: 'new-session' }],
+    })
+    await tick()
+    expect(context.service.status().sessions.map((session) => session.id)).toEqual(['new-session'])
+  } finally {
+    await context.stop()
+  }
+})
+
+it('same-origin navigation into a denied exact link revokes reads, without blocking a trailing-slash sibling', async () => {
+  const context = await readyFixture()
+  try {
+    context.service.setBlockedUrls(['https://example.test/private'])
+    const policy = await context.native.next()
+    writeBrowserFrame(context.native.socket, {
+      type: 'sessions',
+      policyEpoch: policy.epoch,
+      sessions: [{ ...sample, url: 'https://example.test/private/?a=1' }],
+    })
+    await tick()
+    expect(context.service.status().sessions).toHaveLength(1)
+    const pending = context.service.call('read_text', { sessionId: sample.id })
+    const result = Promise.allSettled([pending])
+    await context.native.next()
+    writeBrowserFrame(context.native.socket, {
+      type: 'sessions',
+      policyEpoch: policy.epoch,
+      sessions: [
+        { ...sample, url: 'https://example.test/private?a=2', title: 'Hidden private page' },
+      ],
+    })
+    expect((await result)[0]).toMatchObject({
+      status: 'rejected',
+      reason: { code: 'outcome_unknown' },
+    })
+    expect(JSON.stringify(context.service.status())).not.toContain('Hidden private')
   } finally {
     await context.stop()
   }

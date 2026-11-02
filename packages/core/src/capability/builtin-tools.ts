@@ -141,7 +141,7 @@ export function publicContext(knowledge = false, skills = false, browser = false
       knowledgeBuild: knowledge,
     },
     browserGuidance: browser
-      ? '所有接入 Agent 共享一个 Lumi 控制域，操作串行而非独立身份隔离。先 browser_list_sessions，再 snapshot 获取新 ref；只能使用用户已授权标签页，outcome_unknown 不自动重放。启用/停用/注册只能由用户在 Browser User 设置操作。'
+      ? '所有接入 Agent 共享一个 Lumi 控制域，操作串行而非独立身份隔离。先 browser_list_sessions，再 snapshot 获取新 ref；只能使用用户已启用策略与 Chrome 权限允许的页面；禁止链接或暂停/接管的标签页不可访问，outcome_unknown 不自动重放。启用/停用/注册及禁止链接只能由用户在 Browser User 设置操作。'
       : null,
     homeDevelopment: HOME_CONTRACT,
     knowledgeContractVersion: knowledge ? KNOWLEDGE_VERSION : null,

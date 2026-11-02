@@ -171,7 +171,7 @@ export async function startNativeHost(
           pending.length = 0
           pendingBytes = 0
         } else {
-          if (!['request', 'cancel'].includes(message.type ?? ''))
+          if (!['request', 'cancel', 'policy'].includes(message.type ?? ''))
             throw new Error('invalid_message')
           sendChrome(message)
         }

@@ -20,7 +20,7 @@ export const BROWSER_TOOLS: AiToolView[] = [
   {
     name: 'Lumi.browser_list_sessions',
     description:
-      'List only tabs explicitly authorized in the Lumi Chrome extension. One shared Lumi control domain; not isolated per agent.',
+      'List HTTP(S) tabs permitted by the user-enabled Browser User policy and Chrome permissions. Blocked or paused tabs are unavailable. One shared Lumi domain; not per-agent isolation.',
     inputSchema: schema({}),
     outputSchema,
   },

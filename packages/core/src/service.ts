@@ -325,16 +325,32 @@ export class CoreService {
       return
     }
     if (route === '/app/browser-user/action' && method === 'POST') {
-      const body = await readBody(request, 4096)
+      const body = await readBody(request, 256 * 1024)
       if (
         !isRecord(body) ||
-        !['enable', 'disable', 'repair', 'diagnose', 'remove'].includes(String(body.action)) ||
+        !['enable', 'disable', 'repair', 'diagnose', 'remove', 'setBlockedUrls'].includes(
+          String(body.action),
+        ) ||
         Object.keys(body).some(
           (key) =>
-            !['action', 'extensionId', 'confirmed', 'autoRepair', 'migrateConfirmed'].includes(key),
+            ![
+              'action',
+              'extensionId',
+              'confirmed',
+              'autoRepair',
+              'migrateConfirmed',
+              'blockedUrls',
+              'scopeConfirmed',
+            ].includes(key),
         ) ||
         (body.extensionId !== undefined && typeof body.extensionId !== 'string') ||
-        ['confirmed', 'autoRepair', 'migrateConfirmed'].some(
+        (body.scopeConfirmed !== undefined && body.action !== 'enable') ||
+        (body.action === 'setBlockedUrls'
+          ? !Array.isArray(body.blockedUrls) ||
+            body.blockedUrls.length > 100 ||
+            body.blockedUrls.some((value) => typeof value !== 'string' || value.length > 2048)
+          : body.blockedUrls !== undefined) ||
+        ['confirmed', 'autoRepair', 'migrateConfirmed', 'scopeConfirmed'].some(
           (key) => body[key] !== undefined && typeof body[key] !== 'boolean',
         ) ||
         (!['enable', 'repair'].includes(String(body.action)) &&

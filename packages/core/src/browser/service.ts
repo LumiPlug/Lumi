@@ -13,6 +13,7 @@ import {
   writeBrowserFrame,
 } from './protocol'
 import type { BrowserMessage } from './protocol'
+import { normalizeBrowserBlockedUrls, normalizeBrowserUrl } from '@lumiplug/shared'
 
 export { BrowserError } from './protocol'
 export interface BrowserSession {
@@ -29,6 +30,8 @@ export interface BrowserStatus {
   connectedHosts: number
   sessions: BrowserSession[]
   controlDomain: 'shared-lumi'
+  blockedUrls: string[]
+  policyEpoch: number
 }
 interface Host {
   socket: Socket
@@ -61,6 +64,8 @@ export class BrowserService {
   private server?: Server
   private token: string | null = null
   private epoch = 0
+  private policyEpoch = 1
+  private blockedUrls: string[] = []
   private hosts = new Set<Host>()
   private sessions = new Map<string, Session>()
   private pending?: Pending
@@ -87,16 +92,64 @@ export class BrowserService {
       enabled: this.enabled,
       extensionId: this.extensionId,
       connectedHosts: [...this.hosts].filter((host) => host.authenticated).length,
-      sessions: [...this.sessions.values()].map((session) => ({ ...session.item })),
+      sessions: [...this.sessions.values()]
+        .filter((session) => this.allowed(session.item.url))
+        .map((session) => ({ ...session.item })),
       controlDomain: 'shared-lumi',
+      blockedUrls: [...this.blockedUrls],
+      policyEpoch: this.policyEpoch,
     }
   }
   diagnose(): BrowserStatus {
     return this.status()
   }
 
+  /** Host-only policy mutation; MCP tools cannot call this method. */
+  setBlockedUrls(values: unknown): void {
+    const normalized = normalizeBrowserBlockedUrls(values)
+    if (JSON.stringify(normalized) === JSON.stringify(this.blockedUrls)) return
+    this.blockedUrls = normalized
+    this.policyEpoch++
+    this.epoch++
+    const pending = this.pending
+    if (pending) {
+      this.block(pending.session)
+      this.send(pending.session.host, { type: 'cancel', id: pending.id })
+      pending.finish(
+        new BrowserError(
+          'outcome_unknown',
+          'Browser policy changed after dispatch; do not automatically retry',
+        ),
+      )
+    }
+    for (const [id, session] of this.sessions) {
+      session.version++
+      if (!this.allowed(session.item.url)) {
+        this.sessions.delete(id)
+        session.host.sessions.delete(id)
+      }
+    }
+    for (const host of this.hosts) if (host.authenticated) this.sendPolicy(host)
+  }
+
+  private allowed(url: string): boolean {
+    try {
+      return !this.blockedUrls.includes(normalizeBrowserUrl(url))
+    } catch {
+      return false
+    }
+  }
+
+  private sendPolicy(host: Host): void {
+    this.send(host, { type: 'policy', epoch: this.policyEpoch, blockedUrls: [...this.blockedUrls] })
+  }
+
   /** Called only by the host-confirmed settings lifecycle; never an MCP tool. */
-  start(extensionId = this.extensionId ?? ''): Promise<void> {
+  start(
+    extensionId = this.extensionId ?? '',
+    blockedUrls: string[] = this.blockedUrls,
+  ): Promise<void> {
+    const normalized = normalizeBrowserBlockedUrls(blockedUrls)
     if (!/^[a-p]{32}$/.test(extensionId))
       return Promise.reject(
         new BrowserError('invalid_extension_id', 'A concrete Chrome extension ID is required'),
@@ -104,6 +157,7 @@ export class BrowserService {
     const operation = this.lifecycle
       .catch(() => {})
       .then(async () => {
+        this.setBlockedUrls(normalized)
         if (this.enabled && this.extensionId === extensionId) return
         await this.stopInternal()
         this.extensionId = extensionId
@@ -212,6 +266,11 @@ export class BrowserService {
             'disconnected',
             'Shared browser session unavailable; request not dispatched',
           )
+        if (!this.allowed(session.item.url))
+          throw new BrowserError(
+            'url_blocked',
+            'This link is excluded by the Browser User policy; request not dispatched',
+          )
         if (session.version !== version || session.blocked || session.item.state !== 'active')
           throw new BrowserError(
             'session_inactive',
@@ -271,7 +330,13 @@ export class BrowserService {
         return
       }
       try {
-        writeBrowserFrame(session.host.socket, { type: 'request', id, tool, args })
+        writeBrowserFrame(session.host.socket, {
+          type: 'request',
+          id,
+          tool,
+          args,
+          policyEpoch: this.policyEpoch,
+        })
         sent = true
       } catch {
         finish(new BrowserError('disconnected', 'Browser connection failed before dispatch'))
@@ -316,10 +381,12 @@ export class BrowserService {
         host.authenticated = true
         clearTimeout(timer)
         this.send(host, { type: 'ready' })
+        this.sendPolicy(host)
         return
       }
-      if (message.type === 'sessions') this.updateSessions(host, message.sessions)
-      else if (message.type === 'response' && typeof message.id === 'string') {
+      if (message.type === 'sessions') {
+        if (message.policyEpoch === this.policyEpoch) this.updateSessions(host, message.sessions)
+      } else if (message.type === 'response' && typeof message.id === 'string') {
         const pending = this.pending
         if (!pending || pending.id !== message.id || pending.session.host !== host) return
         if (isRecord(message.error)) {
@@ -377,6 +444,7 @@ export class BrowserService {
         origin: text('origin', 4096),
         state: text('state', 128),
       }
+      if (!this.allowed(safe.url)) continue
       if (previous) {
         if (safe.state !== previous.item.state || safe.url !== previous.item.url) previous.version++
         if (previous.blocked && safe.state !== 'active') previous.observedPause = true

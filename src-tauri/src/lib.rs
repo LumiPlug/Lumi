@@ -890,7 +890,7 @@ fn copy_text(
 fn browser_user_payload(action: &str, payload: Option<Value>) -> Result<Option<Value>, String> {
     if !matches!(
         action,
-        "status" | "enable" | "disable" | "repair" | "diagnose" | "remove"
+        "status" | "enable" | "disable" | "repair" | "diagnose" | "remove" | "setBlockedUrls"
     ) {
         return Err("invalid_browser_user_action".to_string());
     }
@@ -899,7 +899,12 @@ fn browser_user_payload(action: &str, payload: Option<Value>) -> Result<Option<V
     for key in fields.keys() {
         if !matches!(
             key.as_str(),
-            "extensionId" | "confirmed" | "autoRepair" | "migrateConfirmed"
+            "extensionId"
+                | "confirmed"
+                | "autoRepair"
+                | "migrateConfirmed"
+                | "scopeConfirmed"
+                | "blockedUrls"
         ) {
             return Err("invalid_browser_user_payload".to_string());
         }
@@ -925,6 +930,28 @@ fn browser_user_payload(action: &str, payload: Option<Value>) -> Result<Option<V
                 return Err("invalid_browser_user_payload".to_string());
             }
         }
+    }
+    if let Some(value) = fields.get("scopeConfirmed") {
+        if action != "enable" || !value.is_boolean() {
+            return Err("invalid_browser_user_payload".to_string());
+        }
+    }
+    if action == "setBlockedUrls" {
+        let urls = fields
+            .get("blockedUrls")
+            .and_then(Value::as_array)
+            .ok_or("invalid_browser_blocked_urls")?;
+        if urls.len() > 100 {
+            return Err("invalid_browser_blocked_urls".to_string());
+        }
+        for value in urls {
+            let url = value.as_str().ok_or("invalid_browser_blocked_urls")?;
+            if url.len() > 2048 {
+                return Err("invalid_browser_blocked_urls".to_string());
+            }
+        }
+    } else if fields.contains_key("blockedUrls") {
+        return Err("invalid_browser_user_payload".to_string());
     }
     let mut body = fields.clone();
     body.insert("action".to_string(), Value::String(action.to_string()));
@@ -1539,6 +1566,16 @@ mod resource_tests {
         }
         let invalid = json!({"confirmed": true, "migrateConfirmed": "yes"});
         assert!(browser_user_payload("enable", Some(invalid)).is_err());
+        let scope = json!({"confirmed": true, "scopeConfirmed": true});
+        assert!(browser_user_payload("enable", Some(scope.clone())).is_ok());
+        assert!(browser_user_payload("repair", Some(scope)).is_err());
+        let blocked = json!({"confirmed": true, "blockedUrls": ["https://example.com/private"]});
+        assert!(browser_user_payload("setBlockedUrls", Some(blocked.clone())).is_ok());
+        assert!(browser_user_payload("enable", Some(blocked)).is_err());
+        let unconfirmed = json!({"blockedUrls": []});
+        assert!(browser_user_payload("setBlockedUrls", Some(unconfirmed)).is_err());
+        let excessive = json!({"confirmed": true, "blockedUrls": vec!["https://example.com/"; 101]});
+        assert!(browser_user_payload("setBlockedUrls", Some(excessive)).is_err());
     }
 
     #[test]

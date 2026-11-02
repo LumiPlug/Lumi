@@ -67,6 +67,40 @@ it('Browser User settings require desktop host credentials, not the shared MCP t
       expect(invalid.status).toBe(400)
       expect(await invalid.json()).toMatchObject({ error: { code: 'browser_action_invalid' } })
     }
+    const noScope = await fetch(`${base}/app/browser-user/action`, {
+      method: 'POST',
+      headers: { ...headers, 'x-lumiplug-host-token': host },
+      body: JSON.stringify({ action: 'enable', confirmed: true }),
+    })
+    expect(noScope.status).toBe(400)
+    expect(await noScope.json()).toMatchObject({
+      error: { code: 'browser_scope_confirmation_required' },
+    })
+    for (const headersForRequest of [headers, { ...headers, 'x-lumiplug-host-token': host }]) {
+      const deniedPolicy = await fetch(`${base}/app/browser-user/action`, {
+        method: 'POST',
+        headers: headersForRequest,
+        body: JSON.stringify({
+          action: 'setBlockedUrls',
+          blockedUrls: ['https://example.com/private?secret=1'],
+        }),
+      })
+      expect(deniedPolicy.status).toBe('x-lumiplug-host-token' in headersForRequest ? 400 : 403)
+    }
+    const policy = await fetch(`${base}/app/browser-user/action`, {
+      method: 'POST',
+      headers: { ...headers, 'x-lumiplug-host-token': host },
+      body: JSON.stringify({
+        action: 'setBlockedUrls',
+        confirmed: true,
+        blockedUrls: ['https://example.com/private?secret=1#fragment'],
+      }),
+    })
+    expect(policy.status).toBe(200)
+    expect(await policy.json()).toMatchObject({
+      ok: true,
+      data: { blockedUrls: ['https://example.com/private'], enabled: false },
+    })
     const automaticWithoutConsent = await fetch(`${base}/app/browser-user/action`, {
       method: 'POST',
       headers: { ...headers, 'x-lumiplug-host-token': host },

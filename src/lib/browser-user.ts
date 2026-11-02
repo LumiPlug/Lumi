@@ -4,7 +4,7 @@ import type {
   BrowserUserActionRequest,
   BrowserUserStatus,
 } from '@lumiplug/shared'
-import { OFFICIAL_BROWSER_EXTENSION_ID } from '@lumiplug/shared'
+import { OFFICIAL_BROWSER_EXTENSION_ID, normalizeBrowserBlockedUrls } from '@lumiplug/shared'
 import { t } from '../i18n'
 import { hostInvoke } from './tauri'
 
@@ -15,7 +15,12 @@ export function browserUserRequest(
   action: BrowserUserAction,
   extensionId = OFFICIAL_BROWSER_EXTENSION_ID,
   confirmed = false,
-  options: { autoRepair?: boolean; migrateConfirmed?: boolean } = {},
+  options: {
+    autoRepair?: boolean
+    migrateConfirmed?: boolean
+    scopeConfirmed?: boolean
+    blockedUrls?: string[]
+  } = {},
 ): BrowserUserActionRequest {
   if (action !== 'diagnose' && confirmed !== true)
     throw new Error('browser_user_confirmation_required')
@@ -34,8 +39,18 @@ export function browserUserRequest(
     (options.autoRepair !== undefined || options.migrateConfirmed !== undefined)
   )
     throw new Error('invalid_browser_user_payload')
+  if (action === 'enable' && options.scopeConfirmed !== true)
+    throw new Error('browser_scope_confirmation_required')
+  if (action !== 'enable' && options.scopeConfirmed !== undefined)
+    throw new Error('invalid_browser_user_payload')
+  let blockedUrls: string[] | undefined
+  if (action === 'setBlockedUrls') {
+    blockedUrls = normalizeBrowserBlockedUrls(options.blockedUrls)
+  } else if (options.blockedUrls !== undefined) throw new Error('invalid_browser_user_payload')
   return {
     action,
+    ...(action === 'enable' ? { scopeConfirmed: true } : {}),
+    ...(blockedUrls ? { blockedUrls } : {}),
     ...(writesRegistration
       ? {
           extensionId: selectedId,
@@ -58,7 +73,12 @@ export function performBrowserUserAction(
     request.action,
     request.extensionId ?? '',
     request.confirmed,
-    { autoRepair: request.autoRepair, migrateConfirmed: request.migrateConfirmed },
+    {
+      autoRepair: request.autoRepair,
+      migrateConfirmed: request.migrateConfirmed,
+      scopeConfirmed: request.scopeConfirmed,
+      blockedUrls: request.blockedUrls,
+    },
   )
   return hostInvoke('browser_user_request', { action, payload })
 }
@@ -69,12 +89,14 @@ export function browserUserStateLabel(
   if (!coreReady) return t('Core 未连接')
   if (!status) return t('Browser User 状态未知')
   if (status.migrationRequired) return t('旧扩展身份需要确认迁移')
+  if (status.requiresAuthorization) return t('需要确认全部普通网页控制范围')
   if (!status.enabled) return t('Browser User 已停用')
   if (!status.registration.supported) return t('当前平台不支持浏览器注册')
   if (!status.registration.registered) return t('等待注册或修复')
   if (status.connectedHosts < 1) return t('等待 Chrome 扩展连接')
-  if (!status.sessions.some((session) => session.state === 'active')) return t('等待标签页授权')
-  return t('已有授权标签页')
+  if (!status.sessions.some((session) => session.state === 'active'))
+    return t('等待可用网页或扩展权限')
+  return t('已有可控网页')
 }
 export function browserUserActionLabel(action: BrowserUserAction): string {
   switch (action) {
@@ -86,6 +108,8 @@ export function browserUserActionLabel(action: BrowserUserAction): string {
       return t('修复注册')
     case 'diagnose':
       return t('诊断连接')
+    case 'setBlockedUrls':
+      return t('更新禁止链接')
     case 'remove':
       return t('移除连接')
   }

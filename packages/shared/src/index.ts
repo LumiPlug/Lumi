@@ -15,3 +15,5 @@ export * from './usage'
 export * from './browser-user'
 
 export * from './browser-identity'
+
+export * from './browser-url'

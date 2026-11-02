@@ -4,7 +4,11 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { BrowserUserActionRequest, BrowserUserStatus } from '@lumiplug/shared'
-import { OFFICIAL_BROWSER_EXTENSION_ID } from '@lumiplug/shared'
+import {
+  OFFICIAL_BROWSER_EXTENSION_ID,
+  BROWSER_SCOPE_CONSENT_VERSION,
+  normalizeBrowserBlockedUrls,
+} from '@lumiplug/shared'
 import { BrowserService } from './service'
 import { BrowserRegistration } from './registration'
 
@@ -12,6 +16,8 @@ interface Preference {
   enabled: boolean
   extensionId: string | null
   autoRepair: boolean
+  blockedUrls: string[]
+  consentVersion: number
 }
 const validId = (value: unknown): value is string =>
   typeof value === 'string' && /^[a-p]{32}$/.test(value)
@@ -21,7 +27,13 @@ export class BrowserUserController {
   public readonly browser: BrowserService
   private readonly registration: BrowserRegistration
   private readonly file: string
-  private preference: Preference = { enabled: false, extensionId: null, autoRepair: false }
+  private preference: Preference = {
+    enabled: false,
+    extensionId: null,
+    autoRepair: false,
+    blockedUrls: [],
+    consentVersion: 0,
+  }
   private issues: string[] = []
   private queue: Promise<unknown> = Promise.resolve()
   private closing = false
@@ -44,13 +56,17 @@ export class BrowserUserController {
         typeof value.enabled !== 'boolean' ||
         (value.extensionId !== null && !validId(value.extensionId)) ||
         (value.enabled && !value.extensionId) ||
-        (value.autoRepair !== undefined && typeof value.autoRepair !== 'boolean')
+        (value.autoRepair !== undefined && typeof value.autoRepair !== 'boolean') ||
+        (value.consentVersion !== undefined &&
+          ![0, BROWSER_SCOPE_CONSENT_VERSION].includes(value.consentVersion))
       )
         throw new Error('browser_settings_invalid')
       this.preference = {
         enabled: value.enabled,
         extensionId: value.extensionId,
         autoRepair: value.autoRepair === true,
+        blockedUrls: normalizeBrowserBlockedUrls(value.blockedUrls ?? []),
+        consentVersion: value.consentVersion ?? 0,
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
@@ -79,6 +95,10 @@ export class BrowserUserController {
         this.issues = ['browser_migration_confirmation_required']
         return
       }
+      if (this.requiresAuthorization()) {
+        this.issues = ['browser_scope_confirmation_required']
+        return
+      }
       try {
         let registration = await this.registration.status(id)
         if (this.closing) return
@@ -95,7 +115,7 @@ export class BrowserUserController {
           this.issues = ['browser_registration_repair_required']
           return
         }
-        await this.browser.start(id)
+        await this.browser.start(id, this.preference.blockedUrls)
         this.issues = []
       } catch {
         this.issues = ['browser_start_failed']
@@ -103,6 +123,13 @@ export class BrowserUserController {
     })
     this.queue = operation.catch(() => {})
     return operation
+  }
+
+  private requiresAuthorization(): boolean {
+    return (
+      this.preference.consentVersion !== BROWSER_SCOPE_CONSENT_VERSION ||
+      this.preference.extensionId !== OFFICIAL_BROWSER_EXTENSION_ID
+    )
   }
 
   public async status(): Promise<BrowserUserStatus> {
@@ -117,6 +144,8 @@ export class BrowserUserController {
       registration,
       autoRepair: this.preference.autoRepair,
       migrationRequired,
+      blockedUrls: [...this.preference.blockedUrls],
+      requiresAuthorization: this.requiresAuthorization(),
       issues: [...this.issues],
     }
   }
@@ -133,7 +162,8 @@ export class BrowserUserController {
     if (request.confirmed !== true) throw new Error('browser_confirmation_required')
     if (
       (request.autoRepair !== undefined && typeof request.autoRepair !== 'boolean') ||
-      (request.migrateConfirmed !== undefined && typeof request.migrateConfirmed !== 'boolean')
+      (request.migrateConfirmed !== undefined && typeof request.migrateConfirmed !== 'boolean') ||
+      (request.scopeConfirmed !== undefined && typeof request.scopeConfirmed !== 'boolean')
     )
       throw new Error('browser_action_invalid')
     if (
@@ -141,14 +171,30 @@ export class BrowserUserController {
       (request.autoRepair !== undefined || request.migrateConfirmed !== undefined)
     )
       throw new Error('browser_action_invalid')
-    if (!['enable', 'disable', 'repair', 'remove'].includes(request.action))
+    if (request.action !== 'enable' && request.scopeConfirmed !== undefined)
       throw new Error('browser_action_invalid')
+    if (request.action !== 'setBlockedUrls' && request.blockedUrls !== undefined)
+      throw new Error('browser_action_invalid')
+    if (!['enable', 'disable', 'repair', 'remove', 'setBlockedUrls'].includes(request.action))
+      throw new Error('browser_action_invalid')
+    if (request.action === 'setBlockedUrls') {
+      const blockedUrls = normalizeBrowserBlockedUrls(request.blockedUrls)
+      this.save({ ...this.preference, blockedUrls })
+      this.browser.setBlockedUrls(blockedUrls)
+      return this.status()
+    }
     if (request.action === 'disable' || request.action === 'remove') {
       await this.browser.disable()
       this.save({ ...this.preference, enabled: false })
       if (request.action === 'remove') {
         await this.registration.remove(true)
-        this.save({ enabled: false, extensionId: null, autoRepair: false })
+        this.save({
+          enabled: false,
+          extensionId: null,
+          autoRepair: false,
+          blockedUrls: [],
+          consentVersion: 0,
+        })
       }
       this.issues = []
       return this.status()
@@ -156,6 +202,12 @@ export class BrowserUserController {
     const id = request.extensionId ?? OFFICIAL_BROWSER_EXTENSION_ID
     if (!validId(id)) throw new Error('browser_extension_id_invalid')
     if (id !== OFFICIAL_BROWSER_EXTENSION_ID) throw new Error('browser_extension_id_not_official')
+    if (
+      request.action === 'enable' &&
+      this.requiresAuthorization() &&
+      request.scopeConfirmed !== true
+    )
+      throw new Error('browser_scope_confirmation_required')
     const registration = await this.registration.status(id)
     const migrationRequired = [this.preference.extensionId, registration.extensionId].some(
       (existing) => !!existing && existing !== id,
@@ -165,19 +217,31 @@ export class BrowserUserController {
     const autoRepair =
       request.autoRepair ??
       (this.preference.extensionId === id ? this.preference.autoRepair : false)
-    const enable = request.action === 'enable' || this.preference.enabled
+    const enable =
+      request.action === 'enable' || (this.preference.enabled && !this.requiresAuthorization())
+    const consentVersion =
+      request.action === 'enable' && request.scopeConfirmed === true
+        ? BROWSER_SCOPE_CONSENT_VERSION
+        : this.preference.consentVersion
+    const nextPreference = {
+      enabled: enable,
+      extensionId: id,
+      autoRepair,
+      blockedUrls: this.preference.blockedUrls,
+      consentVersion,
+    }
     if (
       registration.registered &&
       this.preference.extensionId === id &&
       this.browser.status().enabled === enable
     ) {
-      if (this.preference.autoRepair !== autoRepair || this.preference.enabled !== enable)
-        this.save({ enabled: enable, extensionId: id, autoRepair })
+      if (JSON.stringify(this.preference) !== JSON.stringify(nextPreference))
+        this.save(nextPreference)
       this.issues = []
       return this.status()
     }
     await this.browser.disable()
-    this.save({ enabled: false, extensionId: id, autoRepair })
+    this.save({ ...nextPreference, enabled: false })
     const written =
       request.migrateConfirmed === true
         ? await this.registration.register(id, true, { migrateConfirmed: true })
@@ -186,9 +250,9 @@ export class BrowserUserController {
       this.issues = ['browser_registration_repair_required']
       throw new Error('browser_registration_repair_required')
     }
-    if (enable) await this.browser.start(id)
+    if (enable) await this.browser.start(id, this.preference.blockedUrls)
     try {
-      this.save({ enabled: enable, extensionId: id, autoRepair })
+      this.save(nextPreference)
     } catch (error) {
       await this.browser.disable()
       throw error

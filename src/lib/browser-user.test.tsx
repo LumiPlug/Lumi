@@ -27,6 +27,8 @@ const baseline = (): BrowserUserStatus => ({
   enabled: false,
   autoRepair: false,
   migrationRequired: false,
+  requiresAuthorization: false,
+  blockedUrls: [],
   extensionId: null,
   connectedHosts: 0,
   sessions: [],
@@ -86,7 +88,9 @@ describe('Browser User settings safety and presentation', () => {
     vi.mocked(hostInvoke).mockResolvedValue(baseline())
     await getBrowserUserStatus()
     await performBrowserUserAction(browserUserRequest('diagnose', ''))
-    await performBrowserUserAction(browserUserRequest('enable', ` ${id} `, true))
+    await performBrowserUserAction(
+      browserUserRequest('enable', ` ${id} `, true, { scopeConfirmed: true }),
+    )
     expect(hostInvoke).toHaveBeenNthCalledWith(1, 'browser_user_request', {
       action: 'status',
       payload: {},
@@ -97,7 +101,7 @@ describe('Browser User settings safety and presentation', () => {
     })
     expect(hostInvoke).toHaveBeenNthCalledWith(3, 'browser_user_request', {
       action: 'enable',
-      payload: { extensionId: id, confirmed: true },
+      payload: { extensionId: id, confirmed: true, scopeConfirmed: true },
     })
   })
   it('does not turn request failures into fabricated disabled or successful states', async () => {
@@ -116,7 +120,7 @@ describe('Browser User settings safety and presentation', () => {
     status.registration.registered = true
     expect(browserUserStateLabel(status, true)).toBe('等待 Chrome 扩展连接')
     status.connectedHosts = 1
-    expect(browserUserStateLabel(status, true)).toBe('等待标签页授权')
+    expect(browserUserStateLabel(status, true)).toBe('等待可用网页或扩展权限')
     status.sessions.push({
       id: 's',
       tabId: 1,
@@ -125,9 +129,9 @@ describe('Browser User settings safety and presentation', () => {
       origin: 'https://example.test',
       state: 'paused',
     })
-    expect(browserUserStateLabel(status, true)).toBe('等待标签页授权')
+    expect(browserUserStateLabel(status, true)).toBe('等待可用网页或扩展权限')
     status.sessions[0]!.state = 'active'
-    expect(browserUserStateLabel(status, true)).toBe('已有授权标签页')
+    expect(browserUserStateLabel(status, true)).toBe('已有可控网页')
     expect(browserUserStateLabel(status, false)).toBe('Core 未连接')
   })
   it('keeps unavailable counts unknown and suppresses stale connected state when Core stops', () => {
@@ -168,10 +172,11 @@ describe('Browser User settings safety and presentation', () => {
 
 describe('official browser identity and explicit maintenance consent', () => {
   it('defaults to the official identity without manual input and never implicitly authorizes maintenance', () => {
-    expect(browserUserRequest('enable', undefined, true)).toEqual({
+    expect(browserUserRequest('enable', undefined, true, { scopeConfirmed: true })).toEqual({
       action: 'enable',
       extensionId: id,
       confirmed: true,
+      scopeConfirmed: true,
     })
     expect(() => browserUserRequest('enable', 'a'.repeat(32), true)).toThrow('not_official')
     const html = renderToStaticMarkup(
@@ -187,7 +192,7 @@ describe('official browser identity and explicit maintenance consent', () => {
     expect(html).not.toContain('type="text"')
     expect(html).toContain('type="checkbox"')
     expect(html).not.toContain('checked=""')
-    expect(html).toContain('不恢复标签页授权')
+    expect(html).toContain('不恢复暂停或接管状态')
   })
   it('forwards separate maintenance and migration consents only on confirmed registration actions', async () => {
     vi.mocked(hostInvoke).mockResolvedValue(baseline())
@@ -208,8 +213,12 @@ describe('official browser identity and explicit maintenance consent', () => {
       browserUserRequest('enable', undefined, true, { autoRepair: 'yes' as unknown as boolean }),
     ).toThrow('invalid_browser_user_payload')
     expect(
-      browserUserRequest('enable', undefined, true, { autoRepair: false, migrateConfirmed: false }),
-    ).toMatchObject({ autoRepair: false, migrateConfirmed: false })
+      browserUserRequest('enable', undefined, true, {
+        autoRepair: false,
+        migrateConfirmed: false,
+        scopeConfirmed: true,
+      }),
+    ).toMatchObject({ autoRepair: false, migrateConfirmed: false, scopeConfirmed: true })
   })
   it('shows legacy identity migration and reload guidance without silently changing the saved identity', () => {
     const status = baseline()
@@ -224,9 +233,78 @@ describe('official browser identity and explicit maintenance consent', () => {
         onAutoRepairChange={() => {}}
       />,
     )
-    expect(html).toContain('迁移必须单独确认')
+    expect(html).toContain('身份迁移与网页范围授权分别确认')
     expect(html).toContain('重新加载官方扩展')
     expect(html).toContain(status.extensionId)
+    expect(hostInvoke).not.toHaveBeenCalled()
+  })
+})
+
+describe('default-allow scope and exact blocked links', () => {
+  it('requires a distinct fresh scope confirmation rather than legacy confirmed alone', () => {
+    expect(() => browserUserRequest('enable', undefined, true)).toThrow(
+      'scope_confirmation_required',
+    )
+    expect(() => browserUserRequest('repair', undefined, true, { scopeConfirmed: true })).toThrow(
+      'invalid_browser_user_payload',
+    )
+    const status = baseline()
+    status.enabled = true
+    status.requiresAuthorization = true
+    expect(browserUserStateLabel(status, true)).toBe('需要确认全部普通网页控制范围')
+  })
+  it('normalizes exact links without query or fragment, deduplicates, preserves trailing slash', async () => {
+    vi.mocked(hostInvoke).mockResolvedValue(baseline())
+    const request = browserUserRequest('setBlockedUrls', undefined, true, {
+      blockedUrls: [
+        'https://EXAMPLE.com/private?token=x#fragment',
+        'https://example.com/private?other=y',
+        'https://example.com/private/',
+      ],
+    })
+    expect(request.blockedUrls).toEqual([
+      'https://example.com/private',
+      'https://example.com/private/',
+    ])
+    await performBrowserUserAction(request)
+    expect(hostInvoke).toHaveBeenCalledWith('browser_user_request', {
+      action: 'setBlockedUrls',
+      payload: { confirmed: true, blockedUrls: request.blockedUrls },
+    })
+    expect(JSON.stringify(request)).not.toContain('token=')
+  })
+  it('requires confirmation for adding or removing blocks and rejects credentials/non-HTTP/overflow', () => {
+    expect(() =>
+      browserUserRequest('setBlockedUrls', undefined, false, { blockedUrls: [] }),
+    ).toThrow('confirmation_required')
+    for (const url of [
+      'https://name:password@example.com/private',
+      'file:///secret',
+      'chrome://settings',
+      'javascript:alert(1)',
+    ]) {
+      expect(() =>
+        browserUserRequest('setBlockedUrls', undefined, true, { blockedUrls: [url] }),
+      ).toThrow()
+    }
+    expect(() =>
+      browserUserRequest('setBlockedUrls', undefined, true, {
+        blockedUrls: Array(101).fill('https://example.com/'),
+      }),
+    ).toThrow()
+    expect(() =>
+      browserUserRequest('setBlockedUrls', undefined, true, {
+        blockedUrls: ['https://example.com/' + 'a'.repeat(2048)],
+      }),
+    ).toThrow()
+    expect(() => browserUserRequest('diagnose', undefined, false, { blockedUrls: [] })).toThrow(
+      'invalid_browser_user_payload',
+    )
+    expect(browserUserRequest('setBlockedUrls', undefined, true, { blockedUrls: [] })).toEqual({
+      action: 'setBlockedUrls',
+      confirmed: true,
+      blockedUrls: [],
+    })
     expect(hostInvoke).not.toHaveBeenCalled()
   })
 })

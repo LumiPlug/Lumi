@@ -30,6 +30,7 @@ function fixture() {
       enabled = true
       extensionId = id
     }),
+    setBlockedUrls: vi.fn(),
     disable: vi.fn(async () => {
       enabled = false
     }),
@@ -74,13 +75,22 @@ describe('Browser User host-only lifecycle', () => {
     const f = fixture(),
       id = officialId
     expect(
-      (await f.controller.action({ action: 'enable', extensionId: id, confirmed: true })).enabled,
+      (
+        await f.controller.action({
+          action: 'enable',
+          extensionId: id,
+          confirmed: true,
+          scopeConfirmed: true,
+        })
+      ).enabled,
     ).toBe(true)
     expect(f.registration.register).toHaveBeenCalledWith(id, true)
     expect(JSON.parse(fs.readFileSync(path.join(f.root, 'browser-user.json'), 'utf8'))).toEqual({
       enabled: true,
       extensionId: id,
       autoRepair: false,
+      blockedUrls: [],
+      consentVersion: 2,
     })
     await f.controller.action({ action: 'disable', confirmed: true })
     expect((await f.controller.status()).enabled).toBe(false)
@@ -90,7 +100,7 @@ describe('Browser User host-only lifecycle', () => {
     const f = fixture()
     fs.writeFileSync(
       path.join(f.root, 'browser-user.json'),
-      JSON.stringify({ enabled: true, extensionId: officialId }),
+      JSON.stringify({ enabled: true, consentVersion: 2, extensionId: officialId }),
     )
     f.registration.status.mockResolvedValue({
       registered: false,
@@ -108,7 +118,12 @@ describe('Browser User host-only lifecycle', () => {
     const f = fixture()
     f.registration.register.mockRejectedValueOnce(new Error('registration failed'))
     await expect(
-      f.controller.action({ action: 'enable', extensionId: officialId, confirmed: true }),
+      f.controller.action({
+        action: 'enable',
+        extensionId: officialId,
+        confirmed: true,
+        scopeConfirmed: true,
+      }),
     ).rejects.toThrow('registration failed')
     expect((await f.controller.status()).enabled).toBe(false)
     await f.controller.action({ action: 'remove', confirmed: true })
@@ -120,7 +135,7 @@ describe('Browser User host-only lifecycle', () => {
       const f = fixture()
       fs.writeFileSync(
         path.join(f.root, 'browser-user.json'),
-        JSON.stringify({ enabled: true, extensionId: officialId }),
+        JSON.stringify({ enabled: true, consentVersion: 2, extensionId: officialId }),
       )
       let resolve!: (value: Awaited<ReturnType<typeof f.registration.status>>) => void
       f.registration.status.mockImplementationOnce(
@@ -152,13 +167,18 @@ describe('Browser User host-only lifecycle', () => {
 
 it('defaults enable to the official ID and is idempotent without renewing consent', async () => {
   const f = fixture()
-  await f.controller.action({ action: 'enable', confirmed: true })
+  await f.controller.action({ action: 'enable', confirmed: true, scopeConfirmed: true })
   expect(f.registration.register).toHaveBeenCalledWith(officialId, true)
   expect((await f.controller.status()).autoRepair).toBe(false)
-  await f.controller.action({ action: 'enable', confirmed: true })
+  await f.controller.action({ action: 'enable', confirmed: true, scopeConfirmed: true })
   expect(f.registration.register).toHaveBeenCalledTimes(1)
   expect(f.browser.start).toHaveBeenCalledTimes(1)
-  await f.controller.action({ action: 'enable', confirmed: true, autoRepair: true })
+  await f.controller.action({
+    action: 'enable',
+    confirmed: true,
+    scopeConfirmed: true,
+    autoRepair: true,
+  })
   expect((await f.controller.status()).autoRepair).toBe(true)
   expect(f.registration.register).toHaveBeenCalledTimes(1)
 })
@@ -175,15 +195,25 @@ it('does not silently restore or migrate a previously saved other extension ID',
   expect(f.browser.start).not.toHaveBeenCalled()
   expect(f.registration.repairOwnedPath).not.toHaveBeenCalled()
   expect((await controller.status()).migrationRequired).toBe(true)
-  await expect(controller.action({ action: 'enable', confirmed: true })).rejects.toThrow(
-    'migration_confirmation_required',
-  )
+  await expect(
+    controller.action({ action: 'enable', confirmed: true, scopeConfirmed: true }),
+  ).rejects.toThrow('migration_confirmation_required')
   expect(f.registration.register).not.toHaveBeenCalled()
-  await controller.action({ action: 'enable', confirmed: true, migrateConfirmed: true })
+  await controller.action({
+    action: 'enable',
+    confirmed: true,
+    scopeConfirmed: true,
+    migrateConfirmed: true,
+  })
   expect(f.registration.register).toHaveBeenCalledWith(officialId, true, { migrateConfirmed: true })
   expect((await controller.status()).autoRepair).toBe(false)
   await expect(
-    controller.action({ action: 'enable', confirmed: true, extensionId: legacyId }),
+    controller.action({
+      action: 'enable',
+      confirmed: true,
+      scopeConfirmed: true,
+      extensionId: legacyId,
+    }),
   ).rejects.toThrow('not_official')
 })
 
@@ -193,9 +223,9 @@ it('also requires migration confirmation for an existing registered ID without s
     ...(await f.registration.status()),
     extensionId: 'b'.repeat(32),
   } as Awaited<ReturnType<typeof f.registration.status>>)
-  await expect(f.controller.action({ action: 'enable', confirmed: true })).rejects.toThrow(
-    'migration_confirmation_required',
-  )
+  await expect(
+    f.controller.action({ action: 'enable', confirmed: true, scopeConfirmed: true }),
+  ).rejects.toThrow('migration_confirmation_required')
   expect(f.registration.register).not.toHaveBeenCalled()
 })
 
@@ -204,7 +234,7 @@ it('restores path repair only after a saved same-ID maintenance authorization', 
     const f = fixture()
     fs.writeFileSync(
       path.join(f.root, 'browser-user.json'),
-      JSON.stringify({ enabled: true, extensionId: officialId, autoRepair }),
+      JSON.stringify({ enabled: true, consentVersion: 2, extensionId: officialId, autoRepair }),
     )
     f.registration.status.mockResolvedValue({
       registered: false,
@@ -224,7 +254,7 @@ it('does not start on ineligible auto-repair and close wins during an authorized
   const f = fixture()
   fs.writeFileSync(
     path.join(f.root, 'browser-user.json'),
-    JSON.stringify({ enabled: true, extensionId: officialId, autoRepair: true }),
+    JSON.stringify({ enabled: true, consentVersion: 2, extensionId: officialId, autoRepair: true }),
   )
   f.registration.status.mockResolvedValue({
     registered: false,
@@ -257,11 +287,75 @@ it('does not start on ineligible auto-repair and close wins during an authorized
 it('does not enable when registration writes return an unverified result', async () => {
   const f = fixture()
   f.registration.register.mockResolvedValueOnce({ registered: false })
-  await expect(f.controller.action({ action: 'enable', confirmed: true })).rejects.toThrow(
-    'repair_required',
-  )
+  await expect(
+    f.controller.action({ action: 'enable', confirmed: true, scopeConfirmed: true }),
+  ).rejects.toThrow('repair_required')
   expect(f.browser.start).not.toHaveBeenCalled()
   expect(JSON.parse(fs.readFileSync(path.join(f.root, 'browser-user.json'), 'utf8')).enabled).toBe(
     false,
   )
+})
+
+it('requires new scope consent before restoring or enabling old per-tab preferences', async () => {
+  const f = fixture()
+  fs.writeFileSync(
+    path.join(f.root, 'browser-user.json'),
+    JSON.stringify({ enabled: true, extensionId: officialId, autoRepair: true }),
+  )
+  const controller = new BrowserUserController({ userDataDir: f.root }, f.dependencies)
+  await controller.restore()
+  expect(f.browser.start).not.toHaveBeenCalled()
+  expect(f.registration.repairOwnedPath).not.toHaveBeenCalled()
+  expect((await controller.status()).requiresAuthorization).toBe(true)
+  await expect(controller.action({ action: 'enable', confirmed: true })).rejects.toThrow(
+    'scope_confirmation_required',
+  )
+  await controller.action({ action: 'repair', confirmed: true })
+  expect(f.browser.start).not.toHaveBeenCalled()
+  expect((await controller.status()).requiresAuthorization).toBe(true)
+  await controller.action({ action: 'enable', confirmed: true, scopeConfirmed: true })
+  expect((await controller.status()).requiresAuthorization).toBe(false)
+  expect(
+    JSON.parse(fs.readFileSync(path.join(f.root, 'browser-user.json'), 'utf8')).consentVersion,
+  ).toBe(2)
+})
+
+it('persists canonical blocked links with host confirmation without restarting or registering', async () => {
+  const f = fixture()
+  await f.controller.action({ action: 'enable', confirmed: true, scopeConfirmed: true })
+  f.browser.start.mockClear()
+  f.browser.disable.mockClear()
+  f.registration.register.mockClear()
+  await expect(
+    f.controller.action({
+      action: 'setBlockedUrls',
+      blockedUrls: ['https://example.test/private'],
+    }),
+  ).rejects.toThrow('confirmation_required')
+  await f.controller.action({
+    action: 'setBlockedUrls',
+    confirmed: true,
+    blockedUrls: ['https://example.test/private?q=1#x', 'https://example.test/private?q=2'],
+  })
+  expect((await f.controller.status()).blockedUrls).toEqual(['https://example.test/private'])
+  expect(f.browser.setBlockedUrls).toHaveBeenCalledWith(['https://example.test/private'])
+  expect(f.browser.start).not.toHaveBeenCalled()
+  expect(f.browser.disable).not.toHaveBeenCalled()
+  expect(f.registration.register).not.toHaveBeenCalled()
+  const saved = JSON.parse(fs.readFileSync(path.join(f.root, 'browser-user.json'), 'utf8'))
+  expect(saved).toMatchObject({
+    enabled: true,
+    consentVersion: 2,
+    blockedUrls: ['https://example.test/private'],
+  })
+  await expect(
+    f.controller.action({
+      action: 'setBlockedUrls',
+      confirmed: true,
+      blockedUrls: ['file:///private'],
+    }),
+  ).rejects.toThrow('url_invalid')
+  expect(
+    JSON.parse(fs.readFileSync(path.join(f.root, 'browser-user.json'), 'utf8')).blockedUrls,
+  ).toEqual(['https://example.test/private'])
 })

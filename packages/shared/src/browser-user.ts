@@ -13,6 +13,8 @@ export interface BrowserUserStatus {
   enabled: boolean
   autoRepair: boolean
   migrationRequired: boolean
+  requiresAuthorization: boolean
+  blockedUrls: string[]
   extensionId: string | null
   connectedHosts: number
   sessions: BrowserUserSession[]
@@ -26,11 +28,14 @@ export interface BrowserUserStatus {
   issues: string[]
 }
 
-export type BrowserUserAction = 'enable' | 'disable' | 'repair' | 'diagnose' | 'remove'
+export type BrowserUserAction =
+  'enable' | 'disable' | 'repair' | 'diagnose' | 'remove' | 'setBlockedUrls'
 export interface BrowserUserActionRequest {
   action: BrowserUserAction
   extensionId?: string
   confirmed?: boolean
   autoRepair?: boolean
   migrateConfirmed?: boolean
+  scopeConfirmed?: boolean
+  blockedUrls?: string[]
 }

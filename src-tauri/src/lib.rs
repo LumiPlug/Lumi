@@ -1491,11 +1491,9 @@ mod resource_tests {
     fn browser_user_commands_require_bounded_explicit_consent() {
         assert!(browser_user_payload("status", None).unwrap().is_none());
         assert!(browser_user_payload("arbitrary", None).is_err());
-        assert!(browser_user_payload(
-            "enable",
-            Some(json!({"extensionId": "a".repeat(32)}))
-        )
-        .is_err());
+        assert!(
+            browser_user_payload("enable", Some(json!({"extensionId": "a".repeat(32)}))).is_err()
+        );
         assert!(browser_user_payload(
             "enable",
             Some(json!({"extensionId": "z".repeat(32), "confirmed": true}))

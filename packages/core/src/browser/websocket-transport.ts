@@ -197,7 +197,8 @@ export class BrowserWebSocketTransport implements BrowserTransport {
       c.id !== id ||
       c.code !== code ||
       c.expiresAt <= Date.now() ||
-      !this.peers.has(c.peer)
+      !this.peers.has(c.peer) ||
+      c.peer.ws.readyState !== WebSocket.OPEN
     )
       throw new BrowserError('pairing_expired', 'Pairing candidate changed or expired')
     c.local = true
@@ -206,7 +207,12 @@ export class BrowserWebSocketTransport implements BrowserTransport {
 
   private completePair(c: Candidate): void {
     if (!c.local || !c.remote) return
-    if (this.candidate !== c || c.expiresAt <= Date.now() || !this.peers.has(c.peer))
+    if (
+      this.candidate !== c ||
+      c.expiresAt <= Date.now() ||
+      !this.peers.has(c.peer) ||
+      c.peer.ws.readyState !== WebSocket.OPEN
+    )
       throw new Error('pair expired')
     fs.mkdirSync(this.directory, { recursive: true, mode: 0o700 })
     this.checkPrivate(this.directory, true)

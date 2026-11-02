@@ -268,6 +268,8 @@ it('expired pairing approval and disconnected candidate cannot persist credentia
     const closed = once(ws, 'close')
     ws.close()
     await closed
+    // The client's close event can precede the server's FIN/close callback.
+    await vi.waitFor(() => expect(transport.status().pairing).toBe(null))
     await expect(transport.approvePairing(derived.pairingId, derived.sas)).rejects.toThrow()
     expect(fs.existsSync(path.join(directory, 'browser-user', 'pairing.json'))).toBe(false)
   } finally {

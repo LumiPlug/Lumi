@@ -11,6 +11,8 @@ export interface BrowserUserSession {
 
 export interface BrowserUserStatus {
   enabled: boolean
+  autoRepair: boolean
+  migrationRequired: boolean
   extensionId: string | null
   connectedHosts: number
   sessions: BrowserUserSession[]
@@ -29,4 +31,6 @@ export interface BrowserUserActionRequest {
   action: BrowserUserAction
   extensionId?: string
   confirmed?: boolean
+  autoRepair?: boolean
+  migrateConfirmed?: boolean
 }

@@ -896,11 +896,13 @@ fn browser_user_payload(action: &str, payload: Option<Value>) -> Result<Option<V
     }
     let value = payload.unwrap_or_else(|| json!({}));
     let fields = value.as_object().ok_or("invalid_browser_user_payload")?;
-    if fields
-        .keys()
-        .any(|key| !matches!(key.as_str(), "extensionId" | "confirmed"))
-    {
-        return Err("invalid_browser_user_payload".to_string());
+    for key in fields.keys() {
+        if !matches!(
+            key.as_str(),
+            "extensionId" | "confirmed" | "autoRepair" | "migrateConfirmed"
+        ) {
+            return Err("invalid_browser_user_payload".to_string());
+        }
     }
     if action == "status" {
         if !fields.is_empty() {
@@ -916,8 +918,13 @@ fn browser_user_payload(action: &str, payload: Option<Value>) -> Result<Option<V
         if id.len() != 32 || !id.bytes().all(|byte| (b'a'..=b'p').contains(&byte)) {
             return Err("invalid_browser_user_extension_id".to_string());
         }
-    } else if matches!(action, "enable" | "repair") {
-        return Err("invalid_browser_user_extension_id".to_string());
+    }
+    for key in ["autoRepair", "migrateConfirmed"] {
+        if let Some(value) = fields.get(key) {
+            if !matches!(action, "enable" | "repair") || !value.is_boolean() {
+                return Err("invalid_browser_user_payload".to_string());
+            }
+        }
     }
     let mut body = fields.clone();
     body.insert("action".to_string(), Value::String(action.to_string()));
@@ -1516,6 +1523,22 @@ mod resource_tests {
         for action in ["disable", "remove", "repair"] {
             assert!(browser_user_payload(action, None).is_err());
         }
+        let official = browser_user_payload(
+            "enable",
+            Some(json!({"confirmed": true, "autoRepair": false})),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(official.get("extensionId").is_none());
+        assert_eq!(official["autoRepair"], false);
+        let migration = json!({"confirmed": true, "migrateConfirmed": true});
+        assert!(browser_user_payload("repair", Some(migration)).is_ok());
+        for action in ["diagnose", "disable", "remove"] {
+            let maintenance = json!({"confirmed": true, "autoRepair": true});
+            assert!(browser_user_payload(action, Some(maintenance)).is_err());
+        }
+        let invalid = json!({"confirmed": true, "migrateConfirmed": "yes"});
+        assert!(browser_user_payload("enable", Some(invalid)).is_err());
     }
 
     #[test]

@@ -329,8 +329,16 @@ export class CoreService {
       if (
         !isRecord(body) ||
         !['enable', 'disable', 'repair', 'diagnose', 'remove'].includes(String(body.action)) ||
-        Object.keys(body).some((key) => !['action', 'extensionId', 'confirmed'].includes(key)) ||
-        (body.extensionId !== undefined && typeof body.extensionId !== 'string')
+        Object.keys(body).some(
+          (key) =>
+            !['action', 'extensionId', 'confirmed', 'autoRepair', 'migrateConfirmed'].includes(key),
+        ) ||
+        (body.extensionId !== undefined && typeof body.extensionId !== 'string') ||
+        ['confirmed', 'autoRepair', 'migrateConfirmed'].some(
+          (key) => body[key] !== undefined && typeof body[key] !== 'boolean',
+        ) ||
+        (!['enable', 'repair'].includes(String(body.action)) &&
+          (body.autoRepair !== undefined || body.migrateConfirmed !== undefined))
       ) {
         writeJson(
           responseObject,

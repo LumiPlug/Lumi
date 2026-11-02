@@ -167,6 +167,9 @@ export class BrowserRegistration {
     }
     try {
       const locator = await json(this.locatorFile)
+      // Preserve the existing identity even when another owned registration file
+      // is missing, so the UI can request explicit migration consent.
+      result.extensionId = typeof locator.extensionId === 'string' ? locator.extensionId : undefined
       const manifest = await json(this.manifestPath)
       if (this.platform !== 'win32' && process.platform !== 'win32') {
         for (const file of [this.locatorFile, path.dirname(this.locatorFile)]) {
@@ -175,7 +178,6 @@ export class BrowserRegistration {
             issues.push('browser_registration_permissions')
         }
       }
-      result.extensionId = typeof locator.extensionId === 'string' ? locator.extensionId : undefined
       if (locator.owner !== OWNER || locator.version !== 1)
         issues.push('browser_registration_foreign')
       if (
@@ -323,21 +325,73 @@ export class BrowserRegistration {
     }
     await unlink(this.transactionFile)
   }
-  async register(extensionId: string, confirmed: boolean): Promise<BrowserRegistrationStatus> {
+  async register(
+    extensionId: string,
+    confirmed: boolean,
+    options: { migrateConfirmed?: boolean } = {},
+  ): Promise<BrowserRegistrationStatus> {
     if (confirmed !== true) throw new Error('browser_registration_confirmation_required')
+    return this.updateRegistration(extensionId, options.migrateConfirmed === true, false)
+  }
+
+  /** Previously granted maintenance authority is limited to our existing binary path. */
+  async repairOwnedPath(
+    extensionId: string,
+    authorized: boolean,
+  ): Promise<BrowserRegistrationStatus> {
+    if (authorized !== true) throw new Error('browser_auto_repair_not_authorized')
+    const current = await this.status(extensionId)
+    if (current.registered) return current
+    return this.updateRegistration(extensionId, false, true)
+  }
+
+  private async pathRepairCandidate(extensionId: string): Promise<Snapshot> {
+    const status = await this.status(extensionId)
+    const owner = await this.owned()
+    const expectedName = `lumi-browser-native-host${this.platform === 'win32' ? '.exe' : ''}`
+    if (
+      !owner ||
+      owner.extensionId !== extensionId ||
+      owner.runtimeFile !== this.runtimeFile ||
+      owner.executablePath === this.nativeHostPath ||
+      path.basename(owner.executablePath) !== expectedName ||
+      path.basename(this.nativeHostPath) !== expectedName ||
+      status.issues.length !== 1 ||
+      status.issues[0] !== 'browser_registration_path_changed'
+    ) {
+      throw new Error('browser_auto_repair_not_eligible')
+    }
+    return this.snapshot()
+  }
+
+  private async updateRegistration(
+    extensionId: string,
+    migrateConfirmed: boolean,
+    pathOnly: boolean,
+  ): Promise<BrowserRegistrationStatus> {
     if (!this.supported()) throw new Error('browser_platform_unsupported')
     if (!/^[a-p]{32}$/.test(extensionId)) throw new Error('browser_extension_id_invalid')
     await access(this.nativeHostPath, this.platform === 'win32' ? constants.F_OK : constants.X_OK)
     const executable = await lstat(this.nativeHostPath)
     if (!executable.isFile() || executable.isSymbolicLink())
       throw new Error('browser_native_host_missing')
-    await this.recover()
-    await this.owned()
+    // Background repair must never recover a pending transaction, recreate a missing
+    // registration, change an extension ID, or repair unrelated damage.
+    const expected = pathOnly ? await this.pathRepairCandidate(extensionId) : undefined
+    if (!pathOnly) await this.recover()
+    const owner = await this.owned()
+    if (owner && owner.extensionId !== extensionId && !migrateConfirmed) {
+      throw new Error('browser_migration_confirmation_required')
+    }
+    const current = await this.status(extensionId)
+    if (current.registered) return current
     await safeDirectory(path.dirname(this.locatorFile))
     await mkdir(path.dirname(this.locatorFile), { recursive: true, mode: 0o700 })
     if (this.platform !== 'win32') await chmod(path.dirname(this.locatorFile), 0o700)
     const before = await this.snapshot()
     if (!this.validSnapshot(before)) throw new Error('browser_registration_foreign')
+    if (expected && JSON.stringify(expected) !== JSON.stringify(before))
+      throw new Error('browser_auto_repair_state_changed')
     const after: Snapshot = {
       locator: {
         version: 1,

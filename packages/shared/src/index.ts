@@ -13,3 +13,5 @@ export { validResponseFilter, responseFilterSchema } from './response-filter'
 export * from './usage'
 
 export * from './browser-user'
+
+export * from './browser-identity'

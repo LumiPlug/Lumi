@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { OFFICIAL_BROWSER_EXTENSION_ID } from '@lumiplug/shared'
 import type { BrowserUserStatus, UiCoreStatus } from '@lumiplug/shared'
-import BrowserUserSetting, { BrowserUserSummary } from '../components/BrowserUserSetting'
+import BrowserUserSetting, {
+  BrowserUserSummary,
+  BrowserUserIdentitySettings,
+} from '../components/BrowserUserSetting'
 import { applyLocale } from '../i18n'
 import { hostInvoke } from './tauri'
 import {
@@ -18,9 +22,11 @@ vi.mock('../components/ToastProvider', () => ({
   useToast: () => () => {},
   useToastViewport: () => {},
 }))
-const id = 'abcdefghijklmnopabcdefghijklmnop'
+const id = OFFICIAL_BROWSER_EXTENSION_ID
 const baseline = (): BrowserUserStatus => ({
   enabled: false,
+  autoRepair: false,
+  migrationRequired: false,
   extensionId: null,
   connectedHosts: 0,
   sessions: [],
@@ -157,5 +163,70 @@ describe('Browser User settings safety and presentation', () => {
     expect(html).toContain('Browser User</h2>')
     expect(html).toContain('Manage browser connection')
     expect(html).not.toContain('管理浏览器连接')
+  })
+})
+
+describe('official browser identity and explicit maintenance consent', () => {
+  it('defaults to the official identity without manual input and never implicitly authorizes maintenance', () => {
+    expect(browserUserRequest('enable', undefined, true)).toEqual({
+      action: 'enable',
+      extensionId: id,
+      confirmed: true,
+    })
+    expect(() => browserUserRequest('enable', 'a'.repeat(32), true)).toThrow('not_official')
+    const html = renderToStaticMarkup(
+      <BrowserUserIdentitySettings
+        status={baseline()}
+        autoRepair={false}
+        disabled={false}
+        onAutoRepairChange={() => {}}
+      />,
+    )
+    expect(html).toContain(id)
+    expect(html).toContain('无需复制或填写 ID')
+    expect(html).not.toContain('type="text"')
+    expect(html).toContain('type="checkbox"')
+    expect(html).not.toContain('checked=""')
+    expect(html).toContain('不恢复标签页授权')
+  })
+  it('forwards separate maintenance and migration consents only on confirmed registration actions', async () => {
+    vi.mocked(hostInvoke).mockResolvedValue(baseline())
+    await performBrowserUserAction(
+      browserUserRequest('repair', undefined, true, { autoRepair: true, migrateConfirmed: true }),
+    )
+    expect(hostInvoke).toHaveBeenCalledWith('browser_user_request', {
+      action: 'repair',
+      payload: { extensionId: id, confirmed: true, autoRepair: true, migrateConfirmed: true },
+    })
+    expect(() =>
+      browserUserRequest('repair', undefined, false, { autoRepair: true, migrateConfirmed: true }),
+    ).toThrow('confirmation_required')
+    expect(() => browserUserRequest('diagnose', undefined, false, { autoRepair: true })).toThrow(
+      'invalid_browser_user_payload',
+    )
+    expect(() =>
+      browserUserRequest('enable', undefined, true, { autoRepair: 'yes' as unknown as boolean }),
+    ).toThrow('invalid_browser_user_payload')
+    expect(
+      browserUserRequest('enable', undefined, true, { autoRepair: false, migrateConfirmed: false }),
+    ).toMatchObject({ autoRepair: false, migrateConfirmed: false })
+  })
+  it('shows legacy identity migration and reload guidance without silently changing the saved identity', () => {
+    const status = baseline()
+    status.extensionId = 'a'.repeat(32)
+    status.migrationRequired = true
+    expect(browserUserStateLabel(status, true)).toBe('旧扩展身份需要确认迁移')
+    const html = renderToStaticMarkup(
+      <BrowserUserIdentitySettings
+        status={status}
+        autoRepair={false}
+        disabled={false}
+        onAutoRepairChange={() => {}}
+      />,
+    )
+    expect(html).toContain('迁移必须单独确认')
+    expect(html).toContain('重新加载官方扩展')
+    expect(html).toContain(status.extensionId)
+    expect(hostInvoke).not.toHaveBeenCalled()
   })
 })

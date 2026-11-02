@@ -54,6 +54,27 @@ it('Browser User settings require desktop host credentials, not the shared MCP t
     expect(await noConsent.json()).toMatchObject({
       error: { code: 'browser_confirmation_required' },
     })
+    for (const extra of [
+      { autoRepair: 'true' },
+      { migrateConfirmed: 'true' },
+      { confirmed: 'true' },
+    ]) {
+      const invalid = await fetch(`${base}/app/browser-user/action`, {
+        method: 'POST',
+        headers: { ...headers, 'x-lumiplug-host-token': host },
+        body: JSON.stringify({ action: 'enable', confirmed: true, ...extra }),
+      })
+      expect(invalid.status).toBe(400)
+      expect(await invalid.json()).toMatchObject({ error: { code: 'browser_action_invalid' } })
+    }
+    const automaticWithoutConsent = await fetch(`${base}/app/browser-user/action`, {
+      method: 'POST',
+      headers: { ...headers, 'x-lumiplug-host-token': host },
+      body: JSON.stringify({ action: 'enable', autoRepair: true, migrateConfirmed: true }),
+    })
+    expect(await automaticWithoutConsent.json()).toMatchObject({
+      error: { code: 'browser_confirmation_required' },
+    })
     expect(
       service.registry.listMcpTools().some((tool) => tool.name.startsWith('Lumi.browser_')),
     ).toBe(false)

@@ -165,6 +165,7 @@ export async function startNativeHost(
         if (!ready) {
           if (message.type !== 'ready') throw new Error('not_ready')
           ready = true
+          sendChrome({ type: 'ready' })
           clearTimeout(timer)
           for (const line of pending) socket.write(line)
           pending.length = 0

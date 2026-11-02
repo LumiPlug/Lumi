@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { BrowserUserAction, BrowserUserStatus, UiCoreStatus } from '@lumiplug/shared'
+import { OFFICIAL_BROWSER_EXTENSION_ID } from '@lumiplug/shared'
 import { t, useLocale } from '../i18n'
-import { Badge, Button, Card, DataText, Field, FieldGroup, Input, Modal } from './ui'
+import { Badge, Button, Card, DataText, Field, FieldGroup, Checkbox, Modal } from './ui'
 import ConfirmationDialog from './ConfirmationDialog'
 import { useToast } from './ToastProvider'
 import {
@@ -11,7 +12,6 @@ import {
   browserUserStateLabel,
   getBrowserUserStatus,
   performBrowserUserAction,
-  validBrowserExtensionId,
 } from '../lib/browser-user'
 
 export function BrowserUserSummary({
@@ -82,21 +82,68 @@ export function BrowserUserSummary({
   )
 }
 
+export function BrowserUserIdentitySettings({
+  status,
+  autoRepair,
+  disabled,
+  onAutoRepairChange,
+}: {
+  status: BrowserUserStatus | null
+  autoRepair: boolean
+  disabled: boolean
+  onAutoRepairChange: (value: boolean) => void
+}) {
+  useLocale()
+  return (
+    <>
+      <Field
+        label={t('官方 Chrome 扩展 ID')}
+        description={t(
+          '使用 Lumi 官方扩展，无需复制或填写 ID。首次启用会注册本用户连接并诊断状态，不会自动授权标签页。',
+        )}
+      >
+        <DataText mono>{OFFICIAL_BROWSER_EXTENSION_ID}</DataText>
+      </Field>
+      {status?.migrationRequired && (
+        <Card density="compact">
+          <DataText>
+            {t(
+              '检测到旧开发扩展身份。请重新加载官方扩展；迁移必须单独确认，迁移或重新连接后需重新授权标签页。',
+            )}
+          </DataText>
+          {status.extensionId && <DataText mono>{status.extensionId}</DataText>}
+        </Card>
+      )}
+      <Checkbox
+        label={t('允许自动维护本安装的官方扩展连接')}
+        checked={autoRepair}
+        disabled={disabled}
+        onChange={(event) => onAutoRepairChange(event.target.checked)}
+      />
+      <DataText muted>
+        {t(
+          '仅在同一官方扩展 ID 下修复本安装因升级或移动产生的路径变化；不迁移旧 ID、不覆盖未知注册、不恢复标签页授权。选择在启用或修复的确认后保存。',
+        )}
+      </DataText>
+    </>
+  )
+}
+
 export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreStatus }) {
   useLocale()
   const toast = useToast()
   const coreReady = coreStatus.state === 'ready'
   const [status, setStatus] = useState<BrowserUserStatus | null>(null)
   const [open, setOpen] = useState(false)
-  const [extensionId, setExtensionId] = useState('')
-  const [error, setError] = useState('')
+  const [autoRepair, setAutoRepair] = useState(false)
+  const [migrateConfirmed, setMigrateConfirmed] = useState(false)
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState<BrowserUserAction | null>(null)
   const [confirmation, setConfirmation] = useState<{
     action: Exclude<BrowserUserAction, 'diagnose'>
-    extensionId: string
+    autoRepair: boolean
+    migrationRequired: boolean
   } | null>(null)
-  const input = useRef<HTMLInputElement>(null)
   const trigger = useRef<HTMLButtonElement | null>(null)
   const reading = useRef(false)
   const lock = useRef(false),
@@ -120,7 +167,7 @@ export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreS
         const next = await getBrowserUserStatus()
         if (!mounted.current || request !== sequence.current) return
         setStatus(next)
-        if (!dirty.current) setExtensionId(next.extensionId ?? '')
+        if (!dirty.current) setAutoRepair(next.autoRepair)
         if (notify) toast(t('Browser User 状态已刷新。'), 'info')
       } catch {
         if (!mounted.current || request !== sequence.current) return
@@ -150,22 +197,33 @@ export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreS
     }, 5000)
     return () => clearInterval(timer)
   }, [open, coreReady, refresh])
-  useEffect(() => {
-    if (error && !busy) input.current?.focus()
-  }, [error, busy])
-  async function perform(action: BrowserUserAction, id: string, confirmed: boolean) {
+  async function perform(
+    action: BrowserUserAction,
+    confirmed: boolean,
+    preference?: boolean,
+    migrate = false,
+  ) {
     if (lock.current || !coreReady) return
     lock.current = true
     const request = ++sequence.current
     setLoading(false)
     setBusy(action)
     try {
-      const next = await performBrowserUserAction(browserUserRequest(action, id, confirmed))
+      const next = await performBrowserUserAction(
+        browserUserRequest(
+          action,
+          OFFICIAL_BROWSER_EXTENSION_ID,
+          confirmed,
+          action === 'enable' || action === 'repair'
+            ? { autoRepair: preference ?? autoRepair, migrateConfirmed: migrate }
+            : {},
+        ),
+      )
       if (!mounted.current || request !== sequence.current) return
       setStatus(next)
       setConfirmation(null)
       dirty.current = false
-      setExtensionId(next.extensionId ?? '')
+      setAutoRepair(next.autoRepair)
       const issues = [...next.issues, ...next.registration.issues]
       toast(
         issues.length > 0
@@ -188,15 +246,12 @@ export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreS
   }
   function ask(action: Exclude<BrowserUserAction, 'diagnose'>) {
     if (lock.current || !coreReady || !status) return
-    if ((action === 'enable' || action === 'repair') && !validBrowserExtensionId(extensionId)) {
-      const message = t('请输入由 32 个小写字母 a–p 组成的 Chrome 扩展 ID。')
-      setError(message)
-      toast(message, 'error')
-      input.current?.focus()
-      return
-    }
-    setError('')
-    setConfirmation({ action, extensionId: extensionId.trim() })
+    setMigrateConfirmed(false)
+    setConfirmation({
+      action,
+      autoRepair,
+      migrationRequired: status.migrationRequired && (action === 'enable' || action === 'repair'),
+    })
   }
   return (
     <section className="settings-row" aria-labelledby="browser-user-title">
@@ -210,8 +265,7 @@ export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreS
           onClick={(event) => {
             trigger.current = event.currentTarget
             dirty.current = false
-            setExtensionId(status?.extensionId ?? '')
-            setError('')
+            setAutoRepair(status?.autoRepair ?? false)
             setOpen(true)
             void refresh()
           }}
@@ -243,27 +297,15 @@ export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreS
         >
           <div className="browser-user-fields" aria-busy={loading || busy !== null}>
             <BrowserUserSummary status={status} coreReady={coreReady} />
-            <Field
-              label={t('Chrome 扩展 ID')}
-              error={error}
-              description={t(
-                '在 chrome://extensions 加载 Lumi 扩展后，复制其扩展 ID。注册不会自动授予标签页控制权。',
-              )}
-            >
-              <Input
-                ref={input}
-                value={extensionId}
-                maxLength={32}
-                spellCheck={false}
-                autoComplete="off"
-                disabled={busy !== null || !coreReady}
-                onChange={(event) => {
-                  dirty.current = true
-                  setExtensionId(event.target.value)
-                  setError('')
-                }}
-              />
-            </Field>
+            <BrowserUserIdentitySettings
+              status={status}
+              autoRepair={autoRepair}
+              disabled={busy !== null || !coreReady || !status}
+              onAutoRepairChange={(value) => {
+                dirty.current = true
+                setAutoRepair(value)
+              }}
+            />
             <div className="settings-row-controls">
               <Button
                 variant="primary"
@@ -293,7 +335,7 @@ export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreS
               <Button
                 loading={busy === 'diagnose'}
                 disabled={!coreReady || busy !== null}
-                onClick={() => void perform('diagnose', '', false)}
+                onClick={() => void perform('diagnose', false)}
               >
                 {browserUserActionLabel('diagnose')}
               </Button>
@@ -328,17 +370,19 @@ export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreS
           title={browserUserActionLabel(confirmation.action)}
           confirmLabel={browserUserActionLabel(confirmation.action)}
           busy={busy !== null}
-          disabled={!coreReady}
+          disabled={!coreReady || (confirmation.migrationRequired && !migrateConfirmed)}
           danger={confirmation.action === 'remove' || confirmation.action === 'disable'}
           cancel={() => {
             if (!lock.current) setConfirmation(null)
           }}
-          confirm={() => void perform(confirmation.action, confirmation.extensionId, true)}
+          confirm={() =>
+            void perform(confirmation.action, true, confirmation.autoRepair, migrateConfirmed)
+          }
         >
           <p>
             {confirmation.action === 'enable' || confirmation.action === 'repair'
               ? t(
-                  '此操作将保存扩展 ID 并注册或修复本用户的 Chrome 本机通信连接。只有你在 Chrome 中授权的标签页可被操作。',
+                  '此操作将注册或修复 Lumi 官方扩展的本用户连接并诊断状态。只有你在 Chrome 中授权的标签页可被操作。',
                 )
               : confirmation.action === 'disable'
                 ? t(
@@ -348,6 +392,21 @@ export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreS
                     '移除将撤销 Lumi 浏览器连接并移除本安装的注册；不会卸载 Chrome 扩展或清除浏览器数据。',
                   )}
           </p>
+          {(confirmation.action === 'enable' || confirmation.action === 'repair') && (
+            <p>
+              {confirmation.autoRepair
+                ? t('你将授权仅维护同一官方 ID、本安装升级或移动后的注册路径。')
+                : t('自动维护未授权；后续路径变化需要手动确认修复。')}
+            </p>
+          )}
+          {confirmation.migrationRequired && (
+            <Checkbox
+              label={t('我确认将旧的本安装扩展身份迁移至官方 ID，并在 Chrome 中重新授权标签页。')}
+              checked={migrateConfirmed}
+              disabled={busy !== null}
+              onChange={(event) => setMigrateConfirmed(event.target.checked)}
+            />
+          )}
           <p>{t('所有 Lumi MCP 客户端共享此控制域。你确认继续吗？')}</p>
         </ConfirmationDialog>
       )}

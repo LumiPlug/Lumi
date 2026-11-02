@@ -66,10 +66,12 @@ class FakeSocket extends Duplex {
 async function fixture() {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'lumi-browser-core-'))
   let handler: (socket: Duplex) => void = () => {}
+  const handlers: ((socket: Duplex) => void)[] = []
   let enrollmentCalls = 0
   const transport = {
     async start(listener: (socket: Duplex) => void) {
       handler = listener
+      handlers.push(listener)
     },
     async stop() {},
     status() {
@@ -85,7 +87,7 @@ async function fixture() {
     transportFactory: () => transport,
     requestTimeoutMs: 20,
   })
-  async function host() {
+  async function host(listenerIndex?: number) {
     const socket = new FakeSocket(),
       peer = new FakeSocket()
     socket.peer = peer
@@ -94,7 +96,7 @@ async function fixture() {
     const frames = new BrowserFrames()
     socket.pipe(frames)
     const next = inbox(frames)
-    handler(peer)
+    ;(listenerIndex === undefined ? handler : handlers[listenerIndex]!)(peer)
     return { socket, next }
   }
   return {
@@ -666,5 +668,69 @@ it('corrupt private pin isolates Browser User without preventing Core diagnostic
   } finally {
     await service.close()
     fs.rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+it('policy changes retain the live listener and new sessions default to allow without allow rows', async () => {
+  const context = await readyFixture()
+  try {
+    context.service.setBlockedUrls(['https://blocked.test/private'])
+    context.native.socket.destroy()
+    await tick()
+    const reconnected = await context.host()
+    expect(await reconnected.next()).toEqual({ type: 'ready' })
+    expect(await reconnected.next()).toMatchObject({
+      type: 'policy',
+      blockedUrls: ['https://blocked.test/private'],
+    })
+    const allowed = {
+      ...sample,
+      id: 'after-policy',
+      url: 'https://new.test/unlisted?q=value',
+      origin: 'https://new.test',
+    }
+    writeBrowserFrame(reconnected.socket, {
+      type: 'sessions',
+      policyEpoch: context.service.status().policyEpoch,
+      sessions: [
+        allowed,
+        {
+          ...sample,
+          id: 'blocked',
+          url: 'https://blocked.test/private?q=hidden',
+          origin: 'https://blocked.test',
+        },
+      ],
+    })
+    await tick()
+    expect(await context.service.call('list_sessions', {})).toMatchObject({ sessions: [allowed] })
+    const result = context.service.call('snapshot', { sessionId: allowed.id })
+    const request = await reconnected.next()
+    expect(request).toMatchObject({ type: 'request', tool: 'snapshot' })
+    writeBrowserFrame(reconnected.socket, {
+      type: 'response',
+      id: request.id,
+      result: { text: 'default allowed' },
+    })
+    await expect(result).resolves.toEqual({ text: 'default allowed' })
+  } finally {
+    await context.stop()
+  }
+})
+
+it('a stopped listener callback cannot accept a socket after a new listener starts', async () => {
+  const context = await readyFixture()
+  try {
+    await context.service.disable()
+    await context.service.start(extensionId)
+    const stale = await context.host(0)
+    await tick()
+    expect(stale.socket.destroyed).toBe(true)
+    expect(context.service.status().connectedHosts).toBe(0)
+    const current = await context.host()
+    expect(await current.next()).toEqual({ type: 'ready' })
+    expect(context.service.status().connectedHosts).toBe(1)
+  } finally {
+    await context.stop()
   }
 })

@@ -84,6 +84,7 @@ export class BrowserService {
   private readonly transport: BrowserTransport
   private epoch = 0
   private activationEpoch = 0
+  private listenerGeneration = 0
   private policyEpoch = 1
   private blockedUrls: string[] = []
   private pageRuleHandler?: BrowserPageRuleHandler
@@ -198,12 +199,12 @@ export class BrowserService {
         if (activation !== this.activationEpoch) return
         this.extensionId = extensionId
         try {
-          const generation = this.epoch
+          const generation = this.listenerGeneration
           await this.transport.start((socket) => {
-            if (generation !== this.epoch) socket.destroy()
+            if (generation !== this.listenerGeneration) socket.destroy()
             else this.accept(socket)
           })
-          if (generation !== this.epoch || activation !== this.activationEpoch) {
+          if (generation !== this.listenerGeneration || activation !== this.activationEpoch) {
             await this.transport.stop()
             return
           }
@@ -219,6 +220,7 @@ export class BrowserService {
   }
 
   disable(): Promise<void> {
+    this.listenerGeneration++
     this.activationEpoch++
     // Cancel queued calls immediately, before waiting for a startup transition.
     this.epoch++
@@ -633,6 +635,7 @@ export class BrowserService {
     host.socket.destroy()
   }
   private async stopInternal(): Promise<void> {
+    this.listenerGeneration++
     this.enabled = false
     this.epoch++
     if (this.pending) this.send(this.pending.session.host, { type: 'cancel', id: this.pending.id })

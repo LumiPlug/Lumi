@@ -43,7 +43,7 @@ it('routes two MCP clients through the existing Lumi Core WebSocket in one seria
   try {
     await core.start()
     try {
-      await core.browserUser.browser.start(extensionId) // Explicit fixture consent; no OS registration.
+      await core.browserUser.browser.start(extensionId, [], { enroll: true }) // Explicit fixture consent; no OS registration.
     } catch (error) {
       if (!process.env.CI && (error as NodeJS.ErrnoException).code === 'EPERM') {
         context.skip() // This cloud sandbox may deny loopback sockets; CI must execute it.
@@ -98,18 +98,17 @@ it('routes two MCP clients through the existing Lumi Core WebSocket in one seria
     const pairing = await createPairingHello('client')
     socket.send(
       JSON.stringify({
-        type: 'pair_commit',
+        type: 'enroll_commit',
         commitment: await commitPairingHello(pairing.hello, 'client'),
       }),
     )
     const commitment = await next()
-    socket.send(JSON.stringify({ type: 'pair_hello', hello: pairing.hello }))
+    socket.send(JSON.stringify({ type: 'enroll_hello', hello: pairing.hello }))
     const offer = await next()
     expect(await verifyPairingCommitment(offer.hello, 'server', commitment.commitment)).toBe(true)
     const derived = await finishPairing(pairing.state, offer.hello)
-    await core.browserUser.browser.approvePairing(derived.pairingId, derived.sas)
-    socket.send(JSON.stringify({ type: 'pair_confirm', pairingId: derived.pairingId }))
-    expect((await next()).type).toBe('pair_complete')
+    socket.send(JSON.stringify({ type: 'enroll_accept', enrollmentId: derived.pairingId }))
+    expect((await next()).type).toBe('enroll_complete')
     const nonce = createNonce()
     socket.send(JSON.stringify({ type: 'auth_hello', clientNonce: nonce }))
     const challenge = await next()

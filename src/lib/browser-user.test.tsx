@@ -38,7 +38,7 @@ const baseline = (): BrowserUserStatus => ({
   transport: 'loopback-websocket',
   endpoint: 'ws://127.0.0.1:43127/ws',
   paired: false,
-  pairing: null,
+  enrollmentExpiresAt: null,
   issues: [],
 })
 const disconnected: UiCoreStatus = {
@@ -78,7 +78,6 @@ describe('Browser User settings safety and presentation', () => {
       'disable',
       'setPageRules',
       'setBlockedUrls',
-      'approvePairing',
       'resetPairing',
     ] as const)
       expect(() => browserUserRequest(action)).toThrow('confirmation_required')
@@ -128,45 +127,28 @@ describe('Browser User settings safety and presentation', () => {
       'confirmation_required',
     )
   })
-  it('binds explicit pairing approval to the exact displayed id and six-digit code', async () => {
-    vi.mocked(hostInvoke).mockResolvedValue(baseline())
-    await performBrowserUserAction(
-      browserUserRequest('approvePairing', undefined, true, {
-        pairingId: 'exact-socket',
-        pairingCode: '012345',
-      }),
+  it('rejects removed pairing-code fields instead of forwarding them', () => {
+    expect(() => browserUserRequest('approvePairing' as never, undefined, true)).toThrow(
+      'invalid_browser_user_payload',
     )
-    expect(hostInvoke).toHaveBeenCalledWith('browser_user_request', {
-      action: 'approvePairing',
-      payload: { confirmed: true, pairingId: 'exact-socket', pairingCode: '012345' },
-    })
-    for (const pairingCode of ['', '12345', '1234567', 'abcdef'])
-      expect(() =>
-        browserUserRequest('approvePairing', undefined, true, { pairingId: 'socket', pairingCode }),
-      ).toThrow()
     expect(() =>
-      browserUserRequest('enable', undefined, true, { pairingId: 'socket', pairingCode: '123456' }),
-    ).toThrow()
-    expect(() =>
-      browserUserRequest('approvePairing', undefined, false, {
-        pairingId: 'socket',
+      browserUserRequest('enable', undefined, true, {
+        pairingId: 'x',
         pairingCode: '123456',
-      }),
-    ).toThrow('confirmation_required')
+      } as never),
+    ).toThrow('invalid_browser_user_payload')
+    expect(hostInvoke).not.toHaveBeenCalled()
   })
   it('distinguishes enabled/connecting from actual connected pages and pairing', () => {
     const status = baseline()
     expect(browserUserStateLabel(null, true)).toContain('未知')
     expect(browserUserStateLabel(status, true)).toContain('停用')
     status.enabled = true
+    expect(browserUserStateLabel(status, true)).toContain('重新检查连接')
+    status.enrollmentExpiresAt = new Date(Date.now() + 120000).toISOString()
     expect(browserUserStateLabel(status, true)).toContain('连接中')
-    status.pairing = {
-      id: 's',
-      code: '123456',
-      expiresAt: new Date(Date.now() + 60000).toISOString(),
-    }
-    expect(browserUserStateLabel(status, true)).toContain('配对码')
-    status.pairing = null
+    status.enrollmentExpiresAt = new Date(Date.now() - 1).toISOString()
+    expect(browserUserStateLabel(status, true)).toContain('重新检查连接')
     status.connectedHosts = 1
     expect(browserUserStateLabel(status, true)).toContain('等待可用网页')
     status.sessions = [

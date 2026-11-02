@@ -28,24 +28,16 @@ export interface BrowserUserStatus {
   transport: 'loopback-websocket'
   endpoint: string
   paired: boolean
-  pairing: { id: string; code: string; expiresAt: string } | null
+  enrollmentExpiresAt: string | null
   issues: string[]
 }
 
 export type BrowserUserAction =
-  | 'enable'
-  | 'disable'
-  | 'diagnose'
-  | 'approvePairing'
-  | 'resetPairing'
-  | 'setBlockedUrls'
-  | 'setPageRules'
+  'enable' | 'disable' | 'diagnose' | 'resetPairing' | 'setBlockedUrls' | 'setPageRules'
 export interface BrowserUserActionRequest {
   action: BrowserUserAction
   extensionId?: string
   confirmed?: boolean
-  pairingId?: string
-  pairingCode?: string
   scopeConfirmed?: boolean
   blockedUrls?: string[]
   pageRules?: BrowserPageRule[]

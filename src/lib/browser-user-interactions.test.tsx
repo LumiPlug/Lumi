@@ -5,7 +5,6 @@ import type { BrowserPageRule } from '@lumiplug/shared'
 import { BrowserPageRuleRow, BrowserUserPrimaryActions } from '../components/BrowserUserSetting'
 import {
   browserUserRuleUpdate,
-  browserPairingCanApprove,
   openBrowserExtensionStore,
   performBrowserUserAction,
 } from './browser-user'
@@ -36,19 +35,6 @@ const rule: BrowserPageRule = {
   permission: 'block',
 }
 describe('Browser User business component interactions', () => {
-  it('requires a checked exact live pairing code and never approves a replacement candidate', () => {
-    const pair = { id: 'socket-a', code: '012345', expiresAt: new Date(60000).toISOString() }
-    expect(browserPairingCanApprove(pair, pair, false, 1000)).toBe(false)
-    expect(browserPairingCanApprove(pair, pair, true, 1000)).toBe(true)
-    expect(browserPairingCanApprove({ ...pair, id: 'socket-b' }, pair, true, 1000)).toBe(false)
-    expect(browserPairingCanApprove({ ...pair, code: '543210' }, pair, true, 1000)).toBe(false)
-    expect(browserPairingCanApprove(pair, pair, true, 60000)).toBe(false)
-    expect(browserPairingCanApprove(null, pair, true, 1000)).toBe(false)
-    expect(browserPairingCanApprove({ ...pair, expiresAt: 'invalid' }, pair, true, 1000)).toBe(
-      false,
-    )
-    expect(hostInvoke).not.toHaveBeenCalled()
-  })
   it('edits label, URL and permission locally, and saves only on explicit Save', () => {
     const changed = vi.fn(),
       save = vi.fn(),

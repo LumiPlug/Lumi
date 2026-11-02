@@ -329,7 +329,6 @@ export class CoreService {
         enable: ['extensionId', 'confirmed', 'scopeConfirmed'],
         disable: [],
         diagnose: [],
-        approvePairing: ['pairingId', 'pairingCode'],
         resetPairing: ['confirmed'],
         setBlockedUrls: ['confirmed', 'blockedUrls', 'expectedRulesRevision'],
         setPageRules: ['confirmed', 'pageRules', 'expectedRulesRevision'],
@@ -349,11 +348,6 @@ export class CoreService {
         (body.expectedRulesRevision !== undefined &&
           (!Number.isSafeInteger(body.expectedRulesRevision) ||
             (body.expectedRulesRevision as number) < 0)) ||
-        (body.action === 'approvePairing' &&
-          (typeof body.pairingId !== 'string' ||
-            body.pairingId.length > 128 ||
-            typeof body.pairingCode !== 'string' ||
-            !/^\d{6}$/.test(body.pairingCode))) ||
         (body.action === 'setBlockedUrls' &&
           (!Array.isArray(body.blockedUrls) ||
             body.blockedUrls.length > 100 ||

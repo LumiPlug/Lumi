@@ -902,7 +902,6 @@ fn browser_user_payload(action: &str, payload: Option<Value>) -> Result<Option<V
             | "diagnose"
             | "setBlockedUrls"
             | "setPageRules"
-            | "approvePairing"
             | "resetPairing"
     ) {
         return Err("invalid_browser_user_action".to_string());
@@ -918,8 +917,6 @@ fn browser_user_payload(action: &str, payload: Option<Value>) -> Result<Option<V
                 | "blockedUrls"
                 | "pageRules"
                 | "expectedRulesRevision"
-                | "pairingId"
-                | "pairingCode"
         ) {
             return Err("invalid_browser_user_payload".to_string());
         }
@@ -1004,19 +1001,6 @@ fn browser_user_payload(action: &str, payload: Option<Value>) -> Result<Option<V
             }
         }
     } else if fields.contains_key("pageRules") {
-        return Err("invalid_browser_user_payload".to_string());
-    }
-    if action == "approvePairing" {
-        let id = fields.get("pairingId").and_then(Value::as_str);
-        let code = fields.get("pairingCode").and_then(Value::as_str);
-        if id.map_or(true, |value| value.is_empty() || value.len() > 128)
-            || code.map_or(true, |value| {
-                value.len() != 6 || !value.bytes().all(|byte| byte.is_ascii_digit())
-            })
-        {
-            return Err("browser_pairing_invalid".to_string());
-        }
-    } else if fields.contains_key("pairingId") || fields.contains_key("pairingCode") {
         return Err("invalid_browser_user_payload".to_string());
     }
     let mut body = fields.clone();
@@ -1686,8 +1670,8 @@ mod resource_tests {
     fn browser_user_http_errors_forward_safe_codes_not_private_messages() {
         for code in [
             "browser_rules_conflict",
-            "browser_pairing_invalid",
-            "browser_pairing_expired",
+            "browser_enrollment_expired",
+            "browser_pin_mismatch",
             "browser_listener_unavailable",
         ] {
             let body = json!({"error": {"code": code, "message": "/private/secret"}});
@@ -1720,7 +1704,6 @@ mod resource_tests {
             "disable",
             "setBlockedUrls",
             "setPageRules",
-            "approvePairing",
             "resetPairing",
         ] {
             assert!(browser_user_payload(action, None).is_err());
@@ -1739,14 +1722,9 @@ mod resource_tests {
         let excessive =
             json!({"confirmed": true, "blockedUrls": vec!["https://example.com/"; 101]});
         assert!(browser_user_payload("setBlockedUrls", Some(excessive)).is_err());
-        let pairing = json!({"confirmed": true, "pairingId": "socket-id", "pairingCode": "123456"});
-        assert!(browser_user_payload("approvePairing", Some(pairing.clone())).is_ok());
-        assert!(browser_user_payload("enable", Some(pairing.clone())).is_err());
-        for code in ["", "12345", "1234567", "abcdef"] {
-            let mut invalid = pairing.clone();
-            invalid["pairingCode"] = json!(code);
-            assert!(browser_user_payload("approvePairing", Some(invalid)).is_err());
-        }
+        let obsolete = json!({"confirmed": true, "pairingId": "socket", "pairingCode": "123456"});
+        assert!(browser_user_payload("approvePairing", Some(obsolete.clone())).is_err());
+        assert!(browser_user_payload("enable", Some(obsolete)).is_err());
     }
 
     #[test]

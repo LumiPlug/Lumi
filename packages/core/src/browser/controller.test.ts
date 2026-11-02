@@ -21,6 +21,7 @@ function fixture(preference?: unknown) {
   let enabled = false,
     extensionId: string | null = null,
     paired = false
+  let enrollmentExpiresAt: string | null = null
   let handler: BrowserPageRuleHandler | undefined
   const browser = {
     status: () => ({
@@ -34,20 +35,22 @@ function fixture(preference?: unknown) {
       transport: 'loopback-websocket' as const,
       endpoint: 'ws://127.0.0.1:43127/ws',
       paired,
-      pairing: null,
+      enrollmentExpiresAt,
     }),
-    start: vi.fn(async (id: string) => {
+    start: vi.fn(async (id: string, _blocked?: string[], options?: { enroll?: true }) => {
+      void _blocked
+      enrollmentExpiresAt =
+        options?.enroll && !paired ? new Date(Date.now() + 120000).toISOString() : null
       enabled = true
       extensionId = id
     }),
     disable: vi.fn(async () => {
       enabled = false
+      enrollmentExpiresAt = null
     }),
     close: vi.fn(async () => {
       enabled = false
-    }),
-    approvePairing: vi.fn(async () => {
-      paired = true
+      enrollmentExpiresAt = null
     }),
     resetPairing: vi.fn(async () => {
       paired = false
@@ -65,6 +68,9 @@ function fixture(preference?: unknown) {
     browser,
     controller,
     dependencies,
+    pin: () => {
+      paired = true
+    },
     popup: (rule: BrowserPageRule, guard = () => {}) => handler!(rule, guard),
   }
 }
@@ -108,10 +114,10 @@ describe('Browser User controller direct Core transport consent and lifecycle', 
   it('enables only the official extension and stores WS consent; repeated connection is idempotent', async () => {
     const f = fixture()
     expect((await f.controller.action(enable)).enabled).toBe(true)
-    expect(f.browser.start).toHaveBeenCalledWith(officialId, [])
+    expect(f.browser.start).toHaveBeenCalledWith(officialId, [], { enroll: true })
     expect(JSON.parse(fs.readFileSync(f.file, 'utf8'))).toEqual(stored())
     await f.controller.action({ action: 'enable', confirmed: true })
-    expect(f.browser.start).toHaveBeenCalledTimes(1)
+    expect(f.browser.start).toHaveBeenCalledTimes(2)
     await expect(f.controller.action({ ...enable, extensionId: 'a'.repeat(32) })).rejects.toThrow(
       'not_official',
     )
@@ -119,7 +125,7 @@ describe('Browser User controller direct Core transport consent and lifecycle', 
     expect((await f.controller.status()).enabled).toBe(false)
     expect(JSON.parse(fs.readFileSync(f.file, 'utf8')).enabled).toBe(false)
     await f.controller.action({ action: 'enable', confirmed: true })
-    expect(f.browser.start).toHaveBeenCalledTimes(2)
+    expect(f.browser.start).toHaveBeenCalledTimes(3)
   })
   it('does not restore old Native Messaging consent as permission to listen on the network', async () => {
     const f = fixture({
@@ -141,7 +147,9 @@ describe('Browser User controller direct Core transport consent and lifecycle', 
       'scope_confirmation_required',
     )
     await f.controller.action(enable)
-    expect(f.browser.start).toHaveBeenCalledWith(officialId, ['https://example.com/private'])
+    expect(f.browser.start).toHaveBeenCalledWith(officialId, ['https://example.com/private'], {
+      enroll: true,
+    })
     expect(JSON.parse(fs.readFileSync(f.file, 'utf8')).transport).toBe('loopback-websocket')
   })
   it('restores only current transport, current scope and official identity', async () => {
@@ -260,94 +268,57 @@ describe('Browser User controller direct Core transport consent and lifecycle', 
   })
 })
 
-describe('Browser User explicit candidate approval', () => {
-  it('requires enabled scope and exact id/code, forwarding only the clicked candidate', async () => {
-    const f = fixture(),
-      approval: BrowserUserActionRequest = {
-        action: 'approvePairing',
-        confirmed: true,
-        pairingId: 'candidate-a',
-        pairingCode: '012345',
-      }
-    await expect(f.controller.action(approval)).rejects.toThrow('disabled')
-    await f.controller.action(enable)
-    await f.controller.action(approval)
-    expect(f.browser.approvePairing).toHaveBeenCalledWith('candidate-a', '012345')
-    expect((await f.controller.status()).paired).toBe(true)
-    await expect(f.controller.action({ ...approval, confirmed: false })).rejects.toThrow(
-      'confirmation_required',
-    )
-    await expect(f.controller.action({ ...approval, pairingCode: '12345' })).rejects.toThrow(
-      'pairing_invalid',
-    )
+describe('Browser User click-scoped TOFU enrollment and recovery', () => {
+  it('opens or renews enrollment only from explicit enable, never status or restore', async () => {
+    const f = fixture(stored())
+    await f.controller.restore()
+    expect(f.browser.start).toHaveBeenLastCalledWith(officialId, [])
+    expect((await f.controller.status()).enrollmentExpiresAt).toBe(null)
+    await f.controller.action({ action: 'diagnose' })
+    expect(f.browser.start).toHaveBeenCalledTimes(1)
+    await f.controller.action({ action: 'enable', confirmed: true })
+    expect(f.browser.start).toHaveBeenLastCalledWith(officialId, [], { enroll: true })
+    expect((await f.controller.status()).enrollmentExpiresAt).not.toBe(null)
+    await f.controller.action({ action: 'enable', confirmed: true })
+    expect(f.browser.start).toHaveBeenCalledTimes(3)
+    await f.controller.action({ action: 'disable', confirmed: true })
+    expect((await f.controller.status()).enrollmentExpiresAt).toBe(null)
   })
-  it('resets only on explicit host confirmation, revokes pairing and remains off until reconnect', async () => {
+  it('rejects the removed manual-approval API and code fields', async () => {
+    const f = fixture()
+    for (const request of [
+      { action: 'approvePairing', confirmed: true },
+      { ...enable, pairingId: 'a', pairingCode: '123456' },
+    ])
+      await expect(f.controller.action(request as BrowserUserActionRequest)).rejects.toThrow(
+        'action_invalid',
+      )
+    expect(f.browser.start).not.toHaveBeenCalled()
+  })
+  it('keeps reset explicitly confirmed, preserves rules and requires a new clicked enrollment', async () => {
     const f = fixture()
     await f.controller.action(enable)
+    f.pin()
     await f.controller.action({
       action: 'setPageRules',
       confirmed: true,
       expectedRulesRevision: 0,
       pageRules: [rule()],
     })
-    await f.controller.action({
-      action: 'approvePairing',
-      confirmed: true,
-      pairingId: 'a',
-      pairingCode: '123456',
-    })
     await expect(f.controller.action({ action: 'resetPairing' })).rejects.toThrow(
       'confirmation_required',
     )
-    expect(f.browser.resetPairing).not.toHaveBeenCalled()
     const state = await f.controller.action({ action: 'resetPairing', confirmed: true })
-    expect(state.pageRules).toEqual([rule()])
-    expect(state.rulesRevision).toBe(1)
     expect(state.paired).toBe(false)
     expect(state.enabled).toBe(false)
-    expect(JSON.parse(fs.readFileSync(f.file, 'utf8')).enabled).toBe(false)
+    expect(state.enrollmentExpiresAt).toBe(null)
+    expect(state.pageRules).toEqual([rule()])
+    expect(state.rulesRevision).toBe(1)
     expect(f.browser.resetPairing).toHaveBeenCalledOnce()
-    await f.controller.action({ action: 'enable', confirmed: true })
-    expect((await f.controller.status()).paired).toBe(false)
-    expect(f.browser.approvePairing).toHaveBeenCalledTimes(1)
-  })
-  it('does not retry a rejected candidate or transfer approval to a later one', async () => {
-    const f = fixture()
-    await f.controller.action(enable)
-    f.browser.approvePairing.mockRejectedValueOnce(new Error('browser_pairing_expired'))
-    await expect(
-      f.controller.action({
-        action: 'approvePairing',
-        confirmed: true,
-        pairingId: 'expired',
-        pairingCode: '123456',
-      }),
-    ).rejects.toThrow('pairing_expired')
-    expect(f.browser.approvePairing).toHaveBeenCalledTimes(1)
-    expect((await f.controller.status()).paired).toBe(false)
-  })
-  it('invalidates pending approval when disconnect is requested', async () => {
-    const f = fixture()
-    await f.controller.action(enable)
-    const waiting = deferred(),
-      entered = deferred()
-    f.browser.approvePairing.mockImplementationOnce(async () => {
-      entered.resolve()
-      await waiting.promise
-    })
-    const approving = f.controller.action({
-      action: 'approvePairing',
-      confirmed: true,
-      pairingId: 'a',
-      pairingCode: '123456',
-    })
-    const rejected = expect(approving).rejects.toThrow('activation_cancelled')
-    await entered.promise
-    const stop = f.controller.action({ action: 'disable', confirmed: true })
+    await f.controller.restore()
     expect((await f.controller.status()).enabled).toBe(false)
-    waiting.resolve()
-    await rejected
-    await stop
+    await f.controller.action({ action: 'enable', confirmed: true })
+    expect(f.browser.start).toHaveBeenLastCalledWith(officialId, [rule().url], { enroll: true })
   })
 })
 

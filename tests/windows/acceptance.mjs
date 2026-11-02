@@ -245,7 +245,7 @@ try {
       assert.equal(status.transport, 'loopback-websocket')
       assert.equal(status.endpoint, 'ws://127.0.0.1:43127/ws')
       assert.equal(status.paired, false)
-      assert.equal(status.pairing, null)
+      assert.equal(status.enrollmentExpiresAt, null)
       assert.ok(Array.isArray(status.pageRules))
       assert.equal(status.rulesRevision, 0)
       assert.ok(Array.isArray(status.blockedUrls))

@@ -404,4 +404,4 @@ Codex 输入包含缓存读取，不再加缓存；累计总量按差值计量�
 
 ## Browser User（2026-11-02）
 
-浏览器自动化复用现有 Core Registry/MCP，扩展通过固定 loopback WebSocket 直连 Core 进程。新包不包含 Native Messaging host、注册器、IPC broker 或第二个浏览器 MCP 进程。首次双端短码配对后使用认证加密通信，关闭立即断开且不会被插件重试重新启用。授权、共享控制域及历史迁移边界见 [BROWSER_USER.md](BROWSER_USER.md)，协议见 [BROWSER_PROTOCOL.md](BROWSER_PROTOCOL.md)。
+Browser User 当前首次信任为 TOFU：仅主窗口用户显式 enable 打开 120 秒登记窗口，无 pin 的自动 restore 不登记；已有 pin 沿用认证，不隐式替换。没有手工验证码或额外产品确认页，用户点击连接同时授权网页范围。TOFU 不保证首连抵御本机恶意 MITM；后续双向认证与加密不等于已核验首连身份。异常 reset 需明确确认，撤销本项目 pin 并关闭连接，之后用户重新发起登记。

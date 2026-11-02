@@ -18,7 +18,7 @@ import {
 } from './secure-crypto'
 import { OFFICIAL_BROWSER_EXTENSION_ID } from '@lumiplug/shared'
 
-it('requires both matching confirmations, authenticates reconnect and encrypts business frames', async () => {
+it('enrolls only during explicit TOFU window, pins and authenticates encrypted reconnects', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'lumi-ws-'))
   const transport = new BrowserWebSocketTransport({ userDataDir: directory, testPort: 43128 })
   let accepted = 0
@@ -28,6 +28,7 @@ it('requires both matching confirmations, authenticates reconnect and encrypts b
       stream.write('{"type":"ready"}\n')
       stream.on('data', () => {})
     })
+    transport.openEnrollment()
     const ws = new WebSocket('ws://127.0.0.1:43128/ws', {
       origin: `chrome-extension://${OFFICIAL_BROWSER_EXTENSION_ID}`,
     })
@@ -47,29 +48,24 @@ it('requires both matching confirmations, authenticates reconnect and encrypts b
     const client = await createPairingHello('client')
     ws.send(
       JSON.stringify({
-        type: 'pair_commit',
+        type: 'enroll_commit',
         commitment: await commitPairingHello(client.hello, 'client'),
       }),
     )
     const commitment = await next()
-    ws.send(JSON.stringify({ type: 'pair_hello', hello: client.hello }))
+    ws.send(JSON.stringify({ type: 'enroll_hello', hello: client.hello }))
     const offer = await next()
     expect(await verifyPairingCommitment(offer.hello, 'server', commitment.commitment)).toBe(true)
     const derived = await finishPairing(client.state, offer.hello)
-    expect(transport.status().pairing?.code).toBe(derived.sas)
-    await expect(transport.approvePairing(derived.pairingId, '000000')).rejects.toThrow()
-    await transport.approvePairing(derived.pairingId, derived.sas)
     expect(accepted).toBe(0)
     expect(transport.status().paired).toBe(false)
     expect(fs.existsSync(path.join(directory, 'browser-user', 'pairing.json'))).toBe(false)
-    await expect(transport.approvePairing('different-candidate', derived.sas)).rejects.toThrow()
-    // Human code comparison may take longer than the initial 5-second handshake window.
-    await new Promise((resolve) => setTimeout(resolve, 5100))
-    ws.send(JSON.stringify({ type: 'pair_confirm', pairingId: derived.pairingId }))
-    expect((await next()).type).toBe('pair_complete')
-    await new Promise((resolve) => setTimeout(resolve, 1200))
+    ws.send(JSON.stringify({ type: 'enroll_accept', enrollmentId: derived.pairingId }))
+    expect((await next()).type).toBe('enroll_complete')
     expect(ws.readyState).toBe(WebSocket.OPEN)
     expect(transport.status().paired).toBe(true)
+    transport.openEnrollment()
+    expect(transport.status().enrollmentExpiresAt).toBe(null)
     const c = createNonce()
     ws.send(JSON.stringify({ type: 'auth_hello', clientNonce: c }))
     const challenge = await next()
@@ -136,8 +132,7 @@ it('requires both matching confirmations, authenticates reconnect and encrypts b
     expect(fs.existsSync(path.join(directory, 'browser-user', 'pairing.json'))).toBe(false)
     await transport.stop()
     await closed
-    expect(transport.status().pairing).toBe(null)
-    await expect(transport.approvePairing(derived.pairingId, derived.sas)).rejects.toThrow()
+    expect(transport.status().enrollmentExpiresAt).toBe(null)
   } finally {
     await transport.stop()
     fs.rmSync(directory, { recursive: true, force: true })
@@ -162,7 +157,7 @@ it('rejects foreign Origin and URL paths before any pairing state exists', async
       const ws = new WebSocket(url!, { origin })
       ws.on('error', () => {})
       await new Promise<void>((resolve) => ws.once('close', () => resolve()))
-      expect(transport.status()).toEqual({ paired: false, pairing: null })
+      expect(transport.status()).toEqual({ paired: false, enrollmentExpiresAt: null })
     }
   } finally {
     await transport.stop()
@@ -171,17 +166,23 @@ it('rejects foreign Origin and URL paths before any pairing state exists', async
 })
 
 it.skipIf(process.platform === 'win32')(
-  'refuses symlinked pairing storage without reading the target',
-  () => {
+  'refuses symlinked pairing storage without reading or deleting the target',
+  async () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'lumi-ws-storage-'))
     try {
       fs.mkdirSync(path.join(directory, 'browser-user'), { mode: 0o700 })
       const target = path.join(directory, 'target')
       fs.writeFileSync(target, '{}')
       fs.symlinkSync(target, path.join(directory, 'browser-user', 'pairing.json'))
+      const transport = new BrowserWebSocketTransport({ userDataDir: directory, testPort: 43128 })
+      await expect(transport.start(() => {})).rejects.toMatchObject({
+        code: 'pairing_storage_unsafe',
+      })
+      await expect(transport.resetPairing()).rejects.toMatchObject({ code: 'pairing_reset_failed' })
+      expect(fs.readFileSync(target, 'utf8')).toBe('{}')
       expect(
-        () => new BrowserWebSocketTransport({ userDataDir: directory, testPort: 43128 }),
-      ).toThrow('unsafe')
+        fs.lstatSync(path.join(directory, 'browser-user', 'pairing.json')).isSymbolicLink(),
+      ).toBe(true)
     } finally {
       fs.rmSync(directory, { recursive: true, force: true })
     }
@@ -235,43 +236,90 @@ it('rejects wrong, reflected and previous-connection client proofs without accep
   }
 })
 
-it('expired pairing approval and disconnected candidate cannot persist credentials', async () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'lumi-ws-expiry-'))
+it.each(['restore', 'expired', 'reset', 'reopen', 'stop', 'legacy_ack'] as const)(
+  'does not pin an unapproved enrollment after %s',
+  async (reason) => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'lumi-ws-window-'))
+    const transport = new BrowserWebSocketTransport({ userDataDir: directory, testPort: 43128 })
+    try {
+      await transport.start(() => {
+        throw new Error('unexpected authentication')
+      })
+      if (reason !== 'restore') transport.openEnrollment()
+      const ws = new WebSocket('ws://127.0.0.1:43128/ws', {
+        origin: `chrome-extension://${OFFICIAL_BROWSER_EXTENSION_ID}`,
+      })
+      await once(ws, 'open')
+      const client = await createPairingHello('client')
+      if (reason === 'restore') {
+        const closed = once(ws, 'close')
+        ws.send(
+          JSON.stringify({
+            type: 'enroll_commit',
+            commitment: await commitPairingHello(client.hello, 'client'),
+          }),
+        )
+        await closed
+      } else {
+        let pending = once(ws, 'message')
+        ws.send(
+          JSON.stringify({
+            type: 'enroll_commit',
+            commitment: await commitPairingHello(client.hello, 'client'),
+          }),
+        )
+        await pending
+        pending = once(ws, 'message')
+        ws.send(JSON.stringify({ type: 'enroll_hello', hello: client.hello }))
+        const offer = JSON.parse(String((await pending)[0])) as {
+          hello: unknown
+          expiresAt: number
+          enrollmentId: string
+        }
+        const closed = once(ws, 'close')
+        if (reason === 'expired') {
+          const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 120_001)
+          try {
+            ws.send(JSON.stringify({ type: 'enroll_accept', enrollmentId: offer.enrollmentId }))
+            await closed
+          } finally {
+            clock.mockRestore()
+          }
+        } else {
+          if (reason === 'legacy_ack')
+            ws.send(JSON.stringify({ type: 'pair_confirm', pairingId: offer.enrollmentId }))
+          if (reason === 'reset') await transport.resetPairing()
+          if (reason === 'reopen') transport.openEnrollment()
+          if (reason === 'stop') await transport.stop()
+          await closed
+        }
+      }
+      expect(transport.status().paired).toBe(false)
+      expect(fs.existsSync(path.join(directory, 'browser-user', 'pairing.json'))).toBe(false)
+    } finally {
+      await transport.stop()
+      fs.rmSync(directory, { recursive: true, force: true })
+    }
+  },
+)
+
+it('explicit reset repairs a corrupt owned private pin without automatic enrollment', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'lumi-pin-repair-'))
+  fs.mkdirSync(path.join(directory, 'browser-user'), { mode: 0o700 })
+  fs.writeFileSync(path.join(directory, 'browser-user', 'pairing.json'), 'not-json', {
+    mode: 0o600,
+  })
   const transport = new BrowserWebSocketTransport({ userDataDir: directory, testPort: 43128 })
   try {
-    await transport.start(() => {
-      throw new Error('unexpected authentication')
+    await expect(transport.start(() => {})).rejects.toMatchObject({
+      code: 'pairing_storage_unsafe',
     })
-    const ws = new WebSocket('ws://127.0.0.1:43128/ws', {
-      origin: `chrome-extension://${OFFICIAL_BROWSER_EXTENSION_ID}`,
-    })
-    await once(ws, 'open')
-    const client = await createPairingHello('client')
-    let pending = once(ws, 'message')
-    ws.send(
-      JSON.stringify({
-        type: 'pair_commit',
-        commitment: await commitPairingHello(client.hello, 'client'),
-      }),
-    )
-    await pending
-    pending = once(ws, 'message')
-    ws.send(JSON.stringify({ type: 'pair_hello', hello: client.hello }))
-    const offer = JSON.parse(String((await pending)[0])) as { hello: unknown; expiresAt: number }
-    const derived = await finishPairing(client.state, offer.hello)
-    const clock = vi.spyOn(Date, 'now').mockReturnValue(offer.expiresAt + 1)
-    try {
-      await expect(transport.approvePairing(derived.pairingId, derived.sas)).rejects.toThrow()
-    } finally {
-      clock.mockRestore()
-    }
-    const closed = once(ws, 'close')
-    ws.close()
-    await closed
-    // The client's close event can precede the server's FIN/close callback.
-    await vi.waitFor(() => expect(transport.status().pairing).toBe(null))
-    await expect(transport.approvePairing(derived.pairingId, derived.sas)).rejects.toThrow()
-    expect(fs.existsSync(path.join(directory, 'browser-user', 'pairing.json'))).toBe(false)
+    expect(() => transport.openEnrollment()).toThrow()
+    await transport.resetPairing()
+    await transport.start(() => {})
+    expect(transport.status().enrollmentExpiresAt).toBe(null)
+    transport.openEnrollment()
+    expect(transport.status().enrollmentExpiresAt).not.toBe(null)
   } finally {
     await transport.stop()
     fs.rmSync(directory, { recursive: true, force: true })

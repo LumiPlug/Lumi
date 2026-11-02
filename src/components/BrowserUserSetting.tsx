@@ -8,14 +8,12 @@ import type {
 } from '@lumiplug/shared'
 import { OFFICIAL_BROWSER_EXTENSION_ID } from '@lumiplug/shared'
 import { t, useLocale } from '../i18n'
-import { Badge, Button, DataText, FieldGroup, Checkbox, Input, Select, Modal, Tooltip } from './ui'
+import { Badge, Button, DataText, FieldGroup, Input, Select, Modal, Tooltip } from './ui'
 import ConfirmationDialog from './ConfirmationDialog'
 import { useToast } from './ToastProvider'
 import {
   browserUserConnectionActive,
   browserUserCanResetPairing,
-  browserPairingCanApprove,
-  browserUserNeedsConsent,
   browserUserErrorHint,
   browserUserIssueHint,
   browserUserRequest,
@@ -95,6 +93,11 @@ export function BrowserUserPrimaryActions({
           {t('检查连接')}
         </Button>
       )}
+      <Tooltip label={t('浏览器控制')} icon="help">
+        {t(
+          '点击检查连接即允许控制普通 HTTP(S) 网页，禁止项除外。首次连接自动记住本机对端；请在可信环境中连接。Chrome 权限仍需批准。',
+        )}
+      </Tooltip>
     </div>
   )
 }
@@ -167,7 +170,6 @@ type RuleEdit = {
 }
 type Pending = {
   request: BrowserUserActionRequest
-  pairing?: { id: string; code: string; expiresAt: string }
 }
 export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreStatus }) {
   useLocale()
@@ -182,7 +184,6 @@ export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreS
   const [connectionIntent, setConnectionIntent] = useState(false)
   const [busy, setBusy] = useState<BrowserUserActionRequest['action'] | null>(null)
   const [confirmation, setConfirmation] = useState<Pending | null>(null)
-  const [pairingConfirmed, setPairingConfirmed] = useState(false)
   const trigger = useRef<HTMLButtonElement | null>(null)
   const listRef = useRef<HTMLDivElement | null>(null)
   const reading = useRef(false)
@@ -205,7 +206,7 @@ export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreS
       const next = await getBrowserUserStatus()
       if (!mounted.current || request !== sequence.current) return
       setStatus(next)
-      setConnectionIntent(next.enabled || next.connectedHosts > 0)
+      setConnectionIntent(false)
     } catch (error) {
       if (!mounted.current || request !== sequence.current) return
       setStatus(null)
@@ -246,7 +247,7 @@ export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreS
       const next = await performBrowserUserAction(request)
       if (!mounted.current || current !== sequence.current) return
       setStatus(next)
-      setConnectionIntent(next.enabled || next.connectedHosts > 0)
+      setConnectionIntent(false)
       setErrorHint(null)
       if (request.action === 'setPageRules') {
         setEdit(null)
@@ -278,16 +279,11 @@ export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreS
       const next = await getBrowserUserStatus()
       if (!mounted.current || current !== sequence.current) return
       setStatus(next)
-      if (browserUserNeedsConsent(next)) {
-        setPairingConfirmed(false)
-        setConfirmation({
-          request: browserUserRequest('enable', OFFICIAL_BROWSER_EXTENSION_ID, true, {
-            scopeConfirmed: true,
-          }),
-        })
-      } else {
-        void perform(browserUserRequest('enable', OFFICIAL_BROWSER_EXTENSION_ID, true))
-      }
+      // The click is the explicit product-level scope consent; opening this
+      // panel or polling status never sends an enable request.
+      void perform(
+        browserUserRequest('enable', OFFICIAL_BROWSER_EXTENSION_ID, true, { scopeConfirmed: true }),
+      )
     } catch (error) {
       if (mounted.current && current === sequence.current) {
         const hint = browserUserErrorHint(error)
@@ -425,30 +421,6 @@ export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreS
                 </Button>
               </div>
             )}
-            {status?.pairing && (
-              <div className="browser-user-status">
-                <DataText mono>
-                  {t('配对码')}: {status.pairing.code}
-                </DataText>
-                <Button
-                  disabled={busy !== null}
-                  onClick={() => {
-                    const pairing = status.pairing
-                    if (!pairing) return
-                    setPairingConfirmed(false)
-                    setConfirmation({
-                      request: browserUserRequest('approvePairing', undefined, true, {
-                        pairingId: pairing.id,
-                        pairingCode: pairing.code,
-                      }),
-                      pairing: { ...pairing },
-                    })
-                  }}
-                >
-                  {t('核对配对码')}
-                </Button>
-              </div>
-            )}
             <FieldGroup label={t('网页权限')}>
               <div className="browser-user-status">
                 <Button
@@ -550,22 +522,10 @@ export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreS
       )}
       {confirmation && (
         <ConfirmationDialog
-          title={
-            confirmation.request.action === 'setPageRules'
-              ? t('保存网页规则')
-              : confirmation.request.action === 'resetPairing'
-                ? t('重新配对')
-                : confirmation.pairing
-                  ? t('核对配对码')
-                  : t('连接浏览器')
-          }
+          title={confirmation.request.action === 'resetPairing' ? t('重新配对') : t('保存网页规则')}
           confirmLabel={t('确认')}
           busy={busy !== null}
-          disabled={
-            !coreReady ||
-            (!!confirmation.pairing &&
-              !browserPairingCanApprove(status?.pairing, confirmation.pairing, pairingConfirmed))
-          }
+          disabled={!coreReady}
           cancel={() => {
             if (!lock.current) setConfirmation(null)
           }}
@@ -578,33 +538,9 @@ export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreS
           }}
         >
           {confirmation.request.action === 'resetPairing' ? (
-            <p>{t('撤销此 Lumi 的旧配对并关闭连接。之后请检查连接，再与插件核对新的配对码。')}</p>
-          ) : confirmation.pairing ? (
-            <>
-              <DataText mono>{confirmation.pairing.code}</DataText>
-              <Checkbox
-                label={t('此配对码与 Chrome 插件中显示的相同')}
-                checked={pairingConfirmed}
-                onChange={(event) => setPairingConfirmed(event.target.checked)}
-                disabled={busy !== null}
-              />
-              <DataText muted>
-                {t('仅确认你正在使用的插件。配对码过期或不同，请取消后重新连接。')}
-              </DataText>
-            </>
-          ) : confirmation.request.action === 'setPageRules' ? (
-            <p>{t('保存后立即生效，禁止的网页操作将停止。')}</p>
+            <p>{t('撤销此 Lumi 的已保存连接信任并关闭连接。之后请在可信环境中重新检查连接。')}</p>
           ) : (
-            <>
-              <p>
-                {t(
-                  '连接官方插件并允许控制普通 HTTP(S) 网页，禁止项除外；Chrome 仍需确认插件权限。',
-                )}
-              </p>
-              <Tooltip label={t('浏览器控制')} icon="help">
-                {t('所有连接到 Lumi 的 Agent 共享浏览器控制。')}
-              </Tooltip>
-            </>
+            <p>{t('保存后立即生效，禁止的网页操作将停止。')}</p>
           )}
         </ConfirmationDialog>
       )}

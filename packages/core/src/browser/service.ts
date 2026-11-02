@@ -4,7 +4,7 @@ import type { Duplex } from 'node:stream'
 import { randomUUID } from 'node:crypto'
 import { BrowserWebSocketTransport } from './websocket-transport'
 import { BROWSER_WEBSOCKET_ENDPOINT } from './transport-types'
-import type { BrowserTransport, BrowserPairing } from './transport-types'
+import type { BrowserTransport } from './transport-types'
 import {
   BrowserError,
   BrowserFrames,
@@ -36,7 +36,7 @@ export interface BrowserStatus {
   transport: 'loopback-websocket'
   endpoint: string
   paired: boolean
-  pairing: BrowserPairing | null
+  enrollmentExpiresAt: string | null
 }
 interface PageContext {
   tabId: number
@@ -123,11 +123,6 @@ export class BrowserService {
     await this.transport.resetPairing()
   }
 
-  async approvePairing(id: string, code: string): Promise<void> {
-    if (!this.enabled) throw new BrowserError('browser_disabled', 'Browser User is closed')
-    await this.transport.approvePairing(id, code)
-  }
-
   diagnose(): BrowserStatus {
     return this.status()
   }
@@ -182,6 +177,7 @@ export class BrowserService {
   start(
     extensionId = this.extensionId ?? '',
     blockedUrls: string[] = this.blockedUrls,
+    options: { enroll?: boolean } = {},
   ): Promise<void> {
     const normalized = normalizeBrowserBlockedUrls(blockedUrls)
     const activation = this.activationEpoch
@@ -194,7 +190,10 @@ export class BrowserService {
       .then(async () => {
         if (activation !== this.activationEpoch) return
         this.setBlockedUrls(normalized)
-        if (this.enabled && this.extensionId === extensionId) return
+        if (this.enabled && this.extensionId === extensionId) {
+          if (options.enroll) this.transport.openEnrollment()
+          return
+        }
         await this.stopInternal()
         if (activation !== this.activationEpoch) return
         this.extensionId = extensionId
@@ -209,6 +208,7 @@ export class BrowserService {
             return
           }
           this.enabled = true
+          if (options.enroll) this.transport.openEnrollment()
         } catch (error) {
           await this.stopInternal()
           throw error

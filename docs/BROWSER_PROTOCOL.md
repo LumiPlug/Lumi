@@ -6,7 +6,7 @@ is started. Existing Lumi MCP transports are unchanged.
 
 ## Trust and lifecycle
 
-The desktop host alone may enable, disable, approve, or reset pairing. Existing
+The desktop host alone may enable, disable, or explicitly reset stored credentials. Existing
 MCP callers cannot grant those permissions. The listener requires the exact Host,
 path (no query), and official `chrome-extension://hfhigjgopbjmojflbhhnahpfpnmiaman`
 Origin. Origin is browser CSRF defense, not authentication of local executables.
@@ -14,18 +14,30 @@ Opening settings diagnoses only; explicit connection enables the listener.
 Disabling closes sockets, invalidates sessions and pending work, and does not
 permit extension retries to enable it again.
 
-## First pairing
+## First connection: trust on first use (TOFU)
 
-1. Both peers generate fresh P-256 ECDH keys and 32-byte nonces.
-2. Exchange role-bound SHA-256 commitments before revealing the public keys and
-   nonces. Verify each revelation against its commitment.
-3. Derive the pairing secret and six-digit SAS using HKDF over the shared ECDH
-   value and canonical transcript. Display the same SAS in Lumi and the extension.
-4. The user must confirm both displays. Approval names the exact candidate ID and
-   code, bound to a live socket and expiring candidate, never a future candidate.
-5. Core stores the credential only after both confirmations. The extension stores
-   its credential only after verifying the server proof in the next handshake.
-   A partial storage failure requires explicit re-pairing, not silent replacement.
+Clicking Connect is the explicit local enable action. It opens a bounded 120-second
+enrollment window in Core, bound to the current listener lifecycle. Opening settings
+only diagnoses. Startup restoration without a stored credential does not open
+registration; the user must click Connect. Only one enrollment candidate is accepted
+at a time; timeout, closing, or a newer explicit connection attempt cancels the old
+candidate. Success closes enrollment.
+
+Both peers exchange role-bound commitments, then fresh P-256 public keys and
+nonces. The protocol automatically derives and pins a shared secret after the
+transcript is consistent. There is **no displayed short code, human code approval,
+or pre-existing identity anchor**. ECDH proves possession of the peer's fresh key,
+not that the peer is the intended Lumi or extension. The initial connection can be
+intercepted or impersonated by a local program able to claim the loopback port or
+forge an extension Origin. TOFU explicitly does not protect against that adversary.
+Ordinary browser pages and other extension Origins remain blocked.
+
+Core and extension retain the credential for subsequent mutual proof verification.
+The extension persists only after verifying the server proof; this is confirmation
+of the just-established TOFU key, not independent first-contact authentication.
+Existing valid credentials from earlier versions remain valid. A failed proof never
+automatically deletes a pin or re-enters enrollment. Partial persistence or profile
+changes require explicit recovery, not silent replacement.
 
 ## Reconnection and messages
 
@@ -53,8 +65,9 @@ Windows relies on the user's data-directory ACL. Extension credential access is
 limited to trusted extension contexts. Credentials are never put in URLs, logs,
 status responses, source control, or MCP output. This does not defend against
 malware able to read the same user's credential files or local denial of service.
-Explicit re-pairing invalidates the old connection and requires a new two-display
-confirmation; it must not auto-replace a credential after an authentication error.
+Explicit credential reset invalidates the old connection; a new explicit Connect
+action opens a fresh TOFU window. Authentication failure never automatically replaces
+a stored credential. Browser-required permission prompts remain under user control.
 
 Implementation: `packages/core/src/browser/secure-crypto.ts`,
 `websocket-transport.ts`, `service.ts`, `controller.ts`; extension counterparts

@@ -66,15 +66,18 @@ class FakeSocket extends Duplex {
 async function fixture() {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'lumi-browser-core-'))
   let handler: (socket: Duplex) => void = () => {}
+  let enrollmentCalls = 0
   const transport = {
     async start(listener: (socket: Duplex) => void) {
       handler = listener
     },
     async stop() {},
     status() {
-      return { paired: true, pairing: null }
+      return { paired: true, enrollmentExpiresAt: null }
     },
-    async approvePairing() {},
+    openEnrollment() {
+      enrollmentCalls++
+    },
     async resetPairing() {},
   }
   const service = new BrowserService({
@@ -96,6 +99,9 @@ async function fixture() {
   }
   return {
     service,
+    get enrollmentCalls() {
+      return enrollmentCalls
+    },
     directory,
     host,
     async stop() {
@@ -619,5 +625,46 @@ it('disable supersedes an already queued enable before it can accept transport i
     expect(context.service.status().connectedHosts).toBe(0)
   } finally {
     await context.stop()
+  }
+})
+
+it('opens enrollment only for explicit enable, including an already-running listener', async () => {
+  const context = await fixture()
+  try {
+    await context.service.start(extensionId)
+    expect(context.enrollmentCalls).toBe(0)
+    await context.service.start(extensionId, [], { enroll: true })
+    expect(context.enrollmentCalls).toBe(1)
+    const start = context.service.start(extensionId, [], { enroll: true })
+    const close = context.service.disable()
+    await Promise.all([start, close])
+    expect(context.enrollmentCalls).toBe(1)
+  } finally {
+    await context.stop()
+  }
+})
+
+it('corrupt private pin isolates Browser User without preventing Core diagnostics', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'lumi-bad-pin-'))
+  fs.mkdirSync(path.join(directory, 'browser-user'), { mode: 0o700 })
+  const file = path.join(directory, 'browser-user', 'pairing.json')
+  fs.writeFileSync(file, '{invalid', { mode: 0o600 })
+  const service = new BrowserService({ userDataDir: directory })
+  try {
+    expect(service.diagnose()).toMatchObject({
+      enabled: false,
+      paired: false,
+      enrollmentExpiresAt: null,
+    })
+    await expect(service.start(extensionId, [], { enroll: true })).rejects.toMatchObject({
+      code: 'pairing_storage_unsafe',
+    })
+    expect(service.diagnose()).toMatchObject({ enabled: false, enrollmentExpiresAt: null })
+    await service.resetPairing()
+    expect(fs.existsSync(file)).toBe(false)
+    expect(service.diagnose().enabled).toBe(false)
+  } finally {
+    await service.close()
+    fs.rmSync(directory, { recursive: true, force: true })
   }
 })

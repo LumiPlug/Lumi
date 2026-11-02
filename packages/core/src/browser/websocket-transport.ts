@@ -8,7 +8,7 @@ import { Duplex } from 'node:stream'
 import { WebSocket, WebSocketServer } from 'ws'
 import { OFFICIAL_BROWSER_EXTENSION_ID } from '@lumiplug/shared'
 import { BrowserError, isRecord } from './protocol'
-import type { BrowserPairing, BrowserTransport } from './transport-types'
+import type { BrowserTransport } from './transport-types'
 import {
   createNonce,
   createPairingHello,
@@ -41,11 +41,9 @@ interface Peer {
 interface Candidate {
   peer: Peer
   id: string
-  code: string
   secret: string
   expiresAt: number
-  local: boolean
-  remote: boolean
+  generation: number
 }
 
 /** Fixed-loopback listener. Origin filtering is defense in depth, not local-user authentication. */
@@ -55,8 +53,11 @@ export class BrowserWebSocketTransport implements BrowserTransport {
   private readonly peers = new Set<Peer>()
   private candidate?: Candidate
   private secret?: string
+  private storageError?: BrowserError
   private generation = 0
   private lastPairAt = 0
+  private enrollmentDeadline = 0
+  private enrollmentGeneration = 0
   private accept?: (stream: Duplex) => void
   private readonly directory: string
   private readonly file: string
@@ -82,7 +83,7 @@ export class BrowserWebSocketTransport implements BrowserTransport {
       this.secret = data.secret
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
-        throw new BrowserError(
+        this.storageError = new BrowserError(
           'pairing_storage_unsafe',
           'Browser pairing storage is invalid or unsafe',
         )
@@ -104,18 +105,31 @@ export class BrowserWebSocketTransport implements BrowserTransport {
       throw new Error('unsafe permissions')
   }
 
-  status(): { paired: boolean; pairing: BrowserPairing | null } {
-    const c = this.candidate
+  status(): { paired: boolean; enrollmentExpiresAt: string | null } {
     return {
       paired: Boolean(this.secret),
-      pairing:
-        c && c.expiresAt > Date.now()
-          ? { id: c.id, code: c.code, expiresAt: new Date(c.expiresAt).toISOString() }
+      enrollmentExpiresAt:
+        this.enrollmentDeadline > Date.now() && !this.secret
+          ? new Date(this.enrollmentDeadline).toISOString()
           : null,
     }
   }
 
+  /** Explicit host enable only. TOFU cannot authenticate the first local peer's identity. */
+  openEnrollment(): void {
+    if (this.storageError) throw this.storageError
+    if (this.secret) return
+    if (!this.server?.listening)
+      throw new BrowserError('browser_disabled', 'Browser listener is closed')
+    // A fresh explicit action invalidates any older unauthenticated candidate.
+    for (const peer of [...this.peers]) if (peer.phase !== 'secure') this.drop(peer)
+    this.enrollmentGeneration++
+    this.enrollmentDeadline = Date.now() + 120_000
+    this.lastPairAt = 0
+  }
+
   async start(accept: (stream: Duplex) => void): Promise<void> {
+    if (this.storageError) throw this.storageError
     if (this.server) return
     this.accept = accept
     const generation = ++this.generation
@@ -165,6 +179,8 @@ export class BrowserWebSocketTransport implements BrowserTransport {
   async stop(): Promise<void> {
     ++this.generation
     this.candidate = undefined
+    this.enrollmentDeadline = 0
+    this.enrollmentGeneration++
     this.accept = undefined
     for (const peer of [...this.peers]) this.drop(peer)
     const server = this.server
@@ -176,6 +192,8 @@ export class BrowserWebSocketTransport implements BrowserTransport {
 
   async resetPairing(): Promise<void> {
     // A host-confirmed local operation only: never automatic on authentication failure.
+    this.enrollmentDeadline = 0
+    this.enrollmentGeneration++
     this.candidate = undefined
     for (const peer of [...this.peers]) this.drop(peer)
     try {
@@ -187,28 +205,16 @@ export class BrowserWebSocketTransport implements BrowserTransport {
         throw new BrowserError('pairing_reset_failed', 'Unable to remove private browser pairing')
     }
     this.secret = undefined
+    this.storageError = undefined
     this.lastPairAt = 0
   }
 
-  async approvePairing(id: string, code: string): Promise<void> {
-    const c = this.candidate
-    if (
-      !c ||
-      c.id !== id ||
-      c.code !== code ||
-      c.expiresAt <= Date.now() ||
-      !this.peers.has(c.peer) ||
-      c.peer.ws.readyState !== WebSocket.OPEN
-    )
-      throw new BrowserError('pairing_expired', 'Pairing candidate changed or expired')
-    c.local = true
-    this.completePair(c)
-  }
-
   private completePair(c: Candidate): void {
-    if (!c.local || !c.remote) return
     if (
       this.candidate !== c ||
+      this.secret !== undefined ||
+      this.enrollmentDeadline <= Date.now() ||
+      c.generation !== this.enrollmentGeneration ||
       c.expiresAt <= Date.now() ||
       !this.peers.has(c.peer) ||
       c.peer.ws.readyState !== WebSocket.OPEN
@@ -232,10 +238,11 @@ export class BrowserWebSocketTransport implements BrowserTransport {
       }
     }
     this.secret = c.secret
+    this.enrollmentDeadline = 0
     this.candidate = undefined
     c.peer.phase = 'hello'
     c.peer.alive = Date.now()
-    this.send(c.peer, { type: 'pair_complete', pairingId: c.id })
+    this.send(c.peer, { type: 'enroll_complete', enrollmentId: c.id })
   }
 
   private connect(ws: WebSocket, generation: number): void {
@@ -252,7 +259,7 @@ export class BrowserWebSocketTransport implements BrowserTransport {
       lastPing: Date.now(),
       timer: setInterval(() => {
         if (peer.phase !== 'secure') {
-          if (Date.now() - peer.alive > (peer.phase === 'pairing' ? 60_000 : 5000)) this.drop(peer)
+          if (Date.now() - peer.alive > 5000) this.drop(peer)
         } else if (Date.now() - peer.alive > 30_000) this.drop(peer)
         else if (Date.now() - peer.lastPing >= 20_000) {
           peer.lastPing = Date.now()
@@ -320,7 +327,7 @@ export class BrowserWebSocketTransport implements BrowserTransport {
     }
     if (
       peer.phase === 'hello' &&
-      ((message.type === 'pair_commit' && this.secret) ||
+      ((message.type === 'enroll_commit' && this.secret) ||
         (message.type === 'auth_hello' && !this.secret))
     ) {
       peer.ws.send(JSON.stringify({ type: 'auth_error', code: 'pairing_required' }), () =>
@@ -328,9 +335,10 @@ export class BrowserWebSocketTransport implements BrowserTransport {
       )
       return
     }
-    if (peer.phase === 'hello' && message.type === 'pair_commit') {
+    if (peer.phase === 'hello' && message.type === 'enroll_commit') {
       if (
         this.secret ||
+        this.enrollmentDeadline <= Date.now() ||
         this.candidate ||
         Date.now() - this.lastPairAt < 5000 ||
         typeof message.commitment !== 'string' ||
@@ -344,12 +352,12 @@ export class BrowserWebSocketTransport implements BrowserTransport {
       peer.commitment = message.commitment
       peer.pairingState = local.state
       peer.phase = 'committed'
-      this.send(peer, { type: 'pair_commit', commitment })
+      this.send(peer, { type: 'enroll_commit', commitment })
       return
     }
     if (
       peer.phase === 'committed' &&
-      message.type === 'pair_hello' &&
+      message.type === 'enroll_hello' &&
       peer.pairingState &&
       peer.commitment
     ) {
@@ -361,27 +369,24 @@ export class BrowserWebSocketTransport implements BrowserTransport {
       const c: Candidate = {
         peer,
         id: derived.pairingId,
-        code: derived.sas,
         secret: derived.sharedSecret,
-        expiresAt: Date.now() + 60_000,
-        local: false,
-        remote: false,
+        expiresAt: Math.min(Date.now() + 5000, this.enrollmentDeadline),
+        generation: this.enrollmentGeneration,
       }
       this.candidate = c
       peer.phase = 'pairing'
       this.send(peer, {
-        type: 'pair_offer',
+        type: 'enroll_offer',
         hello: local.hello,
-        pairingId: c.id,
+        enrollmentId: c.id,
         expiresAt: c.expiresAt,
       })
       return
     }
-    if (peer.phase === 'pairing' && message.type === 'pair_confirm') {
+    if (peer.phase === 'pairing' && message.type === 'enroll_accept') {
       const c = this.candidate
-      if (!c || c.peer !== peer || c.id !== message.pairingId || c.expiresAt <= Date.now())
+      if (!c || c.peer !== peer || c.id !== message.enrollmentId || c.expiresAt <= Date.now())
         throw new Error('pair expired')
-      c.remote = true
       this.completePair(c)
       return
     }

@@ -211,19 +211,11 @@ export class BrowserUserController {
             'blockedUrls',
             'pageRules',
             'expectedRulesRevision',
-            'pairingId',
-            'pairingCode',
           ].includes(key),
       ) ||
-      ![
-        'enable',
-        'disable',
-        'diagnose',
-        'approvePairing',
-        'resetPairing',
-        'setBlockedUrls',
-        'setPageRules',
-      ].includes(request.action)
+      !['enable', 'disable', 'diagnose', 'resetPairing', 'setBlockedUrls', 'setPageRules'].includes(
+        request.action,
+      )
     )
       throw new Error('browser_action_invalid')
     if (request.action !== 'diagnose' && request.confirmed !== true)
@@ -238,20 +230,9 @@ export class BrowserUserController {
       (request.expectedRulesRevision !== undefined &&
         (!['setPageRules', 'setBlockedUrls'].includes(request.action) ||
           !Number.isSafeInteger(request.expectedRulesRevision) ||
-          request.expectedRulesRevision < 0)) ||
-      (request.action !== 'approvePairing' &&
-        (request.pairingId !== undefined || request.pairingCode !== undefined))
+          request.expectedRulesRevision < 0))
     )
       throw new Error('browser_action_invalid')
-    if (
-      request.action === 'approvePairing' &&
-      (typeof request.pairingId !== 'string' ||
-        !request.pairingId ||
-        request.pairingId.length > 128 ||
-        typeof request.pairingCode !== 'string' ||
-        !/^\d{6}$/.test(request.pairingCode))
-    )
-      throw new Error('browser_pairing_invalid')
   }
   public action(request: BrowserUserActionRequest): Promise<BrowserUserStatus> {
     if (this.closing) return Promise.reject(new Error('browser_stopping'))
@@ -330,17 +311,6 @@ export class BrowserUserController {
       }
       return this.status()
     }
-    if (request.action === 'approvePairing') {
-      if (
-        !this.preference.enabled ||
-        this.requiresAuthorization() ||
-        !this.browser.status().enabled
-      )
-        throw new Error('browser_disabled')
-      await this.browser.approvePairing(request.pairingId!, request.pairingCode!)
-      this.assertActivation(generation)
-      return this.status()
-    }
     const id = request.extensionId ?? OFFICIAL_BROWSER_EXTENSION_ID
     if (!validId(id)) throw new Error('browser_extension_id_invalid')
     if (id !== OFFICIAL_BROWSER_EXTENSION_ID) throw new Error('browser_extension_id_not_official')
@@ -352,13 +322,21 @@ export class BrowserUserController {
       extensionId: id,
       consentVersion: BROWSER_SCOPE_CONSENT_VERSION,
     }
-    if (this.browser.status().enabled && this.preference.enabled && !this.requiresAuthorization())
+    if (this.browser.status().enabled && this.preference.enabled && !this.requiresAuthorization()) {
+      try {
+        await this.browser.start(id, this.preference.blockedUrls, { enroll: true })
+        this.assertActivation(generation)
+      } catch (error) {
+        await this.browser.disable()
+        throw error
+      }
       return this.status()
+    }
     // Persist a disabled state before opening the listener. A failed start/save
     // cannot leave an unintended enabled preference or a reachable listener.
     this.save({ ...next, enabled: false })
     try {
-      await this.browser.start(id, this.preference.blockedUrls)
+      await this.browser.start(id, this.preference.blockedUrls, { enroll: true })
       this.assertActivation(generation)
       this.save(next)
     } catch (error) {

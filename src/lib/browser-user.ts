@@ -25,10 +25,18 @@ export function browserUserRequest(
     blockedUrls?: string[]
     pageRules?: BrowserPageRule[]
     expectedRulesRevision?: number
-    pairingId?: string
-    pairingCode?: string
   } = {},
 ): BrowserUserActionRequest {
+  if (
+    !['enable', 'disable', 'diagnose', 'resetPairing', 'setBlockedUrls', 'setPageRules'].includes(
+      action,
+    ) ||
+    Object.keys(options).some(
+      (key) =>
+        !['scopeConfirmed', 'blockedUrls', 'pageRules', 'expectedRulesRevision'].includes(key),
+    )
+  )
+    throw new Error('invalid_browser_user_payload')
   if (action !== 'diagnose' && confirmed !== true)
     throw new Error('browser_user_confirmation_required')
   const writesIdentity = action === 'enable'
@@ -63,23 +71,8 @@ export function browserUserRequest(
       throw new Error('invalid_browser_page_rules')
     expectedRulesRevision = options.expectedRulesRevision
   }
-  if (action === 'approvePairing') {
-    if (
-      typeof options.pairingId !== 'string' ||
-      !options.pairingId ||
-      options.pairingId.length > 128 ||
-      typeof options.pairingCode !== 'string' ||
-      !options.pairingCode ||
-      !/^\d{6}$/.test(options.pairingCode)
-    )
-      throw new Error('browser_pairing_invalid')
-  } else if (options.pairingId !== undefined || options.pairingCode !== undefined)
-    throw new Error('invalid_browser_user_payload')
   return {
     action,
-    ...(action === 'approvePairing'
-      ? { pairingId: options.pairingId, pairingCode: options.pairingCode }
-      : {}),
     ...(action === 'enable' && options.scopeConfirmed !== undefined
       ? { scopeConfirmed: options.scopeConfirmed }
       : {}),
@@ -102,7 +95,13 @@ export function browserUserConnectionActive(
   status: BrowserUserStatus | null,
   connecting = false,
 ): boolean {
-  return connecting || !!status?.enabled || (status?.connectedHosts ?? 0) > 0
+  return (
+    connecting ||
+    (status?.connectedHosts ?? 0) > 0 ||
+    (!!status?.enabled &&
+      (status.paired ||
+        (!!status.enrollmentExpiresAt && Date.parse(status.enrollmentExpiresAt) > Date.now())))
+  )
 }
 export function browserUserCanResetPairing(
   status: BrowserUserStatus | null,
@@ -116,21 +115,6 @@ export function browserUserCanResetPairing(
 }
 export function browserUserNeedsConsent(status: BrowserUserStatus): boolean {
   return status.requiresAuthorization
-}
-export function browserPairingCanApprove(
-  current: { id: string; code: string; expiresAt: string } | null | undefined,
-  shown: { id: string; code: string; expiresAt: string },
-  checked: boolean,
-  now = Date.now(),
-): boolean {
-  return (
-    checked &&
-    !!current &&
-    current.id === shown.id &&
-    current.code === shown.code &&
-    Date.parse(current.expiresAt) > now &&
-    Date.parse(shown.expiresAt) > now
-  )
 }
 export function browserUserRuleUpdate(
   existing: BrowserPageRule[],
@@ -167,8 +151,6 @@ export function performBrowserUserAction(
       scopeConfirmed: request.scopeConfirmed,
       blockedUrls: request.blockedUrls,
       pageRules: request.pageRules,
-      pairingId: request.pairingId,
-      pairingCode: request.pairingCode,
       expectedRulesRevision: request.expectedRulesRevision,
     },
   )
@@ -182,7 +164,12 @@ export function browserUserStateLabel(
   if (!status) return t('Browser User 状态未知')
   if (status.requiresAuthorization) return t('需要确认全部普通网页控制范围')
   if (!status.enabled) return t('Browser User 已停用')
-  if (status.pairing) return t('等待核对插件配对码')
+  if (
+    !status.paired &&
+    status.connectedHosts < 1 &&
+    (!status.enrollmentExpiresAt || Date.parse(status.enrollmentExpiresAt) <= Date.now())
+  )
+    return t('未连接，请重新检查连接')
   if (status.connectedHosts < 1) return t('连接中，可打开扩展完成连接')
   if (!status.sessions.some((session) => session.state === 'active'))
     return t('等待可用网页或扩展权限')
@@ -195,9 +182,8 @@ export function browserUserIssueHint(error: unknown): string | null {
       return t('网页规则已在其他窗口变化，请重新检查后再保存。')
     case 'browser_extension_store_open_failed':
       return t('无法打开扩展商店，请检查系统默认浏览器设置。')
-    case 'browser_pairing_invalid':
-    case 'browser_pairing_expired':
-      return t('配对已过期或变化，请重新连接并核对新的配对码。')
+    case 'browser_enrollment_expired':
+      return t('连接窗口已过期，请重新检查连接。')
     case 'browser_settings_invalid':
     case 'browser_settings_unsafe':
       return t('连接设置无法读取，请联系支持；不会覆盖现有规则。')
@@ -237,8 +223,6 @@ export function browserUserActionLabel(action: BrowserUserAction): string {
       return t('保存网页规则')
     case 'setBlockedUrls':
       return t('更新禁止链接')
-    case 'approvePairing':
-      return t('核对配对码')
     case 'resetPairing':
       return t('重新配对')
   }

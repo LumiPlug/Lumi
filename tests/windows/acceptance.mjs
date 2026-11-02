@@ -377,7 +377,7 @@ try {
     // Native persistence is authoritative; React applies it asynchronously after startup.
     assert.equal(await ipc('get_ui_locale'), 'en')
     await waitFor(
-      () => execute('return document.documentElement.lang === \"en\"'),
+      () => execute('return document.documentElement.lang === "en"'),
       'Persisted locale was not applied after process restart',
     )
     await frame()

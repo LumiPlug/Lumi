@@ -374,7 +374,12 @@ try {
   await check('WIN-A06 process restart preserves WebView2 SDK data and locale', async () => {
     await stop()
     await start()
-    assert.equal(await execute('return document.documentElement.lang'), 'en')
+    // Native persistence is authoritative; React applies it asynchronously after startup.
+    assert.equal(await ipc('get_ui_locale'), 'en')
+    await waitFor(
+      () => execute('return document.documentElement.lang === \"en\"'),
+      'Persisted locale was not applied after process restart',
+    )
     await frame()
     assert.deepEqual(await asyncScript('return await window.lumi.storage.get("windows-qa")'), value)
     await waitFor(

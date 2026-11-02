@@ -257,9 +257,12 @@ try {
       () => execute('return !!document.querySelector(".settings-core-status[data-state=ready]")'),
       'Settings did not show connected Core',
     )
-    await execute(`document.querySelectorAll('button').forEach(button => {
-      if (button.textContent.trim() === '管理浏览器连接') button.click();
-    });`)
+    const browserManage = '.settings-row[aria-labelledby="browser-user-title"] button'
+    await waitFor(
+      () => execute('return !!document.querySelector(arguments[0])', [browserManage]),
+      'Browser User management button did not mount',
+    )
+    await click(browserManage)
     await waitFor(
       () => execute('return !!document.querySelector("dialog .browser-page-rules")'),
       'Browser User rule list did not open',

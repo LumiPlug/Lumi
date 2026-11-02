@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { once } from 'node:events'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
@@ -45,6 +45,17 @@ const environment = Object.fromEntries(
 environment.PATH = ''
 environment.NODE_PATH = ''
 environment.NODE_OPTIONS = ''
+// Native host must ship inside the same desktop bundle and work without Node on PATH.
+assert.match(
+  execFileSync(path.join(directory, `lumi-browser-native-host${suffix}`), ['--help'], {
+    cwd: temporary,
+    env: environment,
+    encoding: 'utf8',
+    timeout: 10000,
+  }),
+  /Lumi Chrome Native Messaging host/,
+)
+
 const core = spawn(
   path.join(directory, `lumi-core${suffix}`),
   [

@@ -31,6 +31,7 @@ await writeFile(
 const launchers = [
   ['lumi-core', 'packages/core/dist/index.js'],
   ['mcp-stdio-proxy', 'packages/mcp-stdio-proxy/dist/index.js'],
+  ['lumi-browser-native-host', 'packages/browser-native-host/dist/index.js'],
 ]
 
 const shellQuote = (value) => `'${value.replaceAll("'", "'\\''")}'`

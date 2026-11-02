@@ -406,3 +406,7 @@ Codex 输入包含缓存读取，不再加缓存；累计总量按差值计量�
 语言资源、类型化翻译、原生偏好持久化及跨 WebView 事件同步见 [界面语言](LOCALIZATION.md)。切换保留组件实例与业务状态。
 
 2026-10-20 已实现；语言资源、保存/同步契约和维护方式见 [界面语言](LOCALIZATION.md)，已执行验证与平台边界见 [验收记录](qa/2026-10-20-localization/README.md)。
+
+## Browser User（2026-11-02）
+
+浏览器自动化复用现有 Core Registry/MCP，增加 Core 内 IPC 服务和随 Lumi 分发的只连接 Native Host；不部署第二个 MCP/broker 产品。授权、共享控制域及升级路径边界见 [BROWSER_USER.md](BROWSER_USER.md)。

@@ -51,7 +51,8 @@
     ],
     "externalBin": [
       "binaries/lumi-core",
-      "binaries/mcp-stdio-proxy"
+      "binaries/mcp-stdio-proxy",
+      "binaries/lumi-browser-native-host"
     ],
     "resources": [
       "../packages/core/dist",

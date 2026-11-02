@@ -103,3 +103,17 @@
 .mcp-port-controls > button {
   margin-top: calc(var(--lumi-control-height) + 8px);
 }
+
+/* Browser User only composes existing fields, cards, badges, and buttons. */
+.browser-user-fields {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.browser-user-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}

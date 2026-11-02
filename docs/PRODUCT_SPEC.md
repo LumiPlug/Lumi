@@ -277,3 +277,7 @@ AI 用量参考附件改版：右侧内容改为模型/日期筛选、总 Token/
 设置增加简体中文与 English 切换，默认中文，保存后即时更新全应用及原生菜单；边界与验收见 [界面语言](LOCALIZATION.md)。
 
 2026-10-20 已实现；语言资源、保存/同步契约和维护方式见 [界面语言](LOCALIZATION.md)，已执行验证与平台边界见 [验收记录](qa/2026-10-20-localization/README.md)。
+
+## Browser User（2026-11-02 用户确认）
+
+设置增加 Browser User，统一扩展 ID、用户确认注册/启用、停用、诊断和移除连接。LumiBrowserMCP 只交付浏览器扩展，用户无需单独安装适配器。完整边界见 [BROWSER_USER.md](BROWSER_USER.md)。

@@ -124,7 +124,7 @@ export function publicCapability(definition: CapabilityDefinition): JsonObject {
     toolCount: definition.tools.length,
   }
 }
-export function publicContext(knowledge = false, skills = false): JsonObject {
+export function publicContext(knowledge = false, skills = false, browser = false): JsonObject {
   return {
     name: 'Lumi',
     version: CORE_VERSION,
@@ -136,9 +136,13 @@ export function publicContext(knowledge = false, skills = false): JsonObject {
       workbenchEditing: true,
       memory: false,
       skills,
+      browserUser: browser,
       knowledgeRead: knowledge,
       knowledgeBuild: knowledge,
     },
+    browserGuidance: browser
+      ? '所有接入 Agent 共享一个 Lumi 控制域，操作串行而非独立身份隔离。先 browser_list_sessions，再 snapshot 获取新 ref；只能使用用户已授权标签页，outcome_unknown 不自动重放。启用/停用/注册只能由用户在 Browser User 设置操作。'
+      : null,
     homeDevelopment: HOME_CONTRACT,
     knowledgeContractVersion: knowledge ? KNOWLEDGE_VERSION : null,
     skillsGuidance: skills

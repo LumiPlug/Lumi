@@ -11,3 +11,5 @@ export * from './tasks'
 export * from './knowledge'
 export { validResponseFilter, responseFilterSchema } from './response-filter'
 export * from './usage'
+
+export * from './browser-user'

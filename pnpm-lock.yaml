@@ -79,6 +79,8 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(supports-color@7.1.0)(yaml@2.9.1)
 
+  packages/browser-native-host: {}
+
   packages/core:
     dependencies:
       '@lumiplug/shared':

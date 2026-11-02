@@ -38,6 +38,8 @@ import { TOOL_ERRORS } from '@lumiplug/shared'
 import { KnowledgeService, KnowledgeError } from './knowledge/service'
 import { UsageService } from './usage/service'
 import type { UsageRoot } from './usage/discovery'
+import { BrowserUserController } from './browser/controller'
+import type { BrowserUserActionRequest } from '@lumiplug/shared'
 
 interface ServiceOptions extends CoreRuntimeConfig {
   usageRoots?: UsageRoot[]
@@ -106,6 +108,7 @@ function hostIsLoopback(hostHeader: string | undefined, port: number): boolean {
 }
 
 export class CoreService {
+  public readonly browserUser: BrowserUserController
   public readonly usage: UsageService
   public readonly knowledge: KnowledgeService
   public readonly database: CoreDatabase
@@ -137,6 +140,10 @@ export class CoreService {
     )
       throw new Error('invalid_host_token')
     fs.mkdirSync(options.userDataDir, { recursive: true })
+    this.browserUser = new BrowserUserController({
+      userDataDir: options.userDataDir,
+      nativeHostPath: options.browserNativeHostPath,
+    })
     this.database = new CoreDatabase(path.join(options.userDataDir, 'lumiplug.sqlite'))
     this.usage = new UsageService(
       this.database.raw,
@@ -163,6 +170,7 @@ export class CoreService {
       this.tasks,
       this.knowledge,
       this.skills,
+      this.browserUser.browser,
     )
     this.tools = new ToolsApi(this.repository, this.registry, this.tasks, upstream)
     this.mcp = new McpGateway(this.registry)
@@ -214,12 +222,14 @@ export class CoreService {
       port: address.port,
       pid: process.pid,
     }
+    await this.browserUser.restore()
     this.usage.start()
     this.options.emitReady?.(handshake)
     return handshake
   }
 
   public async stop(): Promise<void> {
+    await this.browserUser.close()
     await this.usage.close()
     await this.knowledge.shutdown()
     await this.tasks.close()
@@ -289,6 +299,7 @@ export class CoreService {
     // These desktop APIs expose private definitions and user approval operations.
     // The MCP token still grants every enabled tool through the public MCP interface.
     if (
+      route.startsWith('/app/browser-user/') ||
       route === '/app/usage' ||
       route === '/app/core/stop' ||
       route === '/app/tools' ||
@@ -308,6 +319,41 @@ export class CoreService {
         )
         return
       }
+    }
+    if (route === '/app/browser-user/status' && method === 'GET') {
+      writeJson(responseObject, 200, response(await this.browserUser.status()))
+      return
+    }
+    if (route === '/app/browser-user/action' && method === 'POST') {
+      const body = await readBody(request, 4096)
+      if (
+        !isRecord(body) ||
+        !['enable', 'disable', 'repair', 'diagnose', 'remove'].includes(String(body.action)) ||
+        Object.keys(body).some((key) => !['action', 'extensionId', 'confirmed'].includes(key)) ||
+        (body.extensionId !== undefined && typeof body.extensionId !== 'string')
+      ) {
+        writeJson(
+          responseObject,
+          400,
+          failure('browser_action_invalid', 'Browser User request is invalid'),
+        )
+        return
+      }
+      try {
+        const result = await this.browserUser.action(body as unknown as BrowserUserActionRequest)
+        writeJson(responseObject, 200, response(result))
+      } catch (error) {
+        const code =
+          error instanceof Error && /^browser_[a-z_]+$/.test(error.message)
+            ? error.message
+            : 'browser_settings_failed'
+        writeJson(
+          responseObject,
+          400,
+          failure(code, 'Browser User operation failed; inspect its status before retrying.'),
+        )
+      }
+      return
     }
     if (route === '/app/core/stop' && method === 'POST') {
       const stop = this.options.onStopRequested

@@ -1,0 +1,413 @@
+// SPDX-License-Identifier: MPL-2.0
+
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { Duplex, PassThrough } from 'node:stream'
+import type { TransformCallback } from 'node:stream'
+import { EventEmitter, once } from 'node:events'
+import type net from 'node:net'
+import { describe, expect, it } from 'vitest'
+import { BrowserService } from './service'
+import {
+  BrowserFrames,
+  MAX_BROWSER_FRAME,
+  validateBrowserArguments,
+  writeBrowserFrame,
+} from './protocol'
+import type { BrowserMessage } from './protocol'
+import { BROWSER_TOOLS } from './tools'
+
+const extensionId = 'a'.repeat(32)
+const sample = {
+  id: 'session-one',
+  tabId: 1,
+  title: 'Fixture',
+  url: 'https://example.test',
+  origin: 'https://example.test',
+  state: 'active',
+}
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
+function inbox(stream: NodeJS.EventEmitter) {
+  const values: BrowserMessage[] = [],
+    waiters: ((value: BrowserMessage) => void)[] = []
+  stream.on('data', (value: BrowserMessage) => {
+    const waiter = waiters.shift()
+    if (waiter) waiter(value)
+    else values.push(value)
+  })
+  return async (): Promise<BrowserMessage> => {
+    const value = values.shift()
+    if (value) return value
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Fixture response timeout')), 1500)
+      waiters.push((item) => {
+        clearTimeout(timer)
+        resolve(item)
+      })
+    })
+  }
+}
+class FakeSocket extends Duplex {
+  peer?: FakeSocket
+  override _read(): void {}
+  override _write(chunk: Buffer, _encoding: BufferEncoding, done: TransformCallback): void {
+    if (!this.peer || this.peer.destroyed) {
+      done(new Error('Fixture peer closed'))
+      return
+    }
+    this.peer.push(Buffer.from(chunk))
+    done()
+  }
+  override _destroy(error: Error | null, done: (error?: Error | null) => void): void {
+    if (this.peer && !this.peer.destroyed) this.peer.destroy()
+    done(error)
+  }
+}
+async function fixture() {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'lumi-browser-core-'))
+  let handler: (socket: net.Socket) => void = () => {}
+  const serverFactory = ((listener: (socket: net.Socket) => void) => {
+    handler = listener
+    const server = new EventEmitter() as EventEmitter & {
+      listen: (address: string, callback: () => void) => void
+      close: (callback: () => void) => void
+    }
+    let address = ''
+    server.listen = (value, callback) => {
+      address = value
+      if (process.platform !== 'win32') fs.writeFileSync(address, 'fixture socket stand-in')
+      queueMicrotask(callback)
+    }
+    server.close = (callback) => {
+      if (process.platform !== 'win32' && address) fs.rmSync(address, { force: true })
+      queueMicrotask(callback)
+    }
+    return server
+  }) as unknown as typeof net.createServer
+  const service = new BrowserService({
+    userDataDir: directory,
+    serverFactory,
+    requestTimeoutMs: 20,
+  })
+  async function host(origin = `chrome-extension://${extensionId}/`) {
+    const socket = new FakeSocket(),
+      peer = new FakeSocket()
+    socket.peer = peer
+    peer.peer = socket
+    socket.on('error', () => {})
+    const frames = new BrowserFrames()
+    socket.pipe(frames)
+    const next = inbox(frames)
+    handler(peer as unknown as net.Socket)
+    const runtime = JSON.parse(fs.readFileSync(service.runtimeFile, 'utf8')) as { token: string }
+    writeBrowserFrame(socket, { role: 'native', token: runtime.token, origin })
+    return { socket, next }
+  }
+  return {
+    service,
+    directory,
+    host,
+    async stop() {
+      await service.close()
+      fs.rmSync(directory, { recursive: true, force: true })
+    },
+  }
+}
+
+async function readyFixture() {
+  const context = await fixture()
+  await context.service.start(extensionId)
+  const host = await context.host()
+  expect(await host.next()).toEqual({ type: 'ready' })
+  writeBrowserFrame(host.socket, { type: 'sessions', sessions: [sample] })
+  await tick()
+  return { ...context, native: host }
+}
+
+describe('Browser User Core service', () => {
+  it('constructs disabled, tools cannot enable it, and stop removes runtime credentials', async () => {
+    const context = await fixture()
+    try {
+      expect(context.service.status()).toMatchObject({
+        enabled: false,
+        controlDomain: 'shared-lumi',
+      })
+      expect(fs.existsSync(context.service.runtimeFile)).toBe(false)
+      await expect(
+        context.service.call('snapshot', { sessionId: sample.id }),
+      ).rejects.toMatchObject({ code: 'browser_disabled' })
+      await expect(context.service.call('authorize', {})).rejects.toMatchObject({
+        code: 'unknown_tool',
+      })
+      await context.service.start(extensionId)
+      const runtime = JSON.parse(fs.readFileSync(context.service.runtimeFile, 'utf8')) as Record<
+        string,
+        unknown
+      >
+      expect(runtime).toMatchObject({ version: 1 })
+      expect(runtime.token).toMatch(/^[a-f0-9]{64}$/)
+      await context.service.disable()
+      expect(fs.existsSync(context.service.runtimeFile)).toBe(false)
+    } finally {
+      await context.stop()
+    }
+  })
+  it('rejects a different Chrome extension origin', async () => {
+    const context = await fixture()
+    try {
+      await context.service.start(extensionId)
+      const host = await context.host(`chrome-extension://${'b'.repeat(32)}/`)
+      await tick()
+      expect(host.socket.destroyed).toBe(true)
+      expect(context.service.status().connectedHosts).toBe(0)
+    } finally {
+      await context.stop()
+    }
+  })
+  it('serializes all tools in one shared control domain, preserving Unicode results', async () => {
+    const context = await readyFixture()
+    try {
+      const first = context.service.call('fill', {
+        sessionId: sample.id,
+        ref: 'ref-1',
+        text: '你好🙂',
+      })
+      const second = context.service.call('snapshot', { sessionId: sample.id })
+      const request = await context.native.next()
+      expect(request).toMatchObject({ tool: 'fill', args: { text: '你好🙂' } })
+      writeBrowserFrame(context.native.socket, {
+        type: 'response',
+        id: request.id,
+        result: { ok: true },
+      })
+      await expect(first).resolves.toEqual({ ok: true })
+      const next = await context.native.next()
+      expect(next.tool).toBe('snapshot')
+      writeBrowserFrame(context.native.socket, {
+        type: 'response',
+        id: next.id,
+        result: { text: '完成' },
+      })
+      await expect(second).resolves.toEqual({ text: '完成' })
+    } finally {
+      await context.stop()
+    }
+  })
+  it('cancels dispatched work as unknown and blocks already queued calls on that session', async () => {
+    const context = await readyFixture()
+    try {
+      const controller = new AbortController()
+      const first = context.service.call(
+        'click',
+        { sessionId: sample.id, ref: 'ref-1' },
+        { signal: controller.signal },
+      )
+      const second = context.service.call('click', { sessionId: sample.id, ref: 'ref-1' })
+      const outcomes = Promise.allSettled([first, second])
+      const request = await context.native.next()
+      controller.abort()
+      expect(await context.native.next()).toEqual({ type: 'cancel', id: request.id })
+      const result = await outcomes
+      expect(result[0]).toMatchObject({
+        status: 'rejected',
+        reason: { code: 'outcome_unknown', outcome: 'unknown' },
+      })
+      expect(result[1]).toMatchObject({ status: 'rejected', reason: { code: 'session_inactive' } })
+      writeBrowserFrame(context.native.socket, { type: 'sessions', sessions: [sample] })
+      await tick()
+      expect(context.service.status().sessions[0]?.state).toBe('paused')
+      writeBrowserFrame(context.native.socket, {
+        type: 'sessions',
+        sessions: [{ ...sample, state: 'paused' }],
+      })
+      writeBrowserFrame(context.native.socket, { type: 'sessions', sessions: [sample] })
+      await tick()
+      expect(context.service.status().sessions[0]?.state).toBe('active')
+    } finally {
+      await context.stop()
+    }
+  })
+  it('revoke and disable invalidate queues and disconnect native host', async () => {
+    const context = await readyFixture()
+    try {
+      const first = context.service.call('click', { sessionId: sample.id, ref: 'r' })
+      const second = context.service.call('snapshot', { sessionId: sample.id })
+      const outcomes = Promise.allSettled([first, second])
+      await context.native.next()
+      await context.service.disable()
+      const result = await outcomes
+      expect(result[0]).toMatchObject({ status: 'rejected', reason: { code: 'outcome_unknown' } })
+      expect(result[1]).toMatchObject({ status: 'rejected', reason: { code: 'cancelled' } })
+      expect(context.native.socket.destroyed).toBe(true)
+      expect(context.service.status().sessions).toEqual([])
+    } finally {
+      await context.stop()
+    }
+  })
+  it('a lost native connection is unknown after dispatch, disconnected before dispatch', async () => {
+    const context = await readyFixture()
+    try {
+      const pending = context.service.call('click', { sessionId: sample.id, ref: 'r' })
+      const outcome = Promise.allSettled([pending])
+      await context.native.next()
+      context.native.socket.destroy()
+      expect((await outcome)[0]).toMatchObject({
+        status: 'rejected',
+        reason: { code: 'outcome_unknown' },
+      })
+      await expect(
+        context.service.call('click', { sessionId: sample.id, ref: 'r' }),
+      ).rejects.toMatchObject({ code: 'disconnected' })
+    } finally {
+      await context.stop()
+    }
+  })
+  it('aborted calls are never dispatched and unauthorized tool arguments are rejected', async () => {
+    const context = await readyFixture()
+    try {
+      await expect(
+        context.service.call(
+          'click',
+          { sessionId: sample.id, ref: 'r' },
+          { signal: AbortSignal.abort() },
+        ),
+      ).rejects.toMatchObject({ code: 'cancelled' })
+      await expect(
+        context.service.call('fill', { sessionId: sample.id, ref: 'r', value: 'bad' }),
+      ).rejects.toMatchObject({ code: 'invalid_arguments' })
+      expect(BROWSER_TOOLS).toHaveLength(7)
+      expect(BROWSER_TOOLS.every((tool) => tool.name.startsWith('Lumi.browser_'))).toBe(true)
+    } finally {
+      await context.stop()
+    }
+  })
+})
+
+describe('Browser IPC frames', () => {
+  it('parses fragmented Unicode objects and refuses oversized/invalid input', async () => {
+    const stream = new PassThrough(),
+      frames = new BrowserFrames()
+    stream.pipe(frames)
+    const next = inbox(frames),
+      data = Buffer.from(JSON.stringify({ text: '你好🙂' }) + '\n')
+    stream.write(data.subarray(0, 10))
+    stream.end(data.subarray(10))
+    expect(await next()).toEqual({ text: '你好🙂' })
+    for (const data of [Buffer.alloc(MAX_BROWSER_FRAME + 1, 120), Buffer.from('null\n')]) {
+      const invalid = new BrowserFrames(),
+        error = once(invalid, 'error')
+      invalid.resume()
+      invalid.end(data)
+      expect((await error)[0]).toBeInstanceOf(Error)
+    }
+    expect(() =>
+      validateBrowserArguments('wait_for', { sessionId: 's', text: 'x', ref: 'r' }),
+    ).toThrow()
+  })
+})
+
+it('preserves pause acknowledgement when unknown response arrives after the paused publication', async () => {
+  const context = await readyFixture()
+  try {
+    const pending = context.service.call('click', { sessionId: sample.id, ref: 'r' })
+    const outcome = Promise.allSettled([pending])
+    const request = await context.native.next()
+    writeBrowserFrame(context.native.socket, {
+      type: 'sessions',
+      sessions: [{ ...sample, state: 'paused' }],
+    })
+    writeBrowserFrame(context.native.socket, {
+      type: 'response',
+      id: request.id,
+      error: { code: 'outcome_unknown', message: 'Interrupted after input' },
+    })
+    expect((await outcome)[0]).toMatchObject({
+      status: 'rejected',
+      reason: { code: 'outcome_unknown' },
+    })
+    writeBrowserFrame(context.native.socket, { type: 'sessions', sessions: [sample] })
+    await tick()
+    expect(context.service.status().sessions[0]?.state).toBe('active')
+  } finally {
+    await context.stop()
+  }
+})
+
+it('times out once, emits cancellation, and never replays the operation', async () => {
+  const context = await readyFixture()
+  try {
+    const pending = context.service.call('click', { sessionId: sample.id, ref: 'r' })
+    const outcome = Promise.allSettled([pending])
+    const request = await context.native.next()
+    expect(await context.native.next()).toEqual({ type: 'cancel', id: request.id })
+    expect((await outcome)[0]).toMatchObject({
+      status: 'rejected',
+      reason: { code: 'outcome_unknown' },
+    })
+    expect(context.service.status().sessions[0]?.state).toBe('paused')
+  } finally {
+    await context.stop()
+  }
+})
+
+it('revoke disconnects only the owning native host and a second host cannot steal its session ID', async () => {
+  const context = await readyFixture()
+  try {
+    const second = await context.host()
+    expect(await second.next()).toEqual({ type: 'ready' })
+    writeBrowserFrame(second.socket, {
+      type: 'sessions',
+      sessions: [
+        { ...sample, title: 'Collision' },
+        { ...sample, id: 'other-session' },
+      ],
+    })
+    await tick()
+    expect(
+      context.service.status().sessions.find((session) => session.id === sample.id)?.title,
+    ).toBe('Fixture')
+    context.service.revoke(sample.id)
+    expect(context.native.socket.destroyed).toBe(true)
+    expect(second.socket.destroyed).toBe(false)
+    expect(context.service.status().sessions.map((session) => session.id)).toEqual([
+      'other-session',
+    ])
+    writeBrowserFrame(second.socket, { type: 'sessions', sessions: [] })
+    await tick()
+    expect(context.service.status().sessions).toEqual([])
+  } finally {
+    await context.stop()
+  }
+})
+
+it('does not delete a runtime descriptor replaced by a different Core generation', async () => {
+  const context = await readyFixture()
+  try {
+    fs.writeFileSync(
+      context.service.runtimeFile,
+      JSON.stringify({ version: 1, token: 'different-generation' }),
+    )
+    await context.service.disable()
+    expect(fs.existsSync(context.service.runtimeFile)).toBe(true)
+  } finally {
+    await context.stop()
+  }
+})
+
+it('treats malformed post-dispatch replies as unknown rather than a successful empty result', async () => {
+  const context = await readyFixture()
+  try {
+    const pending = context.service.call('click', { sessionId: sample.id, ref: 'r' })
+    const outcome = Promise.allSettled([pending])
+    const request = await context.native.next()
+    writeBrowserFrame(context.native.socket, { type: 'response', id: request.id })
+    expect((await outcome)[0]).toMatchObject({
+      status: 'rejected',
+      reason: { code: 'outcome_unknown' },
+    })
+    expect(context.service.status().sessions[0]?.state).toBe('paused')
+  } finally {
+    await context.stop()
+  }
+})

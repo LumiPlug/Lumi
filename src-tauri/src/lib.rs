@@ -887,6 +887,68 @@ fn copy_text(
         .map_err(|_| "clipboard_write_failed".to_string())
 }
 
+fn browser_user_payload(action: &str, payload: Option<Value>) -> Result<Option<Value>, String> {
+    if !matches!(
+        action,
+        "status" | "enable" | "disable" | "repair" | "diagnose" | "remove"
+    ) {
+        return Err("invalid_browser_user_action".to_string());
+    }
+    let value = payload.unwrap_or_else(|| json!({}));
+    let fields = value.as_object().ok_or("invalid_browser_user_payload")?;
+    if fields
+        .keys()
+        .any(|key| !matches!(key.as_str(), "extensionId" | "confirmed"))
+    {
+        return Err("invalid_browser_user_payload".to_string());
+    }
+    if action == "status" {
+        if !fields.is_empty() {
+            return Err("invalid_browser_user_payload".to_string());
+        }
+        return Ok(None);
+    }
+    if action != "diagnose" && fields.get("confirmed") != Some(&Value::Bool(true)) {
+        return Err("browser_user_confirmation_required".to_string());
+    }
+    if let Some(id) = fields.get("extensionId") {
+        let id = id.as_str().ok_or("invalid_browser_user_extension_id")?;
+        if id.len() != 32 || !id.bytes().all(|byte| (b'a'..=b'p').contains(&byte)) {
+            return Err("invalid_browser_user_extension_id".to_string());
+        }
+    } else if matches!(action, "enable" | "repair") {
+        return Err("invalid_browser_user_extension_id".to_string());
+    }
+    let mut body = fields.clone();
+    body.insert("action".to_string(), Value::String(action.to_string()));
+    Ok(Some(Value::Object(body)))
+}
+
+#[tauri::command]
+async fn browser_user_request(
+    window: tauri::WebviewWindow,
+    supervisor: State<'_, Arc<CoreSupervisor>>,
+    host_nonce: String,
+    action: String,
+    payload: Option<Value>,
+) -> Result<Value, String> {
+    supervisor.authorize(&host_nonce)?;
+    if window.label() != "main" {
+        return Err("browser_user_host_required".to_string());
+    }
+    let body = browser_user_payload(&action, payload)?;
+    let core = Arc::clone(supervisor.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        if action == "status" {
+            core.call_core("GET", "/app/browser-user/status", None)
+        } else {
+            core.call_core("POST", "/app/browser-user/action", body)
+        }
+    })
+    .await
+    .map_err(|_| "browser_user_request_failed".to_string())?
+}
+
 #[tauri::command]
 async fn tools_request(
     supervisor: State<'_, Arc<CoreSupervisor>>,
@@ -1343,6 +1405,7 @@ pub fn run() {
                 open_skill_source,
                 open_skill_link,
                 tools_request,
+                browser_user_request,
                 list_capabilities,
                 create_capability_draft
             ];
@@ -1424,6 +1487,39 @@ pub fn run() {
 #[cfg(test)]
 mod resource_tests {
     use super::*;
+    #[test]
+    fn browser_user_commands_require_bounded_explicit_consent() {
+        assert!(browser_user_payload("status", None).unwrap().is_none());
+        assert!(browser_user_payload("arbitrary", None).is_err());
+        assert!(browser_user_payload(
+            "enable",
+            Some(json!({"extensionId": "a".repeat(32)}))
+        )
+        .is_err());
+        assert!(browser_user_payload(
+            "enable",
+            Some(json!({"extensionId": "z".repeat(32), "confirmed": true}))
+        )
+        .is_err());
+        assert!(browser_user_payload(
+            "disable",
+            Some(json!({"confirmed": true, "command": "anything"}))
+        )
+        .is_err());
+        assert!(browser_user_payload("diagnose", None).is_ok());
+        let body = browser_user_payload(
+            "enable",
+            Some(json!({"extensionId": "a".repeat(32), "confirmed": true})),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(body["action"], "enable");
+        assert_eq!(body["confirmed"], true);
+        for action in ["disable", "remove", "repair"] {
+            assert!(browser_user_payload(action, None).is_err());
+        }
+    }
+
     #[test]
     fn only_releases_a_main_window_after_continuous_hiding() {
         let idle = Some(Duration::from_secs(300));

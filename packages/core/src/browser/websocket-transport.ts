@@ -2,7 +2,6 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
-import { randomUUID } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
 import { Duplex } from 'node:stream'
 import { WebSocket, WebSocketServer } from 'ws'
@@ -28,6 +27,7 @@ interface Peer {
   phase: 'hello' | 'committed' | 'pairing' | 'auth' | 'secure'
   pairingState?: PairingState
   commitment?: string
+  secret?: string
   clientNonce?: string
   serverNonce?: string
   channel?: SecureChannel
@@ -52,11 +52,8 @@ export class BrowserWebSocketTransport implements BrowserTransport {
   private wss?: WebSocketServer
   private readonly peers = new Set<Peer>()
   private candidate?: Candidate
-  private secret?: string
   private storageError?: BrowserError
   private generation = 0
-  private lastPairAt = 0
-  private enrollmentDeadline = 0
   private enrollmentGeneration = 0
   private accept?: (stream: Duplex) => void
   private readonly directory: string
@@ -67,25 +64,16 @@ export class BrowserWebSocketTransport implements BrowserTransport {
     this.port = options.testPort ?? 43127
     this.directory = path.join(options.userDataDir, 'browser-user')
     this.file = path.join(this.directory, 'pairing.json')
+    // Retire only the legacy file owned by this transport. It is never loaded.
     try {
       this.checkPrivate(this.directory, true)
       this.checkPrivate(this.file, false)
-      const data = JSON.parse(fs.readFileSync(this.file, 'utf8')) as {
-        version?: number
-        secret?: unknown
-      }
-      if (
-        data.version !== 1 ||
-        typeof data.secret !== 'string' ||
-        !/^[A-Za-z0-9_-]{43}$/.test(data.secret)
-      )
-        throw new Error('invalid pairing')
-      this.secret = data.secret
+      fs.unlinkSync(this.file)
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
         this.storageError = new BrowserError(
           'pairing_storage_unsafe',
-          'Browser pairing storage is invalid or unsafe',
+          'Unable to retire legacy browser credential',
         )
     }
   }
@@ -106,28 +94,11 @@ export class BrowserWebSocketTransport implements BrowserTransport {
   }
 
   status(): { paired: boolean; enrollmentExpiresAt: string | null } {
-    return {
-      paired: Boolean(this.secret),
-      enrollmentExpiresAt:
-        this.enrollmentDeadline > Date.now() && !this.secret
-          ? new Date(this.enrollmentDeadline).toISOString()
-          : null,
-    }
+    return { paired: false, enrollmentExpiresAt: null }
   }
 
-  /** Explicit host enable only. TOFU cannot authenticate the first local peer's identity. */
-  openEnrollment(): void {
-    if (this.storageError) throw this.storageError
-    if (this.secret) return
-    if (!this.server?.listening)
-      throw new BrowserError('browser_disabled', 'Browser listener is closed')
-    // A fresh explicit action invalidates any older unauthenticated candidate.
-    for (const peer of [...this.peers]) if (peer.phase !== 'secure') this.drop(peer)
-    this.enrollmentGeneration++
-    this.enrollmentDeadline = Date.now() + 120_000
-    this.lastPairAt = 0
-  }
-
+  // Compatibility with older host callers; enabled listeners negotiate automatically.
+  openEnrollment(): void {}
   async start(accept: (stream: Duplex) => void): Promise<void> {
     if (this.storageError) throw this.storageError
     if (this.server) return
@@ -179,7 +150,6 @@ export class BrowserWebSocketTransport implements BrowserTransport {
   async stop(): Promise<void> {
     ++this.generation
     this.candidate = undefined
-    this.enrollmentDeadline = 0
     this.enrollmentGeneration++
     this.accept = undefined
     for (const peer of [...this.peers]) this.drop(peer)
@@ -192,7 +162,6 @@ export class BrowserWebSocketTransport implements BrowserTransport {
 
   async resetPairing(): Promise<void> {
     // A host-confirmed local operation only: never automatic on authentication failure.
-    this.enrollmentDeadline = 0
     this.enrollmentGeneration++
     this.candidate = undefined
     for (const peer of [...this.peers]) this.drop(peer)
@@ -204,41 +173,18 @@ export class BrowserWebSocketTransport implements BrowserTransport {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
         throw new BrowserError('pairing_reset_failed', 'Unable to remove private browser pairing')
     }
-    this.secret = undefined
-    this.storageError = undefined
-    this.lastPairAt = 0
   }
 
   private completePair(c: Candidate): void {
     if (
       this.candidate !== c ||
-      this.secret !== undefined ||
-      this.enrollmentDeadline <= Date.now() ||
       c.generation !== this.enrollmentGeneration ||
       c.expiresAt <= Date.now() ||
       !this.peers.has(c.peer) ||
       c.peer.ws.readyState !== WebSocket.OPEN
     )
       throw new Error('pair expired')
-    fs.mkdirSync(this.directory, { recursive: true, mode: 0o700 })
-    this.checkPrivate(this.directory, true)
-    if (fs.existsSync(this.file)) this.checkPrivate(this.file, false)
-    const temporary = `${this.file}.${randomUUID()}.tmp`
-    try {
-      fs.writeFileSync(temporary, JSON.stringify({ version: 1, secret: c.secret }), {
-        flag: 'wx',
-        mode: 0o600,
-      })
-      fs.renameSync(temporary, this.file)
-    } finally {
-      try {
-        fs.unlinkSync(temporary)
-      } catch {
-        /* already renamed */
-      }
-    }
-    this.secret = c.secret
-    this.enrollmentDeadline = 0
+    c.peer.secret = c.secret
     this.candidate = undefined
     c.peer.phase = 'hello'
     c.peer.alive = Date.now()
@@ -325,27 +271,13 @@ export class BrowserWebSocketTransport implements BrowserTransport {
       if (!peer.stream?.push(`${JSON.stringify(value)}\n`)) throw new Error('input backpressure')
       return
     }
-    if (
-      peer.phase === 'hello' &&
-      ((message.type === 'enroll_commit' && this.secret) ||
-        (message.type === 'auth_hello' && !this.secret))
-    ) {
-      peer.ws.send(JSON.stringify({ type: 'auth_error', code: 'pairing_required' }), () =>
-        this.drop(peer),
-      )
-      return
-    }
     if (peer.phase === 'hello' && message.type === 'enroll_commit') {
       if (
-        this.secret ||
-        this.enrollmentDeadline <= Date.now() ||
         this.candidate ||
-        Date.now() - this.lastPairAt < 5000 ||
         typeof message.commitment !== 'string' ||
         !/^[A-Za-z0-9_-]{43}$/.test(message.commitment)
       )
         throw new Error('pairing unavailable')
-      this.lastPairAt = Date.now()
       const local = await createPairingHello('server')
       const commitment = await commitPairingHello(local.hello, 'server')
       if (!this.peers.has(peer)) return
@@ -370,7 +302,7 @@ export class BrowserWebSocketTransport implements BrowserTransport {
         peer,
         id: derived.pairingId,
         secret: derived.sharedSecret,
-        expiresAt: Math.min(Date.now() + 5000, this.enrollmentDeadline),
+        expiresAt: Date.now() + 5000,
         generation: this.enrollmentGeneration,
       }
       this.candidate = c
@@ -393,12 +325,12 @@ export class BrowserWebSocketTransport implements BrowserTransport {
     if (
       peer.phase === 'hello' &&
       message.type === 'auth_hello' &&
-      this.secret &&
+      peer.secret &&
       typeof message.clientNonce === 'string'
     ) {
       peer.clientNonce = message.clientNonce
       peer.serverNonce = createNonce()
-      const proof = await createServerProof(this.secret, peer.clientNonce, peer.serverNonce)
+      const proof = await createServerProof(peer.secret, peer.clientNonce, peer.serverNonce)
       if (!this.peers.has(peer)) return
       peer.phase = 'auth'
       this.send(peer, { type: 'auth_challenge', serverNonce: peer.serverNonce, proof })
@@ -407,16 +339,16 @@ export class BrowserWebSocketTransport implements BrowserTransport {
     if (
       peer.phase === 'auth' &&
       message.type === 'auth_proof' &&
-      this.secret &&
+      peer.secret &&
       peer.clientNonce &&
       peer.serverNonce
     ) {
       if (
-        !(await verifyClientProof(this.secret, peer.clientNonce, peer.serverNonce, message.proof))
+        !(await verifyClientProof(peer.secret, peer.clientNonce, peer.serverNonce, message.proof))
       )
         throw new Error('authentication failed')
       const channel = await createSecureChannel(
-        this.secret,
+        peer.secret,
         peer.clientNonce,
         peer.serverNonce,
         'server',

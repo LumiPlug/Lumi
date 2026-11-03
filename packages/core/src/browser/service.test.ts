@@ -646,25 +646,19 @@ it('opens enrollment only for explicit enable, including an already-running list
   }
 })
 
-it('corrupt private pin isolates Browser User without preventing Core diagnostics', async () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'lumi-bad-pin-'))
+it('obsolete private credentials are retired without blocking Core diagnostics', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'lumi-old-pin-'))
   fs.mkdirSync(path.join(directory, 'browser-user'), { mode: 0o700 })
   const file = path.join(directory, 'browser-user', 'pairing.json')
   fs.writeFileSync(file, '{invalid', { mode: 0o600 })
   const service = new BrowserService({ userDataDir: directory })
   try {
+    expect(fs.existsSync(file)).toBe(false)
     expect(service.diagnose()).toMatchObject({
       enabled: false,
       paired: false,
       enrollmentExpiresAt: null,
     })
-    await expect(service.start(extensionId, [], { enroll: true })).rejects.toMatchObject({
-      code: 'pairing_storage_unsafe',
-    })
-    expect(service.diagnose()).toMatchObject({ enabled: false, enrollmentExpiresAt: null })
-    await service.resetPairing()
-    expect(fs.existsSync(file)).toBe(false)
-    expect(service.diagnose().enabled).toBe(false)
   } finally {
     await service.close()
     fs.rmSync(directory, { recursive: true, force: true })

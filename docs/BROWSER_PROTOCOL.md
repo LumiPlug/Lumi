@@ -74,3 +74,7 @@ Implementation: `packages/core/src/browser/secure-crypto.ts`,
 `extension/security.mjs` and `extension/transport.mjs` in LumiBrowserMCP.
 Automated tests use real loopback WebSockets and MCP with a simulated Chrome peer;
 actual Chrome/UI/operating-system acceptance remains separate.
+
+## 2026-11-04 本机直接连接更新
+
+此节取代前文关于持久信任、120 秒登记窗口和重新配对的描述。Browser User 开启后，扩展自动连接固定 loopback 端口；每次连接以临时 ECDH 密钥协商建立加密会话，不保存跨连接凭证，不需要用户重新配对。升级自动删除本功能拥有的旧配对记录。Chrome 扩展固定身份、HTTP(S) 网页规则、暂停、用户接管、串行控制和不重放不确定操作继续生效。扩展和 Lumi 均需升级。本机进程可以伪装服务或来源，此模式不验证已配对设备的身份连续性。Lumi MCP 面向 Agent 的令牌独立保留。

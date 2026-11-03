@@ -13,7 +13,6 @@ import ConfirmationDialog from './ConfirmationDialog'
 import { useToast } from './ToastProvider'
 import {
   browserUserConnectionActive,
-  browserUserCanResetPairing,
   browserUserErrorHint,
   browserUserIssueHint,
   browserUserRequest,
@@ -407,20 +406,6 @@ export default function BrowserUserSetting({ coreStatus }: { coreStatus: UiCoreS
               onCheck={() => void connect()}
               onDisable={closeConnection}
             />
-            {browserUserCanResetPairing(status, !!errorHint) && (
-              <div className="browser-user-status">
-                <Button
-                  disabled={!coreReady || busy !== null}
-                  onClick={() =>
-                    setConfirmation({
-                      request: browserUserRequest('resetPairing', undefined, true),
-                    })
-                  }
-                >
-                  {t('重新配对')}
-                </Button>
-              </div>
-            )}
             <FieldGroup label={t('网页权限')}>
               <div className="browser-user-status">
                 <Button

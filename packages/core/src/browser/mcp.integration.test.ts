@@ -163,7 +163,7 @@ it('routes two MCP clients through the existing Lumi Core WebSocket in one seria
     }
     expect(
       (await clients[0]!.listTools()).tools.filter((tool) => tool.name.startsWith('Lumi.browser_')),
-    ).toHaveLength(10)
+    ).toHaveLength(12)
     const sessions = await clients[0]!.callTool({
       name: 'Lumi.browser_list_sessions',
       arguments: {},

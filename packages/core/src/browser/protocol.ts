@@ -49,6 +49,8 @@ export function writeBrowserFrame(stream: Writable, message: BrowserMessage): vo
 }
 
 export type BrowserTool =
+  | 'screenshot'
+  | 'click_at'
   | 'open_tab'
   | 'navigate'
   | 'reload'
@@ -76,6 +78,8 @@ export function validateBrowserArguments(
   value: unknown,
 ): asserts value is BrowserMessage {
   const keys: Record<BrowserTool, string[]> = {
+    screenshot: ['sessionId'],
+    click_at: ['sessionId', 'captureId', 'x', 'y'],
     open_tab: ['url'],
     navigate: ['sessionId', 'url'],
     reload: ['sessionId'],
@@ -102,6 +106,11 @@ export function validateBrowserArguments(
   if (allowed.includes('url')) text('url', true, 2048)
   if (allowed.includes('sessionId')) text('sessionId', true, 256)
   if (allowed.includes('ref')) text('ref', tool === 'click' || tool === 'fill', 256)
+  if (tool === 'click_at') {
+    text('captureId', true, 256)
+    if (![value.x, value.y].every((n) => typeof n === 'number' && Number.isFinite(n) && n >= 0))
+      throw new BrowserError('invalid_arguments', 'Invalid coordinates')
+  }
   if (tool === 'fill') text('text', true, 100000, true)
   if (tool === 'wait_for') {
     text('text', false, 10000)

@@ -125,6 +125,20 @@ export class McpGateway {
           AbortSignal.any([context.mcpReq.signal, controller.signal]),
         )
         recordExternalActivity()
+        if (
+          request.params.name === 'Lumi.browser_screenshot' &&
+          typeof result.data === 'string' &&
+          result.mimeType === 'image/jpeg'
+        ) {
+          const { data, ...metadata } = result
+          return {
+            content: [
+              { type: 'image' as const, data, mimeType: 'image/jpeg' },
+              { type: 'text' as const, text: JSON.stringify(metadata) },
+            ],
+            structuredContent: metadata,
+          }
+        }
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result) }],
           structuredContent: result,

@@ -272,7 +272,7 @@ describe('Browser User Core service', () => {
       await expect(
         context.service.call('fill', { sessionId: sample.id, ref: 'r', value: 'bad' }),
       ).rejects.toMatchObject({ code: 'invalid_arguments' })
-      expect(BROWSER_TOOLS).toHaveLength(10)
+      expect(BROWSER_TOOLS).toHaveLength(12)
       expect(BROWSER_TOOLS.every((tool) => tool.name.startsWith('Lumi.browser_'))).toBe(true)
     } finally {
       await context.stop()

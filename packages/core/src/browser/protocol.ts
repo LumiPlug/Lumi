@@ -49,7 +49,16 @@ export function writeBrowserFrame(stream: Writable, message: BrowserMessage): vo
 }
 
 export type BrowserTool =
-  'list_sessions' | 'snapshot' | 'read_text' | 'click' | 'fill' | 'scroll' | 'wait_for'
+  | 'open_tab'
+  | 'navigate'
+  | 'reload'
+  | 'list_sessions'
+  | 'snapshot'
+  | 'read_text'
+  | 'click'
+  | 'fill'
+  | 'scroll'
+  | 'wait_for'
 export class BrowserError extends Error {
   readonly outcome?: 'unknown'
   constructor(
@@ -67,6 +76,9 @@ export function validateBrowserArguments(
   value: unknown,
 ): asserts value is BrowserMessage {
   const keys: Record<BrowserTool, string[]> = {
+    open_tab: ['url'],
+    navigate: ['sessionId', 'url'],
+    reload: ['sessionId'],
     list_sessions: [],
     snapshot: ['sessionId'],
     read_text: ['sessionId', 'ref'],
@@ -87,7 +99,8 @@ export function validateBrowserArguments(
     if (typeof item !== 'string' || (!empty && !item.length) || item.length > limit)
       throw new BrowserError('invalid_arguments', `Invalid ${key}`)
   }
-  if (tool !== 'list_sessions') text('sessionId', true, 256)
+  if (allowed.includes('url')) text('url', true, 2048)
+  if (allowed.includes('sessionId')) text('sessionId', true, 256)
   if (allowed.includes('ref')) text('ref', tool === 'click' || tool === 'fill', 256)
   if (tool === 'fill') text('text', true, 100000, true)
   if (tool === 'wait_for') {

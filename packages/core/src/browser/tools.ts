@@ -18,6 +18,29 @@ const outputSchema: JsonSchema = { type: 'object' }
 /** All clients share one Lumi control domain. These tools cannot enable or authorize it. */
 export const BROWSER_TOOLS: AiToolView[] = [
   {
+    name: 'Lumi.browser_open_tab',
+    description:
+      'Open an allowed HTTP(S) URL in a new background tab. List sessions after loading.',
+    inputSchema: schema({ url: { type: 'string', minLength: 1, maxLength: 2048 } }, ['url']),
+    outputSchema,
+  },
+  {
+    name: 'Lumi.browser_navigate',
+    description:
+      'Navigate the selected session to an allowed HTTP(S) URL. List sessions again after navigation.',
+    inputSchema: schema({ sessionId, url: { type: 'string', minLength: 1, maxLength: 2048 } }, [
+      'sessionId',
+      'url',
+    ]),
+    outputSchema,
+  },
+  {
+    name: 'Lumi.browser_reload',
+    description: 'Reload the selected tab. List sessions and take a new snapshot after loading.',
+    inputSchema: schema({ sessionId }, ['sessionId']),
+    outputSchema,
+  },
+  {
     name: 'Lumi.browser_list_sessions',
     description:
       'List HTTP(S) tabs permitted by the user-enabled Browser User policy and Chrome permissions. Blocked or paused tabs are unavailable. One shared Lumi domain; not per-agent isolation.',

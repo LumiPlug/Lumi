@@ -47,3 +47,7 @@ MCP 不能开启功能、手工批准首次信任或写网页规则；这些操�
 单元与合成测试覆盖 UI 请求、规则草稿、并发 revision、短时 TOFU 登记边界、Core 策略与连接边界。Windows release 验收通过真实 WebView → Rust → Core 执行只读 status／diagnose，并打开管理弹窗确认未启用功能或登记；不把它描述为真实 Chrome 首连验收。
 
 实际 Windows／macOS Chrome 的首次权限、TOFU 连接与商店分发仍需对应平台实机验证；以当前提交 CI 和实机记录为准。开发预览的签名、发布及商店可用性不得推定已完成，也不得建议绕过系统安全警告。
+
+## 标签页导航
+
+`Lumi.browser_open_tab({url})` 在后台新建标签页。`Lumi.browser_navigate({sessionId, url})` 在指定标签页打开网址，`Lumi.browser_reload({sessionId})` 刷新该页。目标必须是允许的 HTTP(S) 网址。返回 dispatched 表示 Chrome 已接收操作；加载后重新列出会话并获取快照。结果未知时不得自动重试。需要同时更新 Lumi Core 和扩展。

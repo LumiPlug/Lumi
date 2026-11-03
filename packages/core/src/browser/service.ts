@@ -67,7 +67,9 @@ interface Session {
 }
 interface Pending {
   id: string
-  session: Session
+  tool: string
+  host: Host
+  session?: Session
   finish: (error?: BrowserError, result?: unknown) => void
 }
 export interface BrowserServiceOptions {
@@ -144,7 +146,7 @@ export class BrowserService {
     const pending = this.pending
     if (pending) {
       this.block(pending.session)
-      this.send(pending.session.host, { type: 'cancel', id: pending.id })
+      this.send(pending.host, { type: 'cancel', id: pending.id })
       pending.finish(
         new BrowserError(
           'outcome_unknown',
@@ -274,6 +276,19 @@ export class BrowserService {
           throw new BrowserError('cancelled', 'Browser service changed before dispatch')
         if (tool === 'list_sessions')
           return { sessions: this.status().sessions, controlDomain: 'shared-lumi' }
+        if (typeof args.url === 'string' && !this.allowed(args.url))
+          throw new BrowserError('url_blocked', 'Invalid or blocked navigation target')
+        if (tool === 'open_tab') {
+          const hosts = [...this.hosts].filter(
+            (host) => host.authenticated && !host.socket.destroyed,
+          )
+          if (hosts.length !== 1)
+            throw new BrowserError(
+              'browser_unavailable',
+              'Opening a tab requires one connected browser',
+            )
+          return this.dispatch(hosts[0]!, undefined, tool, args, options.signal)
+        }
         if (
           !session ||
           this.sessions.get(session.item.id) !== session ||
@@ -293,7 +308,7 @@ export class BrowserService {
             'session_inactive',
             'Browser session changed or is paused; request not dispatched',
           )
-        return this.dispatch(session, tool, args, options.signal)
+        return this.dispatch(session.host, session, tool, args, options.signal)
       })
     this.queue = operation.catch(() => {})
     try {
@@ -304,7 +319,8 @@ export class BrowserService {
   }
 
   private dispatch(
-    session: Session,
+    host: Host,
+    session: Session | undefined,
     tool: string,
     args: BrowserMessage,
     signal?: AbortSignal,
@@ -324,7 +340,7 @@ export class BrowserService {
       }
       const unknown = (message: string) => {
         this.block(session)
-        this.send(session.host, { type: 'cancel', id })
+        this.send(host, { type: 'cancel', id })
         finish(
           new BrowserError(
             'outcome_unknown',
@@ -340,14 +356,14 @@ export class BrowserService {
         () => unknown('Browser response timed out.'),
         Math.max(this.options.requestTimeoutMs ?? 35000, Number(args.timeoutMs ?? 0) + 1000),
       )
-      this.pending = { id, session, finish }
+      this.pending = { id, session, host, tool, finish }
       signal?.addEventListener('abort', cancel, { once: true })
       if (signal?.aborted) {
         cancel()
         return
       }
       try {
-        writeBrowserFrame(session.host.socket, {
+        writeBrowserFrame(host.socket, {
           type: 'request',
           id,
           tool,
@@ -357,12 +373,13 @@ export class BrowserService {
         sent = true
       } catch {
         finish(new BrowserError('disconnected', 'Browser connection failed before dispatch'))
-        session.host.socket.destroy()
+        host.socket.destroy()
       }
     })
   }
 
-  private block(session: Session): void {
+  private block(session: Session | undefined): void {
+    if (!session) return
     if (!session.blocked) session.observedPause = session.item.state !== 'active'
     session.blocked = true
     session.version++
@@ -402,7 +419,7 @@ export class BrowserService {
         if (message.policyEpoch === this.policyEpoch) this.updateSessions(host, message.sessions)
       } else if (message.type === 'response' && typeof message.id === 'string') {
         const pending = this.pending
-        if (!pending || pending.id !== message.id || pending.session.host !== host) return
+        if (!pending || pending.id !== message.id || pending.host !== host) return
         if (isRecord(message.error)) {
           const code = typeof message.error.code === 'string' ? message.error.code : 'browser_error'
           if (code === 'outcome_unknown') this.block(pending.session)
@@ -602,7 +619,12 @@ export class BrowserService {
       if (!next.has(id)) {
         const session = this.sessions.get(id)
         const pending = this.pending
-        if (pending && pending.session === session)
+        if (
+          session &&
+          pending?.session === session &&
+          pending.tool !== 'navigate' &&
+          pending.tool !== 'reload'
+        )
           pending.finish(
             new BrowserError(
               'outcome_unknown',
@@ -624,7 +646,7 @@ export class BrowserService {
   private disconnect(host: Host, message: string): void {
     if (!this.hosts.delete(host)) return
     host.contexts.clear()
-    if (this.pending?.session.host === host)
+    if (this.pending?.host === host)
       this.pending.finish(
         new BrowserError(
           'outcome_unknown',
@@ -638,7 +660,7 @@ export class BrowserService {
     this.listenerGeneration++
     this.enabled = false
     this.epoch++
-    if (this.pending) this.send(this.pending.session.host, { type: 'cancel', id: this.pending.id })
+    if (this.pending) this.send(this.pending.host, { type: 'cancel', id: this.pending.id })
     for (const host of [...this.hosts])
       this.disconnect(host, 'Browser User disabled after dispatch')
     this.sessions.clear()

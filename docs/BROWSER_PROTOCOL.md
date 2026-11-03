@@ -52,7 +52,7 @@ exists. Plaintext payloads are limited to 512 KiB; framed WebSocket payloads to
 1 MiB. Pre-authentication payload, pending connection and queue limits are smaller.
 Authenticated heartbeat and deadlines bound idle or stalled connections.
 
-Business commands remain schema-validated seven-tool operations, not arbitrary
+Business commands remain schema-validated operations, not arbitrary
 CDP. A shared Lumi control domain serializes callers; it is **not** per-Agent
 isolation. Policy revisions, session identities and cancellation epochs remain
 independent defenses. A click whose outcome is uncertain is never replayed.

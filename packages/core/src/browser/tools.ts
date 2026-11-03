@@ -18,6 +18,28 @@ const outputSchema: JsonSchema = { type: 'object' }
 /** All clients share one Lumi control domain. These tools cannot enable or authorize it. */
 export const BROWSER_TOOLS: AiToolView[] = [
   {
+    name: 'Lumi.browser_screenshot',
+    description:
+      'Capture the webpage viewport. Coordinates are CSS pixels from its top left. Capture expires on viewport changes and after 30 seconds.',
+    inputSchema: schema({ sessionId }, ['sessionId']),
+    outputSchema,
+  },
+  {
+    name: 'Lumi.browser_click_at',
+    description:
+      'Click coordinates from a recent screenshot. Capture is consumed once. Never retry outcome_unknown.',
+    inputSchema: schema(
+      {
+        sessionId,
+        captureId: reference,
+        x: { type: 'number', minimum: 0 },
+        y: { type: 'number', minimum: 0 },
+      },
+      ['sessionId', 'captureId', 'x', 'y'],
+    ),
+    outputSchema,
+  },
+  {
     name: 'Lumi.browser_open_tab',
     description:
       'Open an allowed HTTP(S) URL in a new background tab. List sessions after loading.',

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+import { saveBrowserArtifact, validateUploadFiles } from './files'
 import type { Duplex } from 'node:stream'
 import { randomUUID } from 'node:crypto'
 import { BrowserWebSocketTransport } from './websocket-transport'
@@ -308,7 +309,57 @@ export class BrowserService {
             'session_inactive',
             'Browser session changed or is paused; request not dispatched',
           )
-        return this.dispatch(session.host, session, tool, args, options.signal)
+        if (tool === 'upload_files') {
+          try {
+            await validateUploadFiles(args.paths as string[])
+          } catch {
+            throw new BrowserError(
+              'upload_file_invalid',
+              'Specify existing absolute regular files (no symlinks), each at most 100 MiB',
+            )
+          }
+        }
+        const result = await this.dispatch(session.host, session, tool, args, options.signal)
+        if (
+          (tool === 'capture_page' || tool === 'export_pdf') &&
+          isRecord(result) &&
+          typeof result.artifactId === 'string'
+        ) {
+          try {
+            const descriptor = {
+              artifactId: result.artifactId,
+              size: Number(result.size),
+              mimeType: String(result.mimeType),
+            }
+            return await saveBrowserArtifact(
+              this.options.userDataDir,
+              descriptor,
+              async (offset) => {
+                if (
+                  !this.enabled ||
+                  epoch !== this.epoch ||
+                  this.sessions.get(session.item.id) !== session ||
+                  session.blocked ||
+                  !this.allowed(session.item.url)
+                )
+                  throw new Error('artifact_session_changed')
+                return (await this.dispatch(
+                  session.host,
+                  session,
+                  'artifact_chunk',
+                  { sessionId: session.item.id, artifactId: descriptor.artifactId, offset },
+                  options.signal,
+                )) as { data: string; eof: boolean }
+              },
+            )
+          } catch {
+            throw new BrowserError(
+              'artifact_save_failed',
+              'Artifact transfer or validation failed; no partial file retained',
+            )
+          }
+        }
+        return result
       })
     this.queue = operation.catch(() => {})
     try {
@@ -623,7 +674,11 @@ export class BrowserService {
           session &&
           pending?.session === session &&
           pending.tool !== 'navigate' &&
-          pending.tool !== 'reload'
+          pending.tool !== 'reload' &&
+          pending.tool !== 'close_tab' &&
+          pending.tool !== 'go_back' &&
+          pending.tool !== 'go_forward' &&
+          pending.tool !== 'wait_state'
         )
           pending.finish(
             new BrowserError(

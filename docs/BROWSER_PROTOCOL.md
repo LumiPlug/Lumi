@@ -78,3 +78,49 @@ actual Chrome/UI/operating-system acceptance remains separate.
 ## 2026-11-04 本机直接连接更新
 
 此节取代前文关于持久信任、120 秒登记窗口和重新配对的描述。Browser User 开启后，扩展自动连接固定 loopback 端口；每次连接以临时 ECDH 密钥协商建立加密会话，不保存跨连接凭证，不需要用户重新配对。升级自动删除本功能拥有的旧配对记录。Chrome 扩展固定身份、HTTP(S) 网页规则、暂停、用户接管、串行控制和不重放不确定操作继续生效。扩展和 Lumi 均需升级。本机进程可以伪装服务或来源，此模式不验证已配对设备的身份连续性。Lumi MCP 面向 Agent 的令牌独立保留。
+
+## Common action extension (2026-11-05)
+
+The browser tool catalog now has 20 entries. New session-scoped operations are
+`activate_tab`, `close_tab`, `go_back`, `go_forward`, `hover`, `press_key`,
+`select_option`, and `set_checked`. `open_tab.active` is optional and defaults to
+false. `click.button` is left/right/middle and `click.clickCount` is 1/2.
+All operations retain the existing policy/epoch/shared-queue checks. History
+navigation inspects the destination with Page.getNavigationHistory before
+Page.navigateToHistoryEntry. Session removal during explicit close or history
+navigation does not prematurely discard its pending response. Unknown outcomes
+remain non-retryable. Keys are an enumerated page-key set with optional Shift;
+no arbitrary CDP, JavaScript, file-system paths or browser shortcuts are exposed.
+
+## Advanced browser actions (Lumi 0.1.8 / extension 0.6.0)
+
+The catalog now exposes 39 bounded tools. `advanced-tools.json` is mirrored by
+extension/advanced-catalog.mjs; both sides reject unknown fields and arbitrary
+JavaScript/CDP commands. New tools cover tab state and waits, document-bound
+iframe actions, accessibility references, uploads/downloads, JavaScript dialogs,
+opt-in diagnostics, drag/touch, captures/PDF, table extraction, and emulation.
+
+Frame tokens expire after 60 seconds and are checked against documentId and URL;
+semantic references expire after 30 seconds and exclude child-frame content.
+DOM event actions explicitly return `inputMode: dom_events`. A dialog interrupts
+the triggering operation, returns `dialogPending` without replaying remaining
+steps, and requires a separate explicit accept/dismiss action.
+
+Uploads require absolute existing regular files, no symbolic links, at most
+100 MiB per file; selection does not submit a form. Downloads require Chrome's
+downloads permission and expose only IDs associated with the current session.
+Page-triggered downloads are associated by exact referrer; stripped referrers
+are not guessed. New-tab waits use opener IDs or observed navigation-target
+creation and expose only allowed sessions.
+
+Diagnostics are opt-in, bounded to 200 events; headers are not collected.
+Common credential fields and URL queries are redacted, but this is not a complete
+PII detector. Explicit text response-body reads remain bounded and marked as
+untrusted page data. Captures/PDF use session-bound internal chunks, at most
+20 MiB, and are validated and stored under Core's browser-artifacts directory
+with exclusive random filenames and SHA-256. Partial files are removed; the
+directory allows at most 100 artifacts. Artifact chunks are not public tools.
+
+Emulation supports viewport, device scale, touch and network conditions; reset
+restores defaults. Native browser dialogs/menus, OS file pickers, arbitrary
+JavaScript, privileged pages and arbitrary CDP access remain unsupported.

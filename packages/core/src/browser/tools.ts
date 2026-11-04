@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+import { ADVANCED_TOOLS } from './advanced-tools'
 import type { AiToolView, JsonSchema } from '@lumiplug/shared'
 
 const reference: JsonSchema = { type: 'string', minLength: 1, maxLength: 256 }
@@ -17,6 +18,104 @@ const outputSchema: JsonSchema = { type: 'object' }
 
 /** All clients share one Lumi control domain. These tools cannot enable or authorize it. */
 export const BROWSER_TOOLS: AiToolView[] = [
+  ...ADVANCED_TOOLS,
+  {
+    name: 'Lumi.browser_activate_tab',
+    description: 'Activate the allowed tab and bring its browser window to the foreground.',
+    inputSchema: schema({ sessionId }, ['sessionId']),
+    outputSchema,
+  },
+  {
+    name: 'Lumi.browser_close_tab',
+    description:
+      'Close the allowed tab. Unsaved page data may be lost. List sessions again; never retry outcome_unknown.',
+    inputSchema: schema({ sessionId }, ['sessionId']),
+    outputSchema,
+  },
+  {
+    name: 'Lumi.browser_go_back',
+    description:
+      'Navigate back after checking the history destination against page policy. List sessions again.',
+    inputSchema: schema({ sessionId }, ['sessionId']),
+    outputSchema,
+  },
+  {
+    name: 'Lumi.browser_go_forward',
+    description:
+      'Navigate forward after checking the history destination against page policy. List sessions again.',
+    inputSchema: schema({ sessionId }, ['sessionId']),
+    outputSchema,
+  },
+  {
+    name: 'Lumi.browser_hover',
+    description: 'Hover a current ref. May open menus; take a fresh snapshot afterward.',
+    inputSchema: schema({ sessionId, ref: reference }, ['sessionId', 'ref']),
+    outputSchema,
+  },
+  {
+    name: 'Lumi.browser_press_key',
+    description:
+      'Focus a current ref and send one page key, with optional Shift. Enter may submit a form. Never retry outcome_unknown.',
+    inputSchema: schema(
+      {
+        sessionId,
+        ref: reference,
+        key: {
+          type: 'string',
+          enum: [
+            'Enter',
+            'Tab',
+            'Escape',
+            'Backspace',
+            'Delete',
+            'ArrowLeft',
+            'ArrowRight',
+            'ArrowUp',
+            'ArrowDown',
+            'Home',
+            'End',
+            'PageUp',
+            'PageDown',
+            'Space',
+          ],
+        },
+        shift: { type: 'boolean' },
+      },
+      ['sessionId', 'ref', 'key'],
+    ),
+    outputSchema,
+  },
+  {
+    name: 'Lumi.browser_select_option',
+    description:
+      'Select exact value(s) in a native select control. Snapshot exposes options. Emits input and change; inspect afterward.',
+    inputSchema: schema(
+      {
+        sessionId,
+        ref: reference,
+        values: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 100,
+          items: { type: 'string', maxLength: 10000 },
+        },
+      },
+      ['sessionId', 'ref', 'values'],
+    ),
+    outputSchema,
+  },
+  {
+    name: 'Lumi.browser_set_checked',
+    description:
+      'Set a checkbox, radio or ARIA checkbox/switch to the requested state. Does not toggle if already correct.',
+    inputSchema: schema({ sessionId, ref: reference, checked: { type: 'boolean' } }, [
+      'sessionId',
+      'ref',
+      'checked',
+    ]),
+    outputSchema,
+  },
+
   {
     name: 'Lumi.browser_screenshot',
     description:
@@ -42,8 +141,11 @@ export const BROWSER_TOOLS: AiToolView[] = [
   {
     name: 'Lumi.browser_open_tab',
     description:
-      'Open an allowed HTTP(S) URL in a new background tab. List sessions after loading.',
-    inputSchema: schema({ url: { type: 'string', minLength: 1, maxLength: 2048 } }, ['url']),
+      'Open an allowed HTTP(S) URL. active=true brings the new tab and window forward; default is background. List sessions after loading.',
+    inputSchema: schema(
+      { url: { type: 'string', minLength: 1, maxLength: 2048 }, active: { type: 'boolean' } },
+      ['url'],
+    ),
     outputSchema,
   },
   {
@@ -86,7 +188,15 @@ export const BROWSER_TOOLS: AiToolView[] = [
     name: 'Lumi.browser_click',
     description:
       'Click a current snapshot ref using browser CDP. Never automatically retry outcome_unknown.',
-    inputSchema: schema({ sessionId, ref: reference }, ['sessionId', 'ref']),
+    inputSchema: schema(
+      {
+        sessionId,
+        ref: reference,
+        button: { type: 'string', enum: ['left', 'right', 'middle'] },
+        clickCount: { type: 'integer', enum: [1, 2] },
+      },
+      ['sessionId', 'ref'],
+    ),
     outputSchema,
   },
   {

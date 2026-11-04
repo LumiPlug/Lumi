@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+import { validateAdvanced } from './advanced-tools'
 import { Transform } from 'node:stream'
 import type { TransformCallback, Writable } from 'node:stream'
 
@@ -49,6 +50,14 @@ export function writeBrowserFrame(stream: Writable, message: BrowserMessage): vo
 }
 
 export type BrowserTool =
+  | 'activate_tab'
+  | 'close_tab'
+  | 'go_back'
+  | 'go_forward'
+  | 'hover'
+  | 'press_key'
+  | 'select_option'
+  | 'set_checked'
   | 'screenshot'
   | 'click_at'
   | 'open_tab'
@@ -77,16 +86,29 @@ export function validateBrowserArguments(
   tool: string,
   value: unknown,
 ): asserts value is BrowserMessage {
+  const advanced = validateAdvanced(tool, value)
+  if (advanced !== undefined) {
+    if (!advanced) throw new BrowserError('invalid_arguments', 'Invalid advanced browser arguments')
+    return
+  }
   const keys: Record<BrowserTool, string[]> = {
+    activate_tab: ['sessionId'],
+    close_tab: ['sessionId'],
+    go_back: ['sessionId'],
+    go_forward: ['sessionId'],
+    hover: ['sessionId', 'ref'],
+    press_key: ['sessionId', 'ref', 'key', 'shift'],
+    select_option: ['sessionId', 'ref', 'values'],
+    set_checked: ['sessionId', 'ref', 'checked'],
     screenshot: ['sessionId'],
     click_at: ['sessionId', 'captureId', 'x', 'y'],
-    open_tab: ['url'],
+    open_tab: ['url', 'active'],
     navigate: ['sessionId', 'url'],
     reload: ['sessionId'],
     list_sessions: [],
     snapshot: ['sessionId'],
     read_text: ['sessionId', 'ref'],
-    click: ['sessionId', 'ref'],
+    click: ['sessionId', 'ref', 'button', 'clickCount'],
     fill: ['sessionId', 'ref', 'text'],
     scroll: ['sessionId', 'ref', 'deltaX', 'deltaY'],
     wait_for: ['sessionId', 'ref', 'text', 'state', 'timeoutMs'],
@@ -105,7 +127,50 @@ export function validateBrowserArguments(
   }
   if (allowed.includes('url')) text('url', true, 2048)
   if (allowed.includes('sessionId')) text('sessionId', true, 256)
-  if (allowed.includes('ref')) text('ref', tool === 'click' || tool === 'fill', 256)
+  if (allowed.includes('ref'))
+    text(
+      'ref',
+      ['click', 'fill', 'hover', 'press_key', 'select_option', 'set_checked'].includes(tool),
+      256,
+    )
+
+  for (const key of ['active', 'shift', 'checked'])
+    if (value[key] !== undefined && typeof value[key] !== 'boolean')
+      throw new BrowserError('invalid_arguments', `Invalid ${key}`)
+  if (tool === 'set_checked' && typeof value.checked !== 'boolean')
+    throw new BrowserError('invalid_arguments', 'checked is required')
+  if (
+    tool === 'press_key' &&
+    ![
+      'Enter',
+      'Tab',
+      'Escape',
+      'Backspace',
+      'Delete',
+      'ArrowLeft',
+      'ArrowRight',
+      'ArrowUp',
+      'ArrowDown',
+      'Home',
+      'End',
+      'PageUp',
+      'PageDown',
+      'Space',
+    ].includes(value.key as string)
+  )
+    throw new BrowserError('invalid_arguments', 'Unsupported page key')
+  if (
+    tool === 'select_option' &&
+    (!Array.isArray(value.values) ||
+      value.values.length < 1 ||
+      value.values.length > 100 ||
+      value.values.some((v) => typeof v !== 'string' || v.length > 10000))
+  )
+    throw new BrowserError('invalid_arguments', 'Provide 1–100 bounded option values')
+  if (value.button !== undefined && !['left', 'right', 'middle'].includes(value.button as string))
+    throw new BrowserError('invalid_arguments', 'Invalid mouse button')
+  if (value.clickCount !== undefined && value.clickCount !== 1 && value.clickCount !== 2)
+    throw new BrowserError('invalid_arguments', 'Invalid click count')
   if (tool === 'click_at') {
     text('captureId', true, 256)
     if (![value.x, value.y].every((n) => typeof n === 'number' && Number.isFinite(n) && n >= 0))

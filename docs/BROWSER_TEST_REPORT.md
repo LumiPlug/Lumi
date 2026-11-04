@@ -10,7 +10,7 @@ Those changes are not included in this release. All code changes and commits
 were made on the existing working branches.
 
 - Home contract check, TypeScript, ESLint: passed.
-- Vitest: 64 files, 506 tests passed, including actual encrypted loopback MCP
+- Vitest: 65 files, 509 tests passed, including actual encrypted loopback MCP
   integration, common-tool schemas and file/artifact validation.
 - Rust fmt, check and clippy with warnings denied: passed after staging the
   development sidecar launchers required by Tauri.
@@ -37,3 +37,5 @@ and the extension repository's docs/TEST_REPORT.md.
 The Intel CI runner exceeded Vitest’s default 5-second timeout while building
 and scanning the existing 100,001-row Cursor limit fixture. That one test now
 has a 20-second budget; its fixture size and all assertions are unchanged.
+
+响应过滤器将工作线程启动等待（最多 5 秒）与正则执行（最多 500 毫秒）分别计时，避免慢机器启动耗时导致正常过滤失败；新增启动延迟、执行超时与取消回归。

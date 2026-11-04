@@ -28,34 +28,55 @@ export function filterResponse(
         }
         return out;
       }
-      parentPort.postMessage(filter(workerData.value,workerData.rules) ?? null);
+      parentPort.once('message', () => {
+        parentPort.postMessage({type:'result', value:filter(workerData.value,workerData.rules) ?? null});
+      });
+      parentPort.postMessage({type:'ready'});
     `,
       { eval: true, workerData: { value, rules }, resourceLimits: { maxOldGenerationSizeMb: 32 } },
     )
+    let settled = false
+    let ready = false
     const cleanup = () => {
+      settled = true
       clearTimeout(timer)
       signal?.removeEventListener('abort', abort)
       void worker.terminate()
     }
     const abort = () => {
+      if (settled) return
       cleanup()
       reject(new ToolError('tool_execution_failed'))
     }
-    const timer = setTimeout(() => {
+    let timer = setTimeout(() => {
       cleanup()
       reject(new ToolError('tool_response_filter_timeout'))
-    }, 500)
+    }, 5000)
     signal?.addEventListener('abort', abort, { once: true })
-    worker.once('message', (result) => {
-      cleanup()
-      resolve(result as JsonValue)
+    worker.on('message', (message) => {
+      if (settled) return
+      if (!ready && message?.type === 'ready') {
+        ready = true
+        clearTimeout(timer)
+        // Worker startup is not regex execution. Retain the 500 ms execution
+        // ceiling while allowing a bounded startup on slower native runners.
+        timer = setTimeout(() => {
+          cleanup()
+          reject(new ToolError('tool_response_filter_timeout'))
+        }, 500)
+        worker.postMessage({ type: 'run' })
+      } else if (ready && message?.type === 'result') {
+        cleanup()
+        resolve(message.value as JsonValue)
+      }
     })
     worker.once('error', () => {
+      if (settled) return
       cleanup()
       reject(new ToolError('tool_config_invalid'))
     })
     worker.once('exit', (code) => {
-      if (code !== 0) {
+      if (!settled && code !== 0) {
         cleanup()
         reject(new ToolError('tool_execution_failed'))
       }

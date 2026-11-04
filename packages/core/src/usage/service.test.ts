@@ -337,7 +337,7 @@ describe('local usage collection', () => {
       files: 2,
       problems: ['limit'],
     })
-  })
+  }, 20000)
   it('reads only Cursor usage columns read-only; context and zero placeholders stay unknown', async () => {
     const { service, roots, report } = await setup(),
       file = roots[3]!.directory

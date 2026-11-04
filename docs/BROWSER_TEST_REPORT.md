@@ -33,3 +33,7 @@ Chrome Web Store publishing and every site's framework compatibility are not
 claimed. GitHub CI/build outcomes belong to the final release commits, not
 older passing builds. Details and action limitations are in BROWSER_USER.md
 and the extension repository's docs/TEST_REPORT.md.
+
+The Intel CI runner exceeded Vitest’s default 5-second timeout while building
+and scanning the existing 100,001-row Cursor limit fixture. That one test now
+has a 20-second budget; its fixture size and all assertions are unchanged.

@@ -333,8 +333,17 @@ describe('official homepage project', () => {
     const insert = service.database.raw.prepare(
       'INSERT INTO workbench_state (key, value_json) VALUES (?, ?)',
     )
-    for (let index = 0; index < HOME_STORAGE_LIMITS.keys - 1; index++)
-      insert.run(`${project}:key-${index}`, String(index))
+    // Seed the quota fixture atomically instead of forcing thousands of disk
+    // commits on Windows runners. The public API assertions remain unchanged.
+    service.database.raw.exec('BEGIN')
+    try {
+      for (let index = 0; index < HOME_STORAGE_LIMITS.keys - 1; index++)
+        insert.run(`${project}:key-${index}`, String(index))
+      service.database.raw.exec('COMMIT')
+    } catch (error) {
+      service.database.raw.exec('ROLLBACK')
+      throw error
+    }
     expect(() => service.workbench.state(project, 'set', 'overflow', 0)).toThrow()
     service.workbench.state(project, 'set', 'prefs', false)
     service.workbench.state(project, 'delete', 'prefs')

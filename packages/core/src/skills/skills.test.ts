@@ -123,7 +123,10 @@ describe('Skills discovery', () => {
     expect(
       roots
         .filter((root) => root.scope === 'project')
-        .every((root) => path.relative(project, root.path).split(path.sep)[0]?.startsWith('.')),
+        .every((root) => {
+          const relative = path.relative(project, root.path)
+          return relative === 'skills' || relative.split(path.sep)[0]?.startsWith('.')
+        }),
     ).toBe(true)
   })
 })
@@ -251,10 +254,9 @@ describe('Skills inventory persistence', () => {
       const next = await scan
       expect(next.skills.map((item) => item.name)).toEqual(['Z new', 'A edited'])
       expect(next.skills[0]?.firstSeenAt).toBe('2026-10-10T01:00:00.000Z')
-      expect(next.skills[0]?.sources.map((source) => source.client)).toEqual([
-        'Codex',
-        'Gemini CLI',
-      ])
+      expect(next.skills[0]?.sources.map((source) => source.client)).toEqual(
+        expect.arrayContaining(['Codex', 'Gemini CLI', 'Copilot', 'Zed']),
+      )
       expect(next.skills[1]?.firstSeenAt).toBe(old.firstSeenAt)
       expect(next.skills[1]?.fileCreatedAt).toBe(old.fileCreatedAt)
       repository.archive(old.id, true)

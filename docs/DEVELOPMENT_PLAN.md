@@ -1,5 +1,9 @@
 <!-- SPDX-License-Identifier: MPL-2.0 -->
 
+2026-10-19 用户补充Skills来源：接入豆包桌面版个人候选目录与Lumi专用路径覆盖，以及Reasonix个人/项目目录、Windows默认根、REASONIX_HOME隔离。新增2项合成回归；最终CI=1 pnpm check通过（51文件/408测试、类型、lint、主页契约及Rust检查），本机Reasonix只读扫描发现12个有效技能、无错误，豆包未安装且未完成实机核验。保留全部既有改动；核查证据、未覆盖范围和验证记录见 [SKILL_SOURCES.md](SKILL_SOURCES.md)。本次不扩展AI用量来源。
+
+2026-10-19 Skills 来源扩展：核查47个用量来源，目录规则与不支持原因记录于 [SKILL_SOURCES.md](SKILL_SOURCES.md)；接入用户/项目标准候选目录、共享目录合并与 Quick Desktop 的有界 profile Skills 枚举。42个默认软件分类，Open Design 在显式数据根下另启用，Cursor Agent 归入 Cursor。保留既有未提交用量/托盘改动，不改 vendor，不提交、推送或发布。最终 CI=1 pnpm check 通过（51文件/406测试、主页契约、类型、lint及Rust fmt/check/clippy）；新增5项合成回归，逐客户端实机加载及WorkBuddy发行代码路径推导的限制见来源表。
+
 # Lumi 开发计划
 
 ## 0.1.7 Windows 验证预览发布（2026-10-21）
@@ -9,6 +13,18 @@
 ## 0.1.6 预览发布（2026-10-20）
 
 用户明确授权提交、推送、合并并发布 Qoder CN 目录与扫描进度修复。以 main 1d97be8（0.1.5 双语）为集成基线，在隔离副本中提取本次改动，保留原工作区并行改动；发布范围及验收限制见 [0.1.6](releases/0.1.6.md)。新增永久回归允许修改本次相关测试，明确不改 packages/core/src/usage/codeburn.test.ts。最终验证以该集成版本重跑，不沿用下述历史400测试结果。
+
+## 2026-10-19 工作台存储兼容层（用户授权，未提交/发布）
+
+受控脚本在所有入口业务脚本前预载并注入 localStorage/sessionStorage；幂等 SDK 避免重复握手。项目持久区、窗口会话区和原 SDK JSON KV 分开；扩容并提供串行写入、flush确认、失败保留/重试及顶部 Toast。新增 SQLite 表，不改正式数据；保留用户已有用量/Skills/托盘等工作区改动。验证包含预载时序、刷新与重启、特殊字符串、配额、故障重试、真实工具调用和宿主隔离；不实现 IndexedDB/Cookie。
+
+验证完成：完整 `pnpm check` 通过（53文件/420测试、类型/lint/Rust fmt/check/clippy），Core/前端构建通过；随后补充的 SDK 预载失败不得虚报 flush 成功用例也已单独通过（SDK 5项）。纯合成 Chromium 实例使用真实 WorkbenchContent、Core资源服务、SDK、Registry和临时终端工具：首段内联脚本预载、SDK重复引用、100KiB含转义字符的存储、flush、刷新恢复、新窗口会话隔离、配额、SQLite故障顶部Toast及重试均通过；宿主DOM/凭据/管理接口隔离与联网/表单/弹窗/下载回归通过。旧数据库合成迁移、localStorage重开持久和sessionStorage重启清空由仓库测试覆盖。未启动/重启正式Lumi、未读写正式数据、未提交/推送/发布；WKWebView/WebView2尚未实机验收，保留前端既有大chunk提示。
+
+## 2026-10-19 首页浏览器权限扩展（用户授权，未提交/发布）
+
+iframe 与资源 CSP 共用一份权限策略，开放外部网络/CDN、内联脚本/动态求值、表单/下载/弹窗/嵌套页面及常用浏览器功能委派。保留 opaque origin、顶层导航限制、弹窗沙盒继承、宿主 nonce 与公开 RPC 边界；用户工具继续共用 Registry 真实执行。同步官方模板知识库与嵌入产物；验证实际资源响应、iframe 属性、工具执行与管理/凭据隔离，不读取正式数据或重启运行实例。原生存储与部分设备 API 仍受 opaque origin 和 WebView/系统限制，不宣称浏览器/系统权限静默全开。
+
+验证完成：当前工作区完整 `pnpm check` 通过（51文件/406测试，含并行产生的 Skills 回归；类型/lint/Rust fmt/check/clippy通过），前端与 Core 构建通过。临时纯合成 Chromium 实例使用真实 WorkbenchContent、资源服务、SDK、Registry及临时终端工具，19项页面断言通过，另验证宿主地址嵌套页面与弹窗仍不能读取宿主 DOM、下载成功且宿主 UI 保留；网络 CORS、管理方法和直接 Core 访问限制均有效。未读取正式数据库、未启动/重启正式 Lumi、未提交/推送/发布；原生 WKWebView/WebView2 的弹窗、下载及设备授权行为仍待实机验收。前端保留既有大 chunk 提示。
 
 ## 2026-10-19 扫描进度与 Qoder CN 修复（实现与合成验证完成，未提交/推送/发布）
 
@@ -654,6 +670,7 @@ PRO锁屏阻止原生CUA：保存面板落盘/重导入、原生双击/历史窗
 本地 macOS ARM64 调试应用使用官方 Node 26.10 独立运行时打包。`pnpm check` 通过（47 个测试文件、383 项测试，含主页契约、类型、ESLint、Rust fmt/check/clippy）；`pnpm test:codeburn` 通过（69 个文件、1,256 项测试）。本地生成的核查报告和构建产物不纳入版本提交。未做 Windows、Linux 或 macOS Intel 的本轮实机验证。
 
 0.1.2 应用深度签名检查通过；包内 sidecar 在空 PATH 和独立工作目录下通过 HTTP/stdio 冒烟验证（30 个 MCP 工具）。重启本地调试应用后，实际 Core `/healthz` 返回 `status: ok`、`coreVersion: 0.1.2`。本次只创建本地版本提交，不推送或发布。
+
 
 ## 界面中英文切换（2026-10-19）
 

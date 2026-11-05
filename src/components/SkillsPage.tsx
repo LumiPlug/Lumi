@@ -1,7 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 import { t, useLocale } from '../i18n'
 import { useRetainWindowState } from '../lib/window-retention'
-import { IconButton, Input, Button, Tabs, SurfaceButton, Card, Badge, Modal, Field } from './ui'
+import {
+  IconButton,
+  ExpandableSearch,
+  Input,
+  Button,
+  Tabs,
+  SurfaceButton,
+  Card,
+  Badge,
+  Modal,
+  Field,
+} from './ui'
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import type { InstalledSkill, SkillInventory } from '@lumiplug/shared'
@@ -379,10 +390,8 @@ export default function SkillsPage({ active, coreReady }: { active: boolean; cor
             </Button>
           </div>
           <div className="ui-list-toolbar-filters">
-            <Input
-              className="skills-search ui-list-toolbar-search"
-              aria-label={t('搜索技能')}
-              type="search"
+            <ExpandableSearch
+              label={t('搜索技能')}
               placeholder={t('名称、用途、软件或路径')}
               value={filter.query}
               onChange={(event) => updateFilter({ query: event.target.value })}

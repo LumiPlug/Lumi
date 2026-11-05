@@ -39,6 +39,7 @@ import {
   Field,
   GraphView,
   IconButton,
+  ExpandableSearch,
   Input,
   Modal,
   Select,
@@ -536,9 +537,8 @@ export default function KnowledgePage({
               </Button>
             </div>
             <div className="ui-list-toolbar-filters">
-              <Input
-                className="ui-list-toolbar-search"
-                aria-label={t('搜索知识库')}
+              <ExpandableSearch
+                label={t('搜索知识库')}
                 placeholder={t('搜索项目')}
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}

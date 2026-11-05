@@ -10,7 +10,9 @@ export const HOME_ERRORS: Record<string, string> = {
   workbench_unavailable: '主页服务暂不可用，请保持 Lumi 运行后重试。',
   workbench_instance_expired: '主页版本已变化，请等待新页面加载后重试。',
   invalid_workbench_state:
-    '页面数据无效：每值32KiB、最多128键，键使用英文、数字、点、下划线或短横线。',
+    '页面数据无效：每值256KiB、最多4096键、项目合计5MiB，键使用英文、数字、点、下划线或短横线。',
+  invalid_browser_storage: '工作台浏览器存储请求无效，请重新加载后重试。',
+  browser_storage_quota: '工作台存储空间不足：每区域5MiB、最多4096键、单值1MiB。',
   invalid_export_directory: '请输入导出目录的完整绝对路径。',
   export_directory_not_empty: '导出目录不是空目录，请选择新建或空目录。',
   method_unavailable: '页面不能调用此管理方法，请使用公开 SDK 接口。',

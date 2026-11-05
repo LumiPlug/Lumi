@@ -2,7 +2,6 @@
 
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import os from 'node:os'
 import { createHash } from 'node:crypto'
 import { parseDocument } from 'yaml'
 import { normalizeSkillTimestamp } from '@lumiplug/shared'
@@ -13,61 +12,9 @@ import type {
   SkillSource,
 } from '@lumiplug/shared'
 
-export interface ScanRoot {
-  client: string
-  scope: SkillSource['scope']
-  path: string
-}
-
-export function skillRoots(
-  projects: string[],
-  home = os.homedir(),
-  environment: NodeJS.ProcessEnv = process.env,
-): ScanRoot[] {
-  const codex = environment.CODEX_HOME
-    ? path.resolve(environment.CODEX_HOME)
-    : path.join(home, '.codex')
-  const claude = environment.CLAUDE_CONFIG_DIR
-    ? path.resolve(environment.CLAUDE_CONFIG_DIR)
-    : path.join(home, '.claude')
-  const clients = [
-    ['Codex', '.agents'],
-    ['Claude Code', '.claude'],
-    ['Qoder', '.qoder'],
-    ['Cursor', '.cursor'],
-    ['Gemini CLI', '.gemini'],
-  ] as const
-  const roots: ScanRoot[] = [
-    { client: 'Codex', scope: 'personal', path: path.join(codex, 'skills') },
-    { client: 'Codex', scope: 'personal', path: path.join(home, '.agents/skills') },
-    { client: 'Codex', scope: 'plugin', path: path.join(codex, 'plugins/cache') },
-    { client: 'Claude Code', scope: 'personal', path: path.join(claude, 'skills') },
-    { client: 'Claude Code', scope: 'plugin', path: path.join(claude, 'plugins/cache') },
-    { client: 'Qoder', scope: 'personal', path: path.join(home, '.qoder/skills') },
-    { client: 'QoderWork', scope: 'personal', path: path.join(home, '.qoderwork/skills') },
-    { client: 'Cursor', scope: 'personal', path: path.join(home, '.cursor/skills') },
-    { client: 'Gemini CLI', scope: 'personal', path: path.join(home, '.gemini/skills') },
-    { client: 'Gemini CLI', scope: 'personal', path: path.join(home, '.agents/skills') },
-    { client: 'Gemini CLI', scope: 'plugin', path: path.join(home, '.gemini/extensions') },
-  ]
-  for (const project of projects) {
-    for (const [client, directory] of clients) {
-      roots.push({ client, scope: 'project', path: path.join(project, directory, 'skills') })
-    }
-    roots.push({
-      client: 'Gemini CLI',
-      scope: 'project',
-      path: path.join(project, '.agents/skills'),
-    })
-    // Older Codex projects may still use .codex/skills.
-    roots.push({ client: 'Codex', scope: 'project', path: path.join(project, '.codex/skills') })
-  }
-  return roots.filter(
-    (root, index) =>
-      roots.findIndex((other) => other.path === root.path && other.client === root.client) ===
-      index,
-  )
-}
+import { skillRoots, type ScanRoot } from './roots'
+export { skillRoots }
+export type { ScanRoot }
 
 const MAX_FILE_BYTES = 256 * 1024
 const MAX_DIRECTORIES = 12_000
@@ -116,11 +63,26 @@ export async function scanSkillRoots(roots: ScanRoot[]): Promise<{
   const locations: SkillScanLocation[] = []
   const issues: SkillScanIssue[] = []
   let directories = 0
+  // Shared directory candidates are read once; preserve all client/scope labels.
+  const groups = new Map<string, ScanRoot[]>()
   for (const root of roots) {
-    const location: SkillScanLocation = { ...root, status: 'scanned' }
-    locations.push(location)
+    const key = JSON.stringify([root.path, root.layout])
+    const group = groups.get(key)
+    if (group) group.push(root)
+    else groups.set(key, [root])
+  }
+  for (const aliases of groups.values()) {
+    const root = aliases[0]!
+    const aliasLocations = aliases.map(({ client, scope, path: directory }) => ({
+      client,
+      scope,
+      path: directory,
+      status: 'scanned' as SkillScanLocation['status'],
+    }))
+    locations.push(...aliasLocations)
+    const location = aliasLocations[0]!
     const visited = new Set<string>()
-    async function walk(directory: string, depth: number): Promise<void> {
+    async function walk(directory: string, depth: number, boundary = root.path): Promise<void> {
       if (++directories > MAX_DIRECTORIES || depth > MAX_DEPTH) {
         location.status = 'error'
         issues.push({ path: directory, message: '目录扫描达到上限，请缩小扫描范围。' })
@@ -152,27 +114,28 @@ export async function scanSkillRoots(roots: ScanRoot[]): Promise<{
           } finally {
             await handle.close()
           }
-          const source: SkillSource = {
-            client: root.client,
-            scope: root.scope,
-            root: root.path,
+          const sources: SkillSource[] = aliases.map((alias) => ({
+            client: alias.client,
+            scope: alias.scope,
+            root: alias.path,
             path: filePath,
-          }
+          }))
           const existing = found.get(realPath)
           if (existing) {
-            if (
-              !existing.sources.some(
-                (item) => item.path === source.path && item.client === source.client,
+            for (const source of sources)
+              if (
+                !existing.sources.some(
+                  (item) => item.path === source.path && item.client === source.client,
+                )
               )
-            )
-              existing.sources.push(source)
+                existing.sources.push(source)
           } else {
             const metadata = skillMetadata(content, path.basename(directory))
             found.set(realPath, {
               id: createHash('sha256').update(realPath).digest('hex'),
               ...metadata,
               path: realPath,
-              sources: [source],
+              sources,
               present: true,
               archived: false,
               firstSeenAt: null,
@@ -183,7 +146,7 @@ export async function scanSkillRoots(roots: ScanRoot[]): Promise<{
           }
           // Some installed packs also contain independently discoverable subskills.
           if (entries.some((item) => item.name === 'skills' && item.isDirectory())) {
-            await walk(path.join(directory, 'skills'), depth + 1)
+            await walk(path.join(directory, 'skills'), depth + 1, boundary)
           }
           return
         }
@@ -199,7 +162,7 @@ export async function scanSkillRoots(roots: ScanRoot[]): Promise<{
               try {
                 const linkedDirectory = await fs.realpath(path.join(directory, child.name))
                 if (!(await fs.stat(linkedDirectory)).isDirectory()) continue
-                const relative = path.relative(await fs.realpath(root.path), linkedDirectory)
+                const relative = path.relative(await fs.realpath(boundary), linkedDirectory)
                 if (
                   relative.startsWith(`..${path.sep}`) ||
                   relative === '..' ||
@@ -220,7 +183,7 @@ export async function scanSkillRoots(roots: ScanRoot[]): Promise<{
                 continue
               }
             }
-            await walk(path.join(directory, child.name), depth + 1)
+            await walk(path.join(directory, child.name), depth + 1, boundary)
           }
         }
       } catch (error) {
@@ -239,7 +202,41 @@ export async function scanSkillRoots(roots: ScanRoot[]): Promise<{
         })
       }
     }
-    await walk(root.path, 0)
+    if (root.layout === 'profiles') {
+      try {
+        const profiles = await fs.opendir(root.path)
+        let checked = 0
+        for await (const profile of profiles) {
+          if (++checked > 64) {
+            location.status = 'error'
+            issues.push({ path: root.path, message: 'Profile 枚举达到上限，请缩小扫描范围。' })
+            break
+          }
+          if (profile.isDirectory()) {
+            const directory = path.join(root.path, profile.name, 'skills')
+            // Missing skills in an otherwise valid profile is a normal empty candidate.
+            try {
+              const stat = await fs.lstat(directory)
+              if (stat.isSymbolicLink()) {
+                location.status = 'error'
+                issues.push({ path: directory, message: 'Profile 技能根目录不能是符号链接。' })
+                continue
+              }
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
+            }
+            await walk(directory, 0, directory)
+          }
+        }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') location.status = 'missing'
+        else {
+          location.status = 'error'
+          issues.push({ path: root.path, message: '无法读取 Profile 技能目录，请检查权限。' })
+        }
+      }
+    } else await walk(root.path, 0)
+    for (const alias of aliasLocations) alias.status = location.status
   }
   return { skills: [...found.values()], locations, issues }
 }

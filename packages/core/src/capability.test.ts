@@ -115,6 +115,7 @@ describe('Capability Registry', () => {
       { id: 10, name: 'knowledge_build_status_index' },
       { id: 11, name: 'host_task_input_snapshots' },
       { id: 12, name: 'ai_token_usage' },
+      { id: 13, name: 'workbench_browser_storage' },
     ])
     database.close()
   })

@@ -231,8 +231,14 @@ pub fn install(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         (settings, "设置", "Settings"),
         (quit, "退出 Lumi", "Quit Lumi"),
     ];
+    // A white transparent mark disappears on a light Windows taskbar. Reuse the
+    // branded app tile so the tray remains visible with either taskbar theme.
+    #[cfg(target_os = "windows")]
+    let icon = Image::from_bytes(include_bytes!("../icons/32x32.png"))?;
+    #[cfg(not(target_os = "windows"))]
+    let icon = Image::from_bytes(include_bytes!("../icons/tray-icon.png"))?;
     TrayIconBuilder::with_id("lumi-tray")
-        .icon(Image::from_bytes(include_bytes!("../icons/tray-icon.png"))?)
+        .icon(icon)
         .icon_as_template(false)
         .tooltip("Lumi")
         .menu(&menu)

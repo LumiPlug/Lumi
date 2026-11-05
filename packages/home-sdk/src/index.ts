@@ -4,6 +4,8 @@ import { LumiError } from './protocol'
 import type { Capability, HostInfo, Json, Reply, Theme, Tool } from './protocol'
 import { createMock } from './mock'
 import { SDK_CONTRACT } from './version'
+import { homeRpcByteLimit } from '../../shared/src/workbench-storage'
+import type { StorageBridge } from './storage'
 export { LumiError }
 export type { Capability, HostInfo, Json, Theme, Tool }
 
@@ -24,6 +26,7 @@ const localPreview =
   location.protocol === 'file:' ||
   (location.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(location.hostname))
 const mock = window.parent === window && localPreview ? createMock() : null
+const storageBridge: StorageBridge | undefined = window.__LUMI_STORAGE_BRIDGE__
 let port: MessagePort | null = null
 let host: HostInfo | null = null
 let sequence = 0
@@ -40,6 +43,9 @@ const ready = new Promise<HostInfo>((resolve, reject) => {
 // Initialization can precede App mount; the public promise still rejects to callers.
 void ready.catch(() => {})
 const instance = new URLSearchParams(location.hash.slice(1)).get('lumi')
+const documentId = Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) =>
+  byte.toString(16).padStart(2, '0'),
+).join('')
 const readyTimer = window.setTimeout(
   () =>
     rejectReady(
@@ -59,6 +65,7 @@ if (mock) {
       event.source !== window.parent ||
       event.data?.type !== 'lumi.home.connect' ||
       event.data.instance !== instance ||
+      (event.data.documentId !== undefined && event.data.documentId !== documentId) ||
       !event.ports[0] ||
       port
     )
@@ -85,13 +92,25 @@ if (mock) {
       else request.reject(new LumiError(reply.error.code, reply.error.message))
     }
     port.start()
+    storageBridge?.connect(
+      (operation) => request('storage.native', operation),
+      (error) => {
+        const code = error instanceof LumiError ? error.code : 'storage_save_failed'
+        const message = '工作台存储保存失败，尚未保存的更改仍在页面中，请重试保存后再关闭。'
+        window.dispatchEvent(new CustomEvent('lumi:storage-error', { detail: { code, message } }))
+        void request('toast.show', { message, tone: 'error' }).catch(() => {})
+      },
+    )
     clearTimeout(readyTimer)
     resolveReady!(host)
     window.removeEventListener('message', connect)
   }
   window.addEventListener('message', connect)
   if (instance && window.parent !== window)
-    window.parent.postMessage({ type: 'lumi.home.ready', bridgeVersion: 1, instance }, '*')
+    window.parent.postMessage(
+      { type: 'lumi.home.ready', bridgeVersion: 1, instance, documentId },
+      '*',
+    )
 }
 
 async function request<T>(method: string, args: Record<string, Json> = {}): Promise<T> {
@@ -99,8 +118,11 @@ async function request<T>(method: string, args: Record<string, Json> = {}): Prom
   if (mock) return (await mock.request(method, args)) as T
   if (!port) throw new LumiError('host_unavailable', '页面与 Lumi 的连接已关闭。')
   if (pending.size >= 64) throw new LumiError('too_many_requests', '请求过多，请稍后重试。')
-  if (new TextEncoder().encode(JSON.stringify(args)).length > 64 * 1024)
-    throw new LumiError('request_too_large', '请求超过 64 KiB。')
+  if (
+    new TextEncoder().encode(JSON.stringify({ id: sequence + 1, method, args })).length >
+    homeRpcByteLimit(method) - 1024
+  )
+    throw new LumiError('request_too_large', '请求超过该接口的大小限制。')
   const id = ++sequence
   return new Promise<T>((resolve, reject) => {
     const timer = window.setTimeout(() => {
@@ -113,13 +135,24 @@ async function request<T>(method: string, args: Record<string, Json> = {}): Prom
 }
 
 window.addEventListener('pagehide', () => {
-  port?.close()
-  port = null
-  for (const item of pending.values()) {
-    clearTimeout(item.timer)
-    item.reject(new LumiError('page_closed', '页面连接已关闭。'))
+  // Navigation cannot wait for async disk writes. Explicit flush() is the
+  // acknowledgement boundary; pagehide only starts a best-effort final drain.
+  const close = () => {
+    storageBridge?.disconnect()
+    port?.close()
+    port = null
+    for (const item of pending.values()) {
+      clearTimeout(item.timer)
+      item.reject(new LumiError('page_closed', '页面连接已关闭。'))
+    }
+    pending.clear()
   }
-  pending.clear()
+  if (storageBridge)
+    void storageBridge
+      .flush()
+      .catch(() => {})
+      .finally(close)
+  else close()
 })
 
 export const lumi = {
@@ -135,6 +168,12 @@ export const lumi = {
     get: (key: string) => request<Json>('storage.get', { key }),
     set: (key: string, value: Json) => request<Json>('storage.set', { key, value }),
     delete: (key: string) => request<Json>('storage.delete', { key }),
+    flush: async () => {
+      await ready
+      if (!mock && !storageBridge)
+        throw new LumiError('storage_unavailable', '工作台存储兼容层未加载，请重新加载后重试。')
+      await storageBridge?.flush()
+    },
   },
   theme: {
     get: () => theme,

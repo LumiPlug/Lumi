@@ -2,11 +2,12 @@
 
 import { randomUUID } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
-import { HOME_CONTRACT } from '@lumiplug/shared'
+import { HOME_CONTENT_SECURITY_POLICY, HOME_CONTRACT } from '@lumiplug/shared'
 import type { HomeBundle } from '@lumiplug/shared'
 import { compatibleHome, decodeHomeFile } from './validation'
 import type { WorkbenchRepository } from './repository'
 import { HOME_TEMPLATE_FILES } from './template-files'
+import { HOME_STORAGE_RUNTIME } from './storage-runtime'
 
 const mime: Record<string, string> = {
   html: 'text/html; charset=utf-8',
@@ -34,65 +35,81 @@ export class HomeRuntimeServer {
   private bundle: HomeBundle | null = null
   public constructor(private readonly repository: WorkbenchRepository) {
     this.server = createServer((request, response) => {
-      const url = new URL(request.url ?? '/', 'http://127.0.0.1')
-      const parts = url.pathname.split('/')
-      const allowedHost = request.headers.host === `127.0.0.1:${this.port}`
-      const version = Number(parts[3])
-      let filename = ''
       try {
-        filename = decodeURIComponent(parts.slice(4).join('/'))
+        const url = new URL(request.url ?? '/', 'http://127.0.0.1')
+        const parts = url.pathname.split('/')
+        const allowedHost = request.headers.host === `127.0.0.1:${this.port}`
+        const version = Number(parts[3])
+        let filename = ''
+        try {
+          filename = decodeURIComponent(parts.slice(4).join('/'))
+        } catch {
+          /* Invalid URI stays unavailable. */
+        }
+        if (
+          !allowedHost ||
+          !['GET', 'HEAD'].includes(request.method ?? '') ||
+          parts[1] !== 'home' ||
+          parts[2] !== this.token ||
+          version !== this.loadedVersion ||
+          !this.bundle ||
+          !compatibleHome(this.bundle.manifest)
+        ) {
+          response.writeHead(404, { 'content-type': 'text/plain', 'cache-control': 'no-store' })
+          response.end('Not found')
+          return
+        }
+        const file = this.bundle.files.find((item) => item.path === filename)
+        const managed = ['lumi-sdk.js', 'lumi-storage.js', 'theme.css'].includes(filename)
+        if (!file && !managed) {
+          response.writeHead(404)
+          response.end()
+          return
+        }
+        let bytes: Buffer
+        const session = url.searchParams.get('storageSession')
+        const sessionId =
+          session && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(session)
+            ? session
+            : randomUUID()
+        if (filename === 'lumi-storage.js') {
+          const snapshot = this.repository.browserStorage.snapshot(
+            this.bundle.manifest.projectId,
+            sessionId,
+          )
+          bytes = Buffer.from(
+            `(function(){${HOME_STORAGE_RUNTIME}\nLumiStorageCompat.installStorageBridge(window,${JSON.stringify(snapshot)});})();`,
+          )
+        } else bytes = managed ? Buffer.from(HOME_TEMPLATE_FILES[filename]!) : decodeHomeFile(file!)
+        if (filename === 'index.html') {
+          const html = bytes.toString('utf8')
+          const storagePath = `${url.pathname.slice(0, -'index.html'.length)}lumi-storage.js?storageSession=${sessionId}`
+          // The controlled SDK is idempotent, including when the source project
+          // references it again or contains misleading commented-out references.
+          const sdk = '<script src="./lumi-sdk.js"></script>'
+          const tags = `<script src="${storagePath}"></script>${sdk}`
+          // A blocking script before all user markup also covers inline scripts
+          // preceding <head>. Keep an existing leading doctype in standards mode.
+          const doctype = /^(?:\uFEFF)?(?:\s|<!--[\s\S]*?-->)*<!doctype[^>]*>/i.exec(html)
+          const offset = doctype?.[0].length ?? 0
+          bytes = Buffer.from(`${html.slice(0, offset)}${tags}${html.slice(offset)}`)
+        }
+        response.writeHead(200, {
+          'content-type':
+            mime[filename.split('.').pop()?.toLowerCase() ?? ''] ?? 'application/octet-stream',
+          'content-length': bytes.length,
+          'access-control-allow-origin': '*',
+          'cross-origin-resource-policy': 'cross-origin',
+          'x-content-type-options': 'nosniff',
+          'cache-control': 'no-store',
+          'referrer-policy': 'no-referrer',
+          'content-security-policy': HOME_CONTENT_SECURITY_POLICY,
+        })
+        response.end(request.method === 'HEAD' ? undefined : bytes)
       } catch {
-        /* Invalid URI stays unavailable. */
+        response.writeHead(500, { 'content-type': 'text/plain', 'cache-control': 'no-store' })
+        response.end('Home resource unavailable')
       }
-      if (
-        !allowedHost ||
-        !['GET', 'HEAD'].includes(request.method ?? '') ||
-        parts[1] !== 'home' ||
-        parts[2] !== this.token ||
-        version !== this.loadedVersion ||
-        !this.bundle ||
-        !compatibleHome(this.bundle.manifest)
-      ) {
-        response.writeHead(404, { 'content-type': 'text/plain', 'cache-control': 'no-store' })
-        response.end('Not found')
-        return
-      }
-      const file = this.bundle.files.find((item) => item.path === filename)
-      const managed = ['lumi-sdk.js', 'theme.css'].includes(filename)
-      if (!file && !managed) {
-        response.writeHead(404)
-        response.end()
-        return
-      }
-      let bytes = managed ? Buffer.from(HOME_TEMPLATE_FILES[filename]!) : decodeHomeFile(file!)
-      if (
-        filename === 'index.html' &&
-        !/<script\b[^>]*\bsrc\s*=\s*["'][^"']*lumi-sdk\.js["']/i.test(bytes.toString('utf8'))
-      ) {
-        const html = bytes.toString('utf8')
-        const tag = '<script src="./lumi-sdk.js"></script>'
-        bytes = Buffer.from(
-          /<head(?:\s[^>]*)?>/i.test(html)
-            ? html.replace(/<head(?:\s[^>]*)?>/i, (head) => `${head}${tag}`)
-            : /<!doctype[^>]*>/i.test(html)
-              ? html.replace(/<!doctype[^>]*>/i, `$&${tag}`)
-              : `${tag}${html}`,
-        )
-      }
-      const origin = `http://127.0.0.1:${this.port}`
-      response.writeHead(200, {
-        'content-type':
-          mime[filename.split('.').pop()?.toLowerCase() ?? ''] ?? 'application/octet-stream',
-        'content-length': bytes.length,
-        'access-control-allow-origin': '*',
-        'cross-origin-resource-policy': 'cross-origin',
-        'x-content-type-options': 'nosniff',
-        'cache-control': 'no-store',
-        'referrer-policy': 'no-referrer',
-        'permissions-policy': 'camera=(), microphone=(), geolocation=()',
-        'content-security-policy': `default-src 'none'; script-src ${origin}; style-src ${origin} 'unsafe-inline'; img-src ${origin} data: blob:; font-src ${origin} data:; media-src ${origin} data: blob:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; sandbox allow-scripts`,
-      })
-      response.end(request.method === 'HEAD' ? undefined : bytes)
     })
   }
   public async start(): Promise<void> {

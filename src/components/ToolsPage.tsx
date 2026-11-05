@@ -3,7 +3,7 @@ import { t, useLocale, getLocale } from '../i18n'
 import { useRetainWindowState } from '../lib/window-retention'
 import {
   Button,
-  Input,
+  ExpandableSearch,
   Select,
   IconButton,
   Tabs,
@@ -612,9 +612,8 @@ export default function ToolsPage({
             </Button>
           </div>
           <div className="tools-filters ui-list-toolbar-filters">
-            <Input
-              className="ui-list-toolbar-search"
-              aria-label={t('搜索工具')}
+            <ExpandableSearch
+              label={t('搜索工具')}
               placeholder={t('搜索工具…')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}

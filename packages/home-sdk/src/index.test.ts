@@ -37,13 +37,20 @@ async function setup() {
     lumi,
     parent,
     port,
-    connect(info: Record<string, unknown>, source: unknown = parent, instance = 'test') {
+    documentId: parent.postMessage.mock.calls[0]![0].documentId as string,
+    connect(
+      info: Record<string, unknown>,
+      source: unknown = parent,
+      instance = 'test',
+      documentId?: string,
+    ) {
       connect({
         source,
         ports: [port],
         data: {
           type: 'lumi.home.connect',
           instance,
+          documentId,
           info,
           theme: { mode: 'dark', reducedMotion: false, tokens: {} },
         },
@@ -53,6 +60,15 @@ async function setup() {
 }
 
 describe('homepage SDK protocol compatibility', () => {
+  it('ignores a stale connection for another document after iframe refresh', async () => {
+    const { lumi, connect, port, documentId } = await setup()
+    expect(documentId).toMatch(/^[a-f0-9]{32}$/)
+    const info = { bridgeVersion: 1 }
+    connect(info, undefined, 'test', 'wrong-document')
+    expect(port.start).not.toHaveBeenCalled()
+    connect(info, undefined, 'test', documentId)
+    await expect(lumi.ready()).resolves.toEqual(info)
+  })
   it.each([
     { lumiVersion: '0.1.0', sdkVersion: '0.0.1' },
     { lumiVersion: '9.0.0', sdkVersion: '8.2.1' },
@@ -85,5 +101,11 @@ describe('homepage SDK protocol compatibility', () => {
     expect(port.start).not.toHaveBeenCalled()
     connect(info)
     await expect(lumi.ready()).resolves.toEqual(info)
+  })
+
+  it('does not confirm a native storage flush when the preload failed to install', async () => {
+    const { lumi, connect } = await setup()
+    connect({ lumiVersion: '0.1.4', sdkVersion: '0.1.4', bridgeVersion: 1, mode: 'lumi' })
+    await expect(lumi.storage.flush()).rejects.toMatchObject({ code: 'storage_unavailable' })
   })
 })

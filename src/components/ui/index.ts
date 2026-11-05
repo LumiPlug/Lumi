@@ -54,3 +54,5 @@ export type { RingItem } from './DataMetrics'
 export { DateRangeCalendar } from './DateRangeCalendar'
 
 export { ProviderGlyph } from './ProviderGlyph'
+
+export { ExpandableSearch } from './ExpandableSearch'

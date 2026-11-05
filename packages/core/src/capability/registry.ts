@@ -480,6 +480,8 @@ export class CapabilityRegistry {
         if (!args.arguments || typeof args.arguments !== 'object' || Array.isArray(args.arguments))
           throw new RegistryError('invalid_tool_arguments')
         data = await this.invoke(args.name, args.arguments, 'workbench')
+      } else if (request.method === 'storage.native') {
+        data = this.workbench.browserStorage.mutate(current.bundle.manifest.projectId, args)
       } else if (['storage.get', 'storage.set', 'storage.delete'].includes(request.method)) {
         data = this.workbench.state(
           current.bundle.manifest.projectId,

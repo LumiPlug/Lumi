@@ -16,9 +16,16 @@ describe('homepage message boundary', () => {
       { id: 0, method: 'context.get', args: {} },
       { id: 1, method: 'get_mcp_connection_info', args: {} },
       { id: 1, method: 'tools.call', args: [] },
-      { id: 1, method: 'storage.set', args: { key: 'x', value: 'x'.repeat(70 * 1024) } },
+      { id: 1, method: 'context.get', args: { value: 'x'.repeat(70 * 1024) } },
     ])
       expect(homeBridgeRequest(value)).toBeNull()
+    expect(
+      homeBridgeRequest({
+        id: 1,
+        method: 'storage.set',
+        args: { key: 'x', value: 'x'.repeat(70 * 1024) },
+      }),
+    ).not.toBeNull()
     const cyclic: Record<string, unknown> = {}
     cyclic.self = cyclic
     expect(homeBridgeRequest({ id: 1, method: 'storage.set', args: cyclic })).toBeNull()

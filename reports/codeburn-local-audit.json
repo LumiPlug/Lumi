@@ -1,0 +1,817 @@
+{
+  "createdAt": "2026-10-16T17:15:46.320Z",
+  "rows": [
+    {
+      "provider": "claude",
+      "software": "claude",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 5
+    },
+    {
+      "provider": "cline",
+      "software": "cline",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 2
+    },
+    {
+      "provider": "cline-cli",
+      "software": "cline-cli",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 3
+    },
+    {
+      "provider": "codewhale",
+      "software": "codewhale",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 1
+    },
+    {
+      "provider": "codebuff",
+      "software": "codebuff",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 1
+    },
+    {
+      "provider": "codex",
+      "software": "codex",
+      "state": "ready",
+      "files": 34,
+      "records": 4180,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 13811085,
+        "output": 2209633,
+        "cacheRead": 760148736,
+        "cacheWrite": 0,
+        "total": 776169454
+      },
+      "ms": 957,
+      "comparison": {
+        "sameSnapshot": true,
+        "reference": {
+          "input": 13811085,
+          "output": 2209633,
+          "cacheRead": 760148736,
+          "cacheWrite": 0,
+          "total": 776169454
+        },
+        "lumi": {
+          "input": 13811085,
+          "output": 2209633,
+          "cacheRead": 760148736,
+          "cacheWrite": 0,
+          "total": 776169454
+        },
+        "differences": [],
+        "records": 4180
+      }
+    },
+    {
+      "provider": "copilot",
+      "software": "copilot",
+      "state": "empty",
+      "files": 10,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 18
+    },
+    {
+      "provider": "devin",
+      "software": "devin",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 2
+    },
+    {
+      "provider": "droid",
+      "software": "droid",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 0
+    },
+    {
+      "provider": "dsh",
+      "software": "dsh",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 0
+    },
+    {
+      "provider": "gemini",
+      "software": "gemini",
+      "state": "ready",
+      "files": 4,
+      "records": 62,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 399780,
+        "output": 41069,
+        "cacheRead": 1819919,
+        "cacheWrite": 0,
+        "total": 2260768
+      },
+      "ms": 43,
+      "comparison": {
+        "sameSnapshot": true,
+        "reference": {
+          "input": 399780,
+          "output": 41069,
+          "cacheRead": 1819919,
+          "cacheWrite": 0,
+          "total": 2260768
+        },
+        "lumi": {
+          "input": 399780,
+          "output": 41069,
+          "cacheRead": 1819919,
+          "cacheWrite": 0,
+          "total": 2260768
+        },
+        "differences": [],
+        "records": 62
+      }
+    },
+    {
+      "provider": "hermes",
+      "software": "hermes",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 1
+    },
+    {
+      "provider": "ibm-bob",
+      "software": "ibm-bob",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 0
+    },
+    {
+      "provider": "kilo-code",
+      "software": "kilo-code",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 1
+    },
+    {
+      "provider": "kiro",
+      "software": "kiro",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 0
+    },
+    {
+      "provider": "kimi",
+      "software": "kimi",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 0
+    },
+    {
+      "provider": "kimicode",
+      "software": "kimicode",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 1
+    },
+    {
+      "provider": "lingtai-tui",
+      "software": "lingtai-tui",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 1
+    },
+    {
+      "provider": "mistral-vibe",
+      "software": "mistral-vibe",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 0
+    },
+    {
+      "provider": "mux",
+      "software": "mux",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 0
+    },
+    {
+      "provider": "openclaw",
+      "software": "openclaw",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 1
+    },
+    {
+      "provider": "openclaude",
+      "software": "openclaude",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 0
+    },
+    {
+      "provider": "open-design",
+      "software": "open-design",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 0
+    },
+    {
+      "provider": "pi",
+      "software": "pi",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 1
+    },
+    {
+      "provider": "omp",
+      "software": "omp",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 0
+    },
+    {
+      "provider": "qwen",
+      "software": "qwen",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 0
+    },
+    {
+      "provider": "quickdesk",
+      "software": "quickdesk",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 0
+    },
+    {
+      "provider": "zerostack",
+      "software": "zerostack",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 1
+    },
+    {
+      "provider": "grok",
+      "software": "grok",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 0
+    },
+    {
+      "provider": "grokbot",
+      "software": "grokbot",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 0
+    },
+    {
+      "provider": "amp",
+      "software": "amp",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 0
+    },
+    {
+      "provider": "command-code",
+      "software": "command-code",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 1
+    },
+    {
+      "provider": "antigravity",
+      "software": "antigravity",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 0
+    },
+    {
+      "provider": "forge",
+      "software": "forge",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 0
+    },
+    {
+      "provider": "goose",
+      "software": "goose",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 1
+    },
+    {
+      "provider": "cursor",
+      "software": "cursor",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 0
+    },
+    {
+      "provider": "opencode",
+      "software": "opencode",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 0
+    },
+    {
+      "provider": "cursor-agent",
+      "software": "cursor-agent",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 1
+    },
+    {
+      "provider": "crush",
+      "software": "crush",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 0
+    },
+    {
+      "provider": "warp",
+      "software": "warp",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 127
+    },
+    {
+      "provider": "vercel-gateway",
+      "software": "vercel-gateway",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 0
+    },
+    {
+      "provider": "zcode",
+      "software": "zcode",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 0
+    },
+    {
+      "provider": "zed",
+      "software": "zed",
+      "state": "absent",
+      "files": 0,
+      "records": 0,
+      "issues": 0,
+      "experimental": false,
+      "complete": true,
+      "totals": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "ms": 0
+    }
+  ]
+}

@@ -4,10 +4,12 @@ import { Button } from './ui'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { RefObject } from 'react'
-import { HOME_CONTRACT } from '@lumiplug/shared'
+import { HOME_CONTRACT, HOME_IFRAME_ALLOW, HOME_IFRAME_SANDBOX } from '@lumiplug/shared'
 import type { WorkbenchView } from '@lumiplug/shared'
 import { workbenchRpc } from '../lib/tauri'
 import { homeBridgeRequest, readHomeTheme } from '../lib/home-bridge'
+import { homeStorageSession } from '../lib/home-storage-session'
+import { HomeConnection } from '../lib/home-connection'
 import { useToast } from './ToastProvider'
 import LumiLoading from './LumiLoading'
 
@@ -31,6 +33,7 @@ export default function WorkbenchContent({
   const [reload, setReload] = useState(0)
   const [frameState, setFrameState] = useState<'loading' | 'ready' | 'error'>('loading')
   const frame = useRef<HTMLIFrameElement>(null)
+  const storageSession = useMemo(homeStorageSession, [])
   const instance = useMemo(() => crypto.randomUUID(), [view.runtimeUrl, view.version, reload])
   const showToast = useToast()
   const current = useRef({ active, ready })
@@ -42,9 +45,7 @@ export default function WorkbenchContent({
       return
     }
     let disposed = false
-    let connected = false
-    let port: MessagePort | null = null
-    const pending = new Set<number>()
+    const connection = new HomeConnection<MessagePort>()
     const timer = window.setTimeout(() => setFrameState('error'), 10000)
     const handle = (event: MessageEvent) => {
       if (
@@ -52,18 +53,22 @@ export default function WorkbenchContent({
         event.data?.type !== 'lumi.home.ready' ||
         event.data.instance !== instance ||
         event.data.bridgeVersion !== 1 ||
-        connected ||
         disposed
       )
         return
-      connected = true
       const channel = new MessageChannel()
-      port = channel.port1
+      const port = connection.connect(event.data.documentId, () => channel.port1)
+      if (!port) {
+        channel.port1.close()
+        channel.port2.close()
+        return
+      }
+      const pending = new Set<number>()
       port.onmessage = (message) => {
         const request = homeBridgeRequest(message.data)
-        if (!request || disposed || pending.has(request.id)) return
+        if (!request || disposed || !connection.isCurrent(port) || pending.has(request.id)) return
         if (pending.size >= 64) {
-          port?.postMessage({
+          port.postMessage({
             id: request.id,
             ok: false,
             error: { code: 'too_many_requests', message: t('请求过多，请稍后重试。') },
@@ -73,7 +78,10 @@ export default function WorkbenchContent({
         pending.add(request.id)
         void (async () => {
           let result
-          if (!current.current.active || !current.current.ready)
+          if (
+            !current.current.ready ||
+            (!current.current.active && request.method !== 'storage.native')
+          )
             result = {
               ok: false,
               error: {
@@ -102,7 +110,10 @@ export default function WorkbenchContent({
               result = await workbenchRpc({
                 version: view.version,
                 method: request.method,
-                args: request.args,
+                args:
+                  request.method === 'storage.native'
+                    ? { ...request.args, session: storageSession }
+                    : request.args,
               })
             } catch {
               result = {
@@ -112,7 +123,8 @@ export default function WorkbenchContent({
             }
           }
           pending.delete(request.id)
-          if (!disposed) port?.postMessage({ id: request.id, ...result })
+          if (!disposed && connection.isCurrent(port))
+            port.postMessage({ id: request.id, ...result })
         })()
       }
       port.start()
@@ -120,6 +132,7 @@ export default function WorkbenchContent({
         {
           type: 'lumi.home.connect',
           instance,
+          documentId: event.data.documentId,
           info: {
             lumiVersion: HOME_CONTRACT.lumiVersion,
             sdkVersion: HOME_CONTRACT.sdkVersion,
@@ -135,7 +148,7 @@ export default function WorkbenchContent({
       window.clearTimeout(timer)
       setFrameState('ready')
     }
-    const syncTheme = () => port?.postMessage({ type: 'theme', theme: readHomeTheme() })
+    const syncTheme = () => connection.port?.postMessage({ type: 'theme', theme: readHomeTheme() })
     const observer = new MutationObserver(syncTheme)
     observer.observe(document.documentElement, {
       attributes: true,
@@ -146,14 +159,13 @@ export default function WorkbenchContent({
     window.addEventListener('message', handle)
     return () => {
       disposed = true
-      pending.clear()
-      port?.close()
+      connection.close()
       observer.disconnect()
       reduced.removeEventListener('change', syncTheme)
       window.removeEventListener('message', handle)
       window.clearTimeout(timer)
     }
-  }, [instance, showToast, view.runtimeUrl, view.version, view.manifest?.projectId])
+  }, [instance, showToast, storageSession, view.runtimeUrl, view.version, view.manifest?.projectId])
   return (
     <section className="workbench-home" hidden={!active} aria-labelledby="workbench-home-title">
       <h1 id="workbench-home-title" className="sr-only" ref={headingRef} tabIndex={-1}>
@@ -191,8 +203,11 @@ export default function WorkbenchContent({
             key={instance}
             ref={frame}
             title={view.manifest?.name ?? t('Lumi 主页')}
-            sandbox="allow-scripts"
-            src={`${view.runtimeUrl}#lumi=${instance}`}
+            sandbox={HOME_IFRAME_SANDBOX}
+            allow={HOME_IFRAME_ALLOW}
+            allowFullScreen
+            referrerPolicy="no-referrer"
+            src={`${view.runtimeUrl}?storageSession=${storageSession}#lumi=${instance}`}
             className="workbench-frame"
             style={{ visibility: frameState === 'loading' ? 'hidden' : 'visible' }}
           />

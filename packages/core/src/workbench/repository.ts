@@ -1,14 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
 import type { DatabaseSync } from 'node:sqlite'
-import { emptyWorkbench } from '@lumiplug/shared'
+import { emptyWorkbench, HOME_STORAGE_LIMITS } from '@lumiplug/shared'
 import type { HomeBundle, JsonValue, WorkbenchSnapshot } from '@lumiplug/shared'
 import { validateHomeBundle, WorkbenchError } from './validation'
+import { BrowserStorage } from './browser-storage'
 export { WorkbenchError } from './validation'
 
 export class WorkbenchRepository {
   private readonly cache = new Map<number, WorkbenchSnapshot>()
-  public constructor(private readonly database: DatabaseSync) {}
+  public readonly browserStorage: BrowserStorage
+  public constructor(private readonly database: DatabaseSync) {
+    this.browserStorage = new BrowserStorage(database)
+  }
   public get(version?: number): WorkbenchSnapshot {
     const currentVersion =
       version ??
@@ -94,12 +98,23 @@ export class WorkbenchRepository {
     }
     if (operation !== 'set') throw new WorkbenchError('invalid_workbench_state')
     const serialized = JSON.stringify(value)
-    if (!serialized || Buffer.byteLength(serialized) > 32 * 1024)
+    if (!serialized || Buffer.byteLength(serialized) > HOME_STORAGE_LIMITS.sdkValueBytes)
       throw new WorkbenchError('invalid_workbench_state')
-    const count = this.database
-      .prepare('SELECT COUNT(*) AS count FROM workbench_state WHERE key LIKE ?')
-      .get(`${projectId}:%`) as { count: number }
-    if (!current && count.count >= 128) throw new WorkbenchError('invalid_workbench_state')
+    const stats = this.database
+      .prepare(
+        'SELECT COUNT(*) AS count, COALESCE(SUM(length(CAST(key AS BLOB)) + length(CAST(value_json AS BLOB))), 0) AS bytes FROM workbench_state WHERE key LIKE ?',
+      )
+      .get(`${projectId}:%`) as { count: number; bytes: number }
+    const nextBytes =
+      stats.bytes -
+      (current ? Buffer.byteLength(storageKey) + Buffer.byteLength(current.value_json) : 0) +
+      Buffer.byteLength(storageKey) +
+      Buffer.byteLength(serialized)
+    if (
+      (!current && stats.count >= HOME_STORAGE_LIMITS.keys) ||
+      nextBytes > HOME_STORAGE_LIMITS.totalBytes
+    )
+      throw new WorkbenchError('invalid_workbench_state')
     this.database
       .prepare(
         'INSERT INTO workbench_state (key, value_json) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json',

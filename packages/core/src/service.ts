@@ -24,7 +24,7 @@ import { WorkbenchRepository, WorkbenchError } from './workbench/repository'
 import { homePreset } from './workbench/template'
 import { RegistryError } from './capability/registry'
 import { HOME_ERRORS } from './workbench/errors'
-import { HOME_LIMITS } from '@lumiplug/shared'
+import { HOME_LIMITS, HOME_STORAGE_LIMITS, homeRpcByteLimit } from '@lumiplug/shared'
 import type { HomeRpcRequest } from '@lumiplug/shared'
 import { HomeRuntimeServer } from './workbench/runtime-server'
 import { SkillProjectValidationError, SkillsRepository } from './skills/repository'
@@ -679,7 +679,7 @@ export class CoreService {
     }
     if (route === '/app/workbench/rpc' && method === 'POST') {
       try {
-        const body = await readBody(request, HOME_LIMITS.rpcBytes)
+        const body = await readBody(request, HOME_STORAGE_LIMITS.rpcBytes)
         if (
           !isRecord(body) ||
           !Number.isSafeInteger(body.version) ||
@@ -687,6 +687,8 @@ export class CoreService {
           !isRecord(body.args) ||
           Object.keys(body).some((key) => !['version', 'method', 'args'].includes(key))
         )
+          throw new Error('invalid_rpc')
+        if (Buffer.byteLength(JSON.stringify(body)) > homeRpcByteLimit(body.method))
           throw new Error('invalid_rpc')
         const result = await this.registry.homeRpc(body as unknown as HomeRpcRequest)
         writeJson(responseObject, 200, response(result))

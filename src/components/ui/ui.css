@@ -3,10 +3,11 @@
   display: flex;
   flex: none;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
   min-width: 0;
-  /* Keep shadow room at the edges while wrapped rows share their gutters. */
+  container-type: inline-size;
+  /* Keep room for the existing control shadows. */
   padding-block: max(4px, var(--lumi-shadow-scroll-gutter));
   margin-bottom: calc(-1 * max(4px, var(--lumi-shadow-scroll-gutter)));
 }
@@ -18,7 +19,7 @@
   min-width: 0;
 }
 .ui-list-toolbar-heading {
-  flex: 1 1 320px;
+  flex: 1 1 0;
   justify-content: space-between;
   margin-block: calc(-1 * max(4px, var(--lumi-shadow-scroll-gutter)));
 }
@@ -35,17 +36,53 @@
 }
 .ui-list-toolbar-filters {
   flex: 0 0 auto;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
   margin-inline-start: auto;
   max-width: 100%;
   padding-block: max(4px, var(--lumi-shadow-scroll-gutter));
   margin-block: calc(-1 * max(4px, var(--lumi-shadow-scroll-gutter)));
 }
-.ui-list-toolbar-filters > .ui-list-toolbar-search {
-  flex: 0 0 auto;
-  width: var(--lumi-search-width);
-  max-width: 100%;
+.ui-list-toolbar-heading > .ui-button,
+.ui-list-toolbar-filters > :not(.ui-expandable-search) {
+  flex: none;
+}
+.ui-expandable-search {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  width: var(--lumi-control-height);
+  min-width: var(--lumi-control-height);
+  transition: width var(--lumi-motion-reveal) ease-out;
+}
+.ui-expandable-search[data-open='true'] {
+  width: min(var(--lumi-search-width), 32cqi);
+}
+.ui-expandable-search > .ui-icon-button {
+  flex: none;
+}
+.ui-expandable-search-field {
+  flex: 1;
+  min-width: 0;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity var(--lumi-motion-reveal);
+}
+.ui-expandable-search[data-open='true'] .ui-expandable-search-field {
+  visibility: visible;
+  opacity: 1;
+  margin-inline-end: 8px;
+}
+.ui-expandable-search-field > .ui-input {
+  width: 100%;
+  min-width: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-expandable-search,
+  .ui-expandable-search-field {
+    transition: none;
+  }
 }
 .ui-button {
   position: relative;

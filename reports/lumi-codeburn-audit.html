@@ -1,0 +1,482 @@
+<!doctype html><html lang="zh-CN" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Lumi × CodeBurn 用量接入核查报告</title><style>/* SPDX-License-Identifier: MPL-2.0 */
+
+/* Brand palette: docs/DESIGN.md. Confirmed component, typography and motion
+   values: docs/UI_DESIGN.md (2026-09-29). Keep the original brand source intact. */
+:root {
+  --lumi-canvas: #0e0e11;
+  --lumi-surface-1: #16161b;
+  --lumi-surface-2: #1c1c23;
+  --lumi-surface-3: #1e1e26;
+  --lumi-surface-4: #24242d;
+  --lumi-outline: #2c2c37;
+  --lumi-primary: #f59e0b;
+  --lumi-on-primary: #0e0e11;
+  --lumi-primary-hover: #fb923c;
+  --lumi-primary-active-fill: rgb(245 158 11 / 12%);
+  --lumi-operational: #10b981;
+  --lumi-protocol: #38bdf8;
+  --lumi-error: #ffb4ab;
+  --lumi-on-canvas: #f8fafc;
+  --lumi-on-surface-muted: #94a3b8;
+  --lumi-font-ui:
+    'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei',
+    sans-serif;
+  --lumi-font-mono:
+    'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Noto Color Emoji', 'PingFang SC', 'Microsoft YaHei', monospace;
+  --lumi-terminal-dim-opacity: 0.65;
+  --lumi-radius-control: 4px;
+  --lumi-radius-container: 8px;
+  --lumi-radius-floating: 12px;
+  --lumi-focus-outline-offset: -2px;
+  --lumi-icon-glow-blur: 6px;
+  --lumi-shadow-control: 0 4px 12px var(--lumi-shadow-color);
+  --lumi-shadow-floating: 0 8px 22px var(--lumi-shadow-color);
+  --lumi-shadow-control-heavy:
+    0 6px 18px var(--lumi-shadow-heavy-color), 0 2px 6px var(--lumi-shadow-heavy-color);
+  --lumi-shadow-floating-heavy:
+    0 16px 40px var(--lumi-shadow-heavy-color), 0 6px 16px var(--lumi-shadow-heavy-color);
+  --lumi-shadow-focus-heavy: 0 4px 14px color-mix(in srgb, var(--accent) 24%, transparent);
+  --lumi-icon-glow-blur-heavy: 8px;
+  --lumi-icon-glow-offset-heavy: 6px;
+  --lumi-nav-marker-width: 4px;
+  --lumi-nav-marker-height: 20px;
+  --lumi-nav-marker-gap: 2px;
+  --lumi-nav-beam-length: 44px;
+  --lumi-nav-beam-height: 44px;
+  --lumi-nav-beam-fill: linear-gradient(
+    to right,
+    color-mix(
+      in srgb,
+      var(--lumi-nav-light-color) var(--lumi-nav-beam-source-strength),
+      transparent
+    ),
+    color-mix(in srgb, var(--lumi-nav-light-color) var(--lumi-nav-beam-mid-strength), transparent)
+      52%,
+    transparent
+  );
+  --lumi-nav-marker-highlight: 0 0 8px
+    color-mix(
+      in srgb,
+      var(--lumi-nav-light-color) var(--lumi-nav-marker-glow-strength),
+      transparent
+    );
+  --lumi-control-height: 36px;
+  --lumi-icon-size-small: 20px;
+  --lumi-search-width: 240px;
+  --lumi-file-dialog-width: 1040px;
+  --lumi-form-dialog-width: 760px;
+  --lumi-form-dialog-height: 680px;
+  --lumi-window-titlebar-height: 28px;
+  --lumi-window-controls-width: 80px;
+  --lumi-run-window-min-width: 560px;
+  --lumi-run-window-min-height: 480px;
+  --lumi-log-height: 240px;
+  --lumi-result-height: 200px;
+  --lumi-motion-progress: 900ms;
+  --lumi-form-label-width: 144px;
+  --lumi-form-control-width: 320px;
+  --lumi-checkbox-size: 20px;
+  --lumi-shadow-scroll-gutter: 0px;
+  --lumi-shadow-scroll-gutter-heavy: 18px;
+  --lumi-loading-breathe: 1800ms;
+  --lumi-file-tree-width: 240px;
+  --lumi-text-page: 26px;
+  --lumi-text-metric: 32px;
+  --lumi-leading-metric: 40px;
+  --lumi-dashboard-metric-height: 144px;
+  --lumi-dashboard-analysis-height: 320px;
+  --lumi-dashboard-plot-height: 200px;
+  --lumi-dashboard-max-width: 1600px;
+  --lumi-data-table-height: 420px;
+  --lumi-distribution-ring-size: 88px;
+  --lumi-distribution-ring-width: 300px;
+  --lumi-leading-page: 36px;
+  --lumi-text-section: 18px;
+  --lumi-leading-section: 27px;
+  --lumi-text-section-compact: 16px;
+  --lumi-leading-section-compact: 24px;
+  --lumi-text-body: 14px;
+  --lumi-leading-body: 22px;
+  --lumi-text-help: 13px;
+  --lumi-leading-help: 21px;
+  --lumi-text-label: 12px;
+  --lumi-leading-label: 18px;
+  --lumi-motion-hover: 120ms;
+  --lumi-motion-press: 100ms;
+  --lumi-motion-reveal: 160ms;
+  --lumi-motion-enter: 180ms;
+  --lumi-motion-exit: 120ms;
+  --lumi-graph-flow-speed: 10;
+  --lumi-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --lumi-ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --lumi-transition: var(--lumi-motion-hover);
+}
+
+/* SPDX-License-Identifier: MPL-2.0 */
+
+:root {
+  color-scheme: dark;
+  --lumi-shadow-color: rgb(0 0 0 / 24%);
+  --lumi-shadow-heavy-color: rgb(0 0 0 / 60%);
+  /* ANSI terminal palette, shared by all terminal output surfaces. */
+  --lumi-terminal-0: #1c1c23;
+  --lumi-terminal-1: #ff7b72;
+  --lumi-terminal-2: #7ee787;
+  --lumi-terminal-3: #f2cc60;
+  --lumi-terminal-4: #79c0ff;
+  --lumi-terminal-5: #d2a8ff;
+  --lumi-terminal-6: #76e3ea;
+  --lumi-terminal-7: #c9d1d9;
+  --lumi-terminal-8: #8b949e;
+  --lumi-terminal-9: #ffa198;
+  --lumi-terminal-10: #a5f0b3;
+  --lumi-terminal-11: #ffdf8d;
+  --lumi-terminal-12: #a5d6ff;
+  --lumi-terminal-13: #e2c5ff;
+  --lumi-terminal-14: #a5f3f6;
+  --lumi-terminal-15: #ffffff;
+  --bg: var(--lumi-surface-1);
+  --content-card: var(--lumi-canvas);
+  --panel: var(--lumi-surface-3);
+  --hover: var(--lumi-surface-4);
+  --input: var(--lumi-surface-2);
+  --lumi-card-bg: var(--input);
+  --lumi-card-border-hover: var(--accent);
+  --lumi-dashboard-surface: var(--bg);
+  --line: var(--lumi-outline);
+  --text: var(--lumi-on-canvas);
+  --secondary: var(--lumi-on-surface-muted);
+  --quiet: var(--lumi-on-surface-muted);
+  --accent: var(--lumi-primary);
+  --accent-bg: var(--lumi-primary-active-fill);
+  --button: var(--lumi-primary);
+  --button-text: var(--lumi-on-primary);
+  /* Runner identity; action colors retain their separate semantic roles. */
+  --lumi-tool-terminal-bg: #312a4c;
+  --lumi-tool-terminal-text: #c4b5fd;
+  --lumi-tool-http-bg: #213849;
+  --lumi-tool-http-text: #91c9f3;
+  --lumi-tool-mcp-bg: #203c3a;
+  --lumi-tool-mcp-text: #a0d8ce;
+  /* Platform identity tags; separate from service/status colors. */
+  --lumi-source-codex-bg: #312a4c;
+  --lumi-source-codex-text: #c4b5fd;
+  --lumi-source-claude-bg: #492f2a;
+  --lumi-source-claude-text: #f2b5a1;
+  --lumi-source-qoder-bg: #213849;
+  --lumi-source-qoder-text: #91c9f3;
+  --lumi-source-qoderwork-bg: #432c3c;
+  --lumi-source-qoderwork-text: #efb2d0;
+  --lumi-source-cursor-bg: #2a3d33;
+  --lumi-source-cursor-text: #b3d6c0;
+  --lumi-source-gemini-bg: #453923;
+  --lumi-source-gemini-text: #ead39a;
+  --lumi-source-openai-bg: #203c3a;
+  --lumi-source-openai-text: #a0d8ce;
+
+  font-family: var(--lumi-font-ui);
+  color: var(--text);
+  background: var(--bg);
+}
+
+/* Theme thumbnails use the same palette regardless of the selected app theme. */
+:root,
+[data-preview-theme='dark'] {
+  --lumi-nav-icon-color: var(--lumi-primary);
+  --lumi-nav-light-color: var(--lumi-primary);
+  --lumi-nav-beam-source-strength: 44%;
+  --lumi-nav-beam-mid-strength: 18%;
+  --lumi-nav-marker-glow-strength: 50%;
+}
+
+[data-preview-theme='dark'] {
+  --bg: var(--lumi-surface-1);
+  --content-card: var(--lumi-canvas);
+  --input: var(--lumi-surface-2);
+  --lumi-card-bg: var(--input);
+  --line: var(--lumi-outline);
+  --text: var(--lumi-on-canvas);
+  --accent: var(--lumi-primary);
+  --accent-bg: var(--lumi-primary-active-fill);
+}
+
+:root[data-theme='light'],
+[data-preview-theme='light'] {
+  color-scheme: light;
+  --lumi-shadow-color: rgb(38 38 41 / 12%);
+  --lumi-shadow-heavy-color: rgb(38 38 41 / 24%);
+  /* ANSI terminal palette, shared by all terminal output surfaces. */
+  --lumi-terminal-0: #24292f;
+  --lumi-terminal-1: #b42318;
+  --lumi-terminal-2: #116329;
+  --lumi-terminal-3: #7d4e00;
+  --lumi-terminal-4: #0550ae;
+  --lumi-terminal-5: #8250df;
+  --lumi-terminal-6: #0a6974;
+  --lumi-terminal-7: #57606a;
+  --lumi-terminal-8: #6e7781;
+  --lumi-terminal-9: #cf222e;
+  --lumi-terminal-10: #1a7f37;
+  --lumi-terminal-11: #9a6700;
+  --lumi-terminal-12: #0969da;
+  --lumi-terminal-13: #a475f9;
+  --lumi-terminal-14: #1b7c83;
+  --lumi-terminal-15: #ffffff;
+  --bg: #f8f9fa;
+  --content-card: #f8f9fa;
+  --panel: #fff;
+  --hover: #f4f4f6;
+  --input: #f1f3f5;
+  --lumi-card-bg: #fff;
+  --lumi-card-border-hover: #d1d5db;
+  --lumi-dashboard-surface: #fff;
+  --line: #e5e7eb;
+  --text: #0f1117;
+  --secondary: #4b5563;
+  --quiet: #6b7280;
+  --accent: #b45309;
+  --accent-bg: #fef3c7;
+  --lumi-nav-icon-color: #b87500;
+  --lumi-nav-light-color: #f59e0b;
+  --lumi-nav-beam-source-strength: 20%;
+  --lumi-nav-beam-mid-strength: 6%;
+  --lumi-nav-marker-glow-strength: 35%;
+  --button: #d97706;
+  --button-text: #0f1117;
+  --lumi-tool-terminal-bg: #eee8ff;
+  --lumi-tool-terminal-text: #58418d;
+  --lumi-tool-http-bg: #e1effa;
+  --lumi-tool-http-text: #245e88;
+  --lumi-tool-mcp-bg: #e1f0ed;
+  --lumi-tool-mcp-text: #28665c;
+  /* Platform identity tags; separate from service/status colors. */
+  --lumi-source-codex-bg: #eee8ff;
+  --lumi-source-codex-text: #58418d;
+  --lumi-source-claude-bg: #fbe8e1;
+  --lumi-source-claude-text: #883f29;
+  --lumi-source-qoder-bg: #e1effa;
+  --lumi-source-qoder-text: #245e88;
+  --lumi-source-qoderwork-bg: #f7e5ee;
+  --lumi-source-qoderwork-text: #84375e;
+  --lumi-source-cursor-bg: #e5efe7;
+  --lumi-source-cursor-text: #3b6848;
+  --lumi-source-gemini-bg: #f7edda;
+  --lumi-source-gemini-text: #775815;
+  --lumi-source-openai-bg: #e1f0ed;
+  --lumi-source-openai-text: #28665c;
+
+  --lumi-operational: #047857;
+  --lumi-protocol: #075985;
+  --lumi-error: #b42318;
+  --lumi-primary-hover: #f59e0b;
+}
+
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.7 var(--lumi-font-ui)}main{max-width:1280px;margin:auto;padding:40px 28px 70px}h1{font-size:26px;line-height:1.4;margin:8px 0 14px}h2{font-size:18px;margin:0 0 14px}h3{font-size:14px;margin:0 0 8px}p{margin:8px 0 14px}.lead{max-width:85ch;color:var(--secondary)}.brand{color:var(--accent);font-weight:700}.meta,small{font-size:12px;color:var(--secondary)}details{margin-top:8px;font-size:12px;color:var(--secondary)}summary{cursor:pointer;color:var(--accent)}small{display:block;margin-top:5px;overflow-wrap:anywhere}.summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:24px 0 32px}.summary div{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:16px}.summary b{display:block;font-size:26px;line-height:1.3;font-variant-numeric:tabular-nums}.summary span{font-size:13px;color:var(--secondary)}section{margin-top:32px;padding:22px;background:var(--panel);border:1px solid var(--line);border-radius:8px}a{color:var(--accent);text-underline-offset:3px}table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;vertical-align:top;padding:12px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}thead{background:var(--input)}th{font-weight:600}tbody th{min-width:140px}td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}.table-wrap{overflow:auto}.matrix{table-layout:fixed;min-width:880px}.matrix th:nth-child(1){width:14%}.matrix th:nth-child(2){width:30%}.matrix th:nth-child(3){width:38%}.matrix th:nth-child(4){width:18%}.status{display:inline-block;padding:3px 7px;border-radius:4px;background:var(--input)}.ok{color:var(--lumi-operational)}.muted{color:var(--secondary)}.note{padding:12px 16px;background:var(--input);border-radius:8px}code{font-family:var(--lumi-font-mono);font-size:12px;overflow-wrap:anywhere}ul,ol{padding-left:22px}li+li{margin-top:8px}.split{display:grid;grid-template-columns:1fr 1fr;gap:24px}footer{margin-top:24px;color:var(--secondary);font-size:12px}@media(max-width:700px){main{padding:24px 16px}.summary{grid-template-columns:1fr 1fr}.split{grid-template-columns:1fr}section{padding:16px}}@media print{body{background:white;color:black}main{padding:0;max-width:none}.summary{margin:16px 0}section{break-inside:auto;padding:14px 0;border:0;border-radius:0}thead{display:table-header-group}tr{break-inside:avoid}.table-wrap{overflow:visible}.matrix{min-width:0}th,td{padding:6px;font-size:10px}small{font-size:10px}a{color:inherit}h2{break-after:avoid}@page{size:A4 landscape;margin:12mm}}
+</style></head><body><main><header><div class="brand">Lumi · 工程核对报告</div><h1>AI 用量接入与一致性核查</h1><p class="lead">已把 CodeBurn 的完整来源注册表接入 Lumi：42 款 AI 工具，以及独立统计的 Vercel AI Gateway。读取与解析代码固定到同一上游提交；逐软件格式回归、Lumi 统计边界和本机真实数据分别核查。</p><div class="meta">生成：2026/10/17 01:20:36（Asia/Shanghai） · 上游 v0.9.27 · <a href="https://github.com/getagentseal/codeburn/commit/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b">9a40cc603fcd</a> · MIT</div></header>
+<div class="summary"><div><b>43 / 43</b><span>来源注册覆盖（42 工具 + 网关）</span></div><div><b>1,256</b><span>上游回归测试通过</span></div><div><b>371</b><span>Lumi 全项目测试通过</span></div><div><b>0</b><span>本机同快照 Token 对照差异</span></div></div>
+<section><h2>01 · 核查结论与证据范围</h2><ul><li><b>接入完成：</b>默认采集已从三款软件的原生读取路径切换为固定提交的 CodeBurn 读取管线。所有来源共享 Lumi 的软件 Tab、统计、排行、按会话分页、展开记录与 CSV 导出。</li><li><b>本机实测：</b>codex 4,180 条；gemini 62 条。另有 1 个来源目录存在但暂无可用记录。</li><li><b>未安装软件：</b>其注册、上游格式回归与 Lumi 字段转换已验证；本机未发现数据时，不能据此宣称已连接真实软件账户。下表逐项标识。</li><li><b>可复核：</b>375 个固定上游文件 SHA-256 指纹全部一致。原始源文件保持不改，适配差异只发生在构建或 Lumi 统计边界。</li></ul><p class="note">“已接入”表示读取能力已实现并进入正式采集流程；“本机有记录”表示本次确实读到了本机数据。这两类证据独立列出。报告不包含会话正文、原始会话 ID、真实会话名称或凭据。</p></section>
+<section><h2>02 · 本机同快照聚合对照</h2><p>本节统计本机可读取的全部历史，界面仍按顶部日期范围筛选。先读取上游已经完成去重/对账的会话汇总，再从相同的调用快照生成 Lumi 记录。下列数字分别来自上游会话汇总字段和 Lumi 记录求和。推理按上游规则归入输出，输入为未缓存输入；两边使用同一数据快照，避免扫描期间新增调用造成误差。</p><div class="table-wrap"><table><thead><tr><th>软件</th><th>核查字段</th><th>CodeBurn</th><th>Lumi</th><th>差值</th></tr></thead><tbody><tr><th rowspan="5">codex<small>4,180 条 · 同一解析快照</small></th><td>未缓存输入</td><td class="num">13,811,085</td><td class="num">13,811,085</td><td class="num">0</td></tr><tr><td>输出（按来源合并推理）</td><td class="num">2,209,633</td><td class="num">2,209,633</td><td class="num">0</td></tr><tr><td>缓存读取</td><td class="num">760,148,736</td><td class="num">760,148,736</td><td class="num">0</td></tr><tr><td>缓存写入</td><td class="num">0</td><td class="num">0</td><td class="num">0</td></tr><tr><td>总 Token</td><td class="num">776,169,454</td><td class="num">776,169,454</td><td class="num">0</td></tr><tr><th rowspan="5">gemini<small>62 条 · 同一解析快照</small></th><td>未缓存输入</td><td class="num">399,780</td><td class="num">399,780</td><td class="num">0</td></tr><tr><td>输出（按来源合并推理）</td><td class="num">41,069</td><td class="num">41,069</td><td class="num">0</td></tr><tr><td>缓存读取</td><td class="num">1,819,919</td><td class="num">1,819,919</td><td class="num">0</td></tr><tr><td>缓存写入</td><td class="num">0</td><td class="num">0</td><td class="num">0</td></tr><tr><td>总 Token</td><td class="num">2,260,768</td><td class="num">2,260,768</td><td class="num">0</td></tr></tbody></table></div><small>本机扫描时间：2026-10-16T17:15:46.320Z。快照之后继续产生的新用量不属于本次对照样本。</small></section>
+<section><h2>03 · 全部来源逐项核对</h2><p>“格式回归覆盖”指固定上游测试中的合成/格式样例及 Lumi 全注册表归一化测试，不等同于每款软件均已在本机安装实测。路径、格式及去重说明取自同一固定提交的 provider 文档；读取实现链接也固定到该提交。</p><div class="table-wrap"><table class="matrix"><thead><tr><th>软件 / 来源</th><th>读取位置 / 发现方式</th><th>数据格式与去重口径</th><th>本次验证结果</th></tr></thead><tbody><tr><th scope="row">Claude<small>claude</small></th><td>$CLAUDE_CONFIG_DIR · ~/.claude/projects/ · ~/Library/Application Support/Claude/local-agent-mode-sessions/ · ~/Library/Application Support/Claude-3p/local-agent-mode-sessions/ · %APPDATA%/Claude/local-agent-mode-sessions/ · %LOCALAPPDATA%/Packages/&lt;Claude package&gt;/LocalCache/Roaming/Claude/local-agent-mode-sessions/ · ~/.config/Claude/local-agent-mode-sessions/ · projects/</td><td>Claude Code / Desktop / Cowork；完整 JSONL 与 usage-ledger，流式去重及 advisor 独立计数。<details><summary>格式与去重原文</summary>JSONL, one event per line, per session file. Sessions live under &lt;project&gt;/&lt;sessionId&gt;.jsonl.
+Claude Desktop 3p also writes usage-ledger/*.ndjson records under its
+local-agent-mode-sessions root. Both surface: &quot;cowork&quot; and
+surface: &quot;code&quot; records are included and labeled Claude Cowork and
+Claude Code, respectively.
+A ledger record and a JSONL transcript can describe the same API call. The
+transcript call is kept, since it carries the project, too<small>使用上游来源去重及共享解析层对账。</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/claude.ts">读取实现 ↗</a></td></tr><tr><th scope="row">Cline<small>cline</small></th><td>src/providers/vscode-cline-parser.ts · ~/.cline/data · tasks/ · src/providers/vscode-cline-parser.ts</td><td>Cline 扩展及主目录任务；读取 UI 事件里的 API 用量，历史消息补充模型信息。<details><summary>格式与去重原文</summary>Per-task directories with:
+tasks/&lt;taskId&gt;/
+  ui_messages.json
+  api_conversation_history.json
+  task_metadata.json
+ui_messages.json provides the api_req_started usage entries. api_conversation_history.json is used for model extraction. See vscode-cline-parser for the full schema description.
+task_metadata.json is part of Cline's task layout but is not read by CodeBurn today.<small>Discovery deduplicates by task id across all Cline roots so a task that exists in more than one root (a migration, or the same extension storage seen by two VS Code variants) is not scanned twice. If the same task id exists in multiple roots, the one with the </small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/cline.ts">读取实现 ↗</a></td></tr><tr><th scope="row">Cline CLI<small>cline-cli</small></th><td>CLINE_SESSION_DATA_DIR · &lt;data&gt;/sessions · CLINE_DATA_DIR · &lt;root&gt;/data · CLINE_DIR · ~/.cline · &lt;sessionId&gt;/&lt;sessionId&gt;.json</td><td>CLI 会话 JSON 与逐消息文件；优先逐条用量，汇总回退，避免重复累加。<details><summary>格式与去重原文</summary>sessions/&lt;sessionId&gt;/
+  &lt;sessionId&gt;.json           metadata + rolled-up usage
+  &lt;sessionId&gt;.messages.json  per-message metrics
+&lt;sessionId&gt;.json carries session_id, provider, model, cwd, workspace_root, started_at / ended_at, messages_path, and a metadata.usage rollup (inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, totalCost).
+&lt;sessionId&gt;.messages.json holds { version, updated_at, agent, sessionId, messages[], system_prompt }. Assis<small>使用上游来源去重及共享解析层对账。</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/cline-cli.ts">读取实现 ↗</a></td></tr><tr><th scope="row">CodeWhale<small>codewhale</small></th><td>~/.codewhale/sessions/*.json · ~/.deepseek/sessions/*.json · $CODEWHALE_HOME/sessions/*.json · CODEWHALE_HOME</td><td>当前及旧版会话 JSON；按来源和会话身份选择有效记录。<details><summary>格式与去重原文</summary>One JSON object per saved session:
+text
+{
+  &quot;metadata&quot;: {
+    &quot;id&quot;: &quot;...&quot;,
+    &quot;created_at&quot;: &quot;...&quot;,
+    &quot;updated_at&quot;: &quot;...&quot;,
+    &quot;total_tokens&quot;: 12345,
+    &quot;model&quot;: &quot;...&quot;,
+    &quot;model_provider&quot;: &quot;...&quot;,
+    &quot;workspace&quot;: &quot;/path/to/project&quot;,
+    &quot;cost&quot;: {
+      &quot;session_cost_usd&quot;: 0.75,
+      &quot;subagent_cost_usd&quot;: 0.20
+    }
+  },
+  &quot;messages&quot;: [ ... ]
+}
+Like CodeWhale's own session picker, discovery first extracts the top-level
+metadata object from a <small>使用上游来源去重及共享解析层对账。</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/codewhale.ts">读取实现 ↗</a></td></tr><tr><th scope="row">Codebuff<small>codebuff</small></th><td>~/.config/manicode · ~/.config/manicode-dev · ~/.config/manicode-staging · $CODEBUFF_DATA_DIR · &lt;root&gt;/projects/&lt;project&gt;/chats/&lt;chatId&gt;/chat-messages.json</td><td>消息 JSON 数组；读取直接 usage 或嵌套 runState，credits 只作为费用信息。<details><summary>格式与去重原文</summary>A JSON array of chat messages in chat-messages.json. Each message has a variant (user, ai, agent, or assistant), optional credits, optional tool-call blocks (including nested sub-agent blocks), and metadata that may carry usage directly or bury it inside runState.sessionState.mainAgentState.messageHistory.<small>Per codebuff:&lt;chatDir&gt;:&lt;messageId&gt;, falling back to the message's array index when it has no id.</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/codebuff.ts">读取实现 ↗</a></td></tr><tr><th scope="row">Codex<small>codex</small></th><td>$CODEX_HOME · ~/.codex · 
+~/.codex/sessions/&lt;YYYY&gt;/&lt;MM&gt;/&lt;DD&gt;/rollout-*.jsonl
+ · 
+~/.codex/archived_sessions/rollout-*.jsonl
+ · , launcher/billed homes and supported WSL homes). The newest
+valid </td><td>活动及归档 JSONL；累计差分、恢复与分叉去重，优先读取实际用量记录。<details><summary>格式与去重原文</summary>JSONL. Validation of the first line is structural: it must parse as JSON, have type === &quot;session_meta&quot;, and carry a payload that is a plain object (not missing, not a scalar, not an array). Files that fail this check are silently skipped.
+payload.originator is deliberately not part of the check. It is a free-form client identity string, not a format marker: Codex CLI writes codex-tui / codex_exec / codex_cli_rs, Codex Desktop writes Codex Desktop<small>Forked rollouts copy the parent's history before their own work. Replays with
+the parent's original timestamps remain replay records until timestamps reach
+the fork's session_meta; re-timestamped history is treated as a burst while
+each event is within one sec</small></details></td><td><span class="status ok">本机有记录</span><small>4,180 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/codex.ts">读取实现 ↗</a></td></tr><tr><th scope="row">Copilot<small>copilot</small></th><td>XDG_CONFIG_HOME · AppData/Roaming · ~/.config · ~/Library/Application Support · CODEBURN_COPILOT_WS_STORAGE_DIR · CODEBURN_COPILOT_GLOBAL_STORAGE_DIR · ~/.copilot/session-state/ · ~/Library/Application Support/Code/User/workspaceStorage/&lt;hash&gt;/chatSessions/*.jsonl</td><td>VS Code / CLI 日志、OTel 与 session-store；逐条调用与汇总对账，防止重复累计。<details><summary>格式与去重原文</summary>JSONL in the first three locations (schemas differ; the parser switches by source type / event shape), a SQLite DB for the OTel source, and a Nitrite (H2 MVStore) .db for the JetBrains source. VS Code core chat sessions use a delta journal: kind:0 sets the root object, kind:1 writes a value at path k, and kind:2 appends items to an array path.
+An agent-mode request makes one model call per tool round. In Copilot Chat 0.69 (VS Code 1.141) result.m<small>Legacy JSONL and transcript sessions dedupe per messageId. Core chat sessions dedupe per copilot-chatsession:&lt;sessionId&gt;:&lt;requestId&gt;, and are not discovered when an OTel source is present. Session-store rows dedupe per copilot-store:&lt;sessionId&gt;:&lt;rowId&gt;:&lt;hash&gt; </small></details></td><td><span class="status muted">本机来源存在，暂无记录</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/copilot.ts">读取实现 ↗</a></td></tr><tr><th scope="row">Devin<small>devin</small></th><td>text
+~/.local/share/devin/cli/
+ · text
+~/.local/share/devin/cli/sessions.db
+ · text
+~/.local/share/devin/cli/transcripts/*.json
+</td><td>优先 SQLite；不可用时读取导出轨迹 JSON，并避免与数据库重复。<details><summary>格式与去重原文</summary>Transcript root is a JSON object following the [ATIF-v1.7 trajectory schema][atif],
+with Devin-specific additions such as per-step metadata and extra. The
+parser does not validate schema_version; it only requires a parseable object
+with steps[].
+Core fields include session_id, agent.model_name, agent.extra (Devin
+backend/permission info), final_metrics, and steps[].
+Steps now support two metric sources. The parser checks step.metrics first
+(the s<small>devin:&lt;sessionId&gt;:&lt;request_id&gt; for sessions.db (node-&lt;node_id&gt; when a
+node has no request id), devin:&lt;sessionId&gt;:&lt;step.step_id&gt; for transcripts.
+The provider name is part of the key via the devin: prefix.</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/devin.ts">读取实现 ↗</a></td></tr><tr><th scope="row">Droid<small>droid</small></th><td>$FACTORY_DIR · ~/.factory/sessions/&lt;subdir&gt;/*.jsonl · .factory/</td><td>Factory 会话 JSONL；提取模型及 assistant 用量，按消息身份去重。<details><summary>格式与去重原文</summary>JSONL.<small>Per messageId within a session (droid.ts:253).</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/droid.ts">读取实现 ↗</a></td></tr><tr><th scope="row">DeepSeek Harness<small>dsh</small></th><td>&lt;root&gt;/sessions · DSH_HOME · ~/.dsh · DSH_HOME · DSH_HOME</td><td>多代 JSONL / zstd；按会话选择最高可识别格式，标记不完整计数。<details><summary>格式与去重原文</summary>sessions/--&lt;slugified-cwd&gt;--/&lt;session-id&gt;/
+  session.jsonl[.zstd]       format v0
+  session.v1.jsonl[.zstd]    format v1
+  session.v2.jsonl[.zstd]    format v2
+  session.v3.jsonl[.zstd]    format v3
+  session.v4.jsonl[.zstd]    format v4
+Separate sessions are all counted, including sessions with only legacy v0/v1
+logs alongside sessions using v2/v3/v4. Generation selection applies only within
+one session directory; a newer-format session never su<small>使用上游来源去重及共享解析层对账。</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/dsh.ts">读取实现 ↗</a></td></tr><tr><th scope="row">Gemini<small>gemini</small></th><td>~/.gemini/tmp/&lt;project&gt;/chats/session-*.json</td><td>JSON 或 JSONL；输入扣除缓存子集，单独保留思考用量并按规则合并到输出。<details><summary>格式与去重原文</summary>Either a single JSON document per session or JSONL, depending on Gemini CLI version. The parser tries JSON.parse on the whole file first (single-JSON, Gemini CLI &lt;=0.38); if that throws or the result doesn't look like a session, it falls back to parsing the file line by line as JSONL (gemini.ts:194-204).<small>Per session and message: the key is gemini:&lt;sessionId&gt;:&lt;messageId&gt;, where messageId falls back to a per-message ordinal when the message has no id (gemini.ts:97).</small></details></td><td><span class="status ok">本机有记录</span><small>62 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/gemini.ts">读取实现 ↗</a></td></tr><tr><th scope="row">Hermes Agent<small>hermes</small></th><td>$HERMES_HOME/state.db · %LOCALAPPDATA%/hermes/state.db · AppData/Local/hermes · ~/.hermes/state.db · &lt;Hermes home&gt;/profiles/&lt;profile&gt;/state.db · HERMES_HOME</td><td>SQLite 会话累计计数与消息记录；使用观察增量账本，避免重读和修剪造成重复。<details><summary>格式与去重原文</summary>SQLite. The provider reads Hermes' aggregate sessions token/cost counters and the matching messages rows for user prompt and tool-call context.<small>使用上游来源去重及共享解析层对账。</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/hermes.ts">读取实现 ↗</a></td></tr><tr><th scope="row">IBM Bob<small>ibm-bob</small></th><td>User/globalStorage/ibm.bob-code/tasks/ · ~/Library/Application Support/IBM Bob/User/globalStorage/ibm.bob-code/ · ~/Library/Application Support/Bob-IDE/User/globalStorage/ibm.bob-code/ · %APPDATA%/IBM Bob/User/globalStorage/ibm.bob-code/ · %APPDATA%/Bob-IDE/User/globalStorage/ibm.bob-code/ · $XDG_CONFIG_HOME/IBM Bob/User/globalStorage/ibm.bob-code/ · $XDG_CONFIG_HOME/Bob-IDE/User/globalStorage/ibm.bob-code/ · ~/.config</td><td>IBM Bob / Bob-IDE 的 Cline 系任务格式；从 api_req_started 读取计数。<details><summary>格式与去重原文</summary>Each task is a directory under tasks/&lt;task-id&gt;/ and must contain ui_messages.json.
+CodeBurn parses the same Cline-family UI event format used by Cline and KiloCode:
+- ui_messages.json entries with type: &quot;say&quot; and say: &quot;api_req_started&quot; contain serialized token/cost metrics.
+- ui_messages.json user text entries seed the turn's first user message.
+- api_conversation_history.json is optional and is used to extract the selected model from &lt;model&gt;...&lt;<small>Per &lt;providerName&gt;:&lt;taskId&gt;:&lt;apiRequestIndex&gt; via vscode-cline-parser.ts.</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/ibm-bob.ts">读取实现 ↗</a></td></tr><tr><th scope="row">KiloCode<small>kilo-code</small></th><td>src/providers/vscode-cline-parser.ts</td><td>扩展任务文件；复用 Cline 格式解析器及请求索引去重。<details><summary>格式与去重原文</summary>Per-task directories with ui_messages.json and api_conversation_history.json. See vscode-cline-parser for the full schema description.<small>Delegated. Per &lt;providerName&gt;:&lt;taskId&gt;:&lt;index&gt; (handled in vscode-cline-parser.ts:109).</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/kilo-code.ts">读取实现 ↗</a></td></tr><tr><th scope="row">Kiro<small>kiro</small></th><td>~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent · %APPDATA%/Kiro/User/globalStorage/kiro.kiroagent · ~/.config/Kiro/User/globalStorage/kiro.kiroagent · ~/.kiro-server/data/User/globalStorage/kiro.kiroagent · ~/.kiro/sessions · KIRO_HOME · ~/.kiro/sessions/cli/&lt;id&gt;.jsonl · ~/.kiro/sessions/&lt;workspace-hash&gt;/sess_&lt;id&gt;/</td><td>多代 IDE / CLI 会话及执行文件；有计数时使用计数，估算路径保留来源标记。<details><summary>格式与去重原文</summary>Kiro has several known formats across generations:
+- Legacy .chat files with { chat, metadata, executionId }
+- Modern extensionless execution files with identifiers/timestamps at the top level plus conversation fields such as messages, conversation, chat, transcript, entries, events, context.messages, or direct prompt/response fields. In v1 these are the *content* half; the paired workspace-sessions/&lt;uuid&gt;.json record is the *spine* (linked by ex<small>Modern files deduplicate per session/execution pair. Legacy .chat files deduplicate per workflow/execution pair. CLI turns key on kiro-cli:&lt;sessionId&gt;:&lt;turnIndex&gt;. v2 turns key on kiro-v2:&lt;sessionId&gt;:&lt;executionId&gt;.
+The stores are disjoint (v2 sessions use sess</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/kiro.ts">读取实现 ↗</a></td></tr><tr><th scope="row">Kimi<small>kimi</small></th><td>$KIMI_SHARE_DIR/sessions/ · ~/.kimi/sessions/ · text
+~/.kimi/
+  kimi.json
+  config.toml
+  sessions/
+    &lt;workdir-md5&gt;/
+      &lt;session-id&gt;/
+        context.jsonl
+        wire.jsonl
+        state.json
+        subagents/
+          &lt;agent-id&gt;/
+            context.jsonl
+            wire.jsonl
+</td><td>会话 wire.jsonl 的 StatusUpdate.token_usage；主代理与子代理记录分别处理。<details><summary>格式与去重原文</summary>CodeBurn reads wire.jsonl. Each data line is a persisted wire record:
+json
+{&quot;timestamp&quot;:1776162403,&quot;message&quot;:{&quot;type&quot;:&quot;StatusUpdate&quot;,&quot;payload&quot;:{&quot;message_id&quot;:&quot;msg-1&quot;,&quot;token_usage&quot;:{&quot;input_other&quot;:100,&quot;input_cache_read&quot;:25,&quot;input_cache_creation&quot;:10,&quot;output&quot;:40}}}}
+TurnBegin / SteerInput provide the user prompt, ToolCall / ToolCallRequest provide tool names and shell commands, and StatusUpdate.token_usage provides the billable token counts.<small>Per kimi:&lt;session-id&gt;:&lt;message_id&gt;, falling back to the status-update line index if the message id is absent.</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/kimi.ts">读取实现 ↗</a></td></tr><tr><th scope="row">Kimi Code<small>kimicode</small></th><td>text
+~/.kimi-code
+~/Library/Application Support/kimi-desktop/daimon-share/daimon/runtime/kimi-code/home   (Kimi desktop / IDE embedded runtime)
+ · text
+$HOME/sessions/wd_*/&lt;session-dir&gt;/
+├── state.json
+└── agents/&lt;agent-id&gt;/wire.jsonl
+ ·  / </td><td>每代理 wire.jsonl 的 usage.record；将 inputOther、cache、output 映射到各自桶。<details><summary>格式与去重原文</summary>wire.jsonl contains one event per line. The parser uses:
+- turn.prompt.input for the current user message.
+- llm.request.model for the real model ID and the turn prefix from turnStep.
+- context.append_loop_event.event when its type is tool.call; the event's name feeds the tool breakdown.
+- usage.record.usage for billed tokens.
+Token fields map as follows:
+| Kimi Code | CodeBurn |
+|---|---|
+| inputOther | input |
+| output | output |
+| inputCacheRe<small>Usage calls use kimicode:&lt;session-id&gt;:&lt;agent-id&gt;:&lt;line-number&gt;:&lt;usage-ordinal&gt;. Including the agent ID keeps main-agent and subagent events distinct, while stable line positions prevent a wire from being counted twice across parses.
+This agent-and-position-sco</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/kimicode.ts">读取实现 ↗</a></td></tr><tr><th scope="row">LingTai TUI<small>lingtai-tui</small></th><td>$LINGTAI_HOME · $LINGTAI_TUI_HOME · ~/.lingtai · &lt;project&gt;/.lingtai · ~/.lingtai-tui/registry.jsonl · ~/.lingtai-tui/brief/projects/*/meta.json · &lt;lingtai-home&gt;/&lt;agent&gt;/logs/token_ledger.jsonl · &lt;agent&gt;/daemons/...</td><td>JSONL Token 账本；按来源标识、行位置及计数去重，不重复扫描镜像守护进程账本。<details><summary>格式与去重原文</summary>Append-only JSONL. Each valid ledger line may include:
+- source
+- em_id
+- run_id
+- ts
+- input
+- output
+- thinking
+- cached
+- model
+- endpoint
+Malformed lines and zero-token entries are skipped. Missing model falls back to the agent .agent.json llm.model, then unknown.<small>Dedup keys include provider name, ledger path, line number, timestamp, model, endpoint, LingTai source tags, and token counts:
+lingtai-tui:&lt;ledger-path&gt;:&lt;line&gt;:&lt;timestamp&gt;:&lt;model&gt;:...
+The ledger is append-only, so line number is stable for normal operation.</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/lingtai-tui.ts">读取实现 ↗</a></td></tr><tr><th scope="row">Mistral Vibe<small>mistral-vibe</small></th><td>$VIBE_HOME/logs/session/ · VIBE_HOME · ~/.vibe/logs/session/</td><td>兼容旧版目录与统一日志；累计计数按上游规则转换为增量。<details><summary>格式与去重原文</summary>Legacy Vibe 2.x stores each session as a directory:
+- meta.json contains session metadata, cumulative token totals, active model config, model prices, timestamps, working directory, and available tools.
+- messages.jsonl contains non-system messages and assistant tool_calls.
+Subagent traces are stored under a parent session's agents/ folder with the same meta.json / messages.jsonl shape, so CodeBurn scans those one level down as separate sessions.<small>Legacy message IDs, or the session ID for an aggregate fallback. Unified usage
+uses the session ID, projection sequence, turn ID, and call index. Repeated journal sequences
+and cumulative totals are not counted again.</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/mistral-vibe.ts">读取实现 ↗</a></td></tr><tr><th scope="row">Mux<small>mux</small></th><td>$CODEBURN_MUX_DIR · ~/.mux · &lt;root&gt;/sessions/&lt;workspaceId&gt;/chat.jsonl · &lt;root&gt;/sessions/&lt;workspaceId&gt;/subagent-transcripts/&lt;childTaskId&gt;/chat.jsonl · ~/.mux-dev · ~/.cmux · ~/.mux · CODEBURN_MUX_DIR</td><td>主代理与子代理 chat.jsonl；读取 metadata.usage，并按消息 ID 去重。<details><summary>格式与去重原文</summary>JSONL, one MuxMessage per line. Token usage rides on each assistant message's metadata.usage ({ inputTokens, outputTokens, reasoningTokens, cachedInputTokens }, typed z.any() upstream so it's read defensively). Tool calls and the user prompt are parts[] entries (dynamic-tool / text).<small>Per mux:&lt;workspaceId&gt;:&lt;message.id&gt;. message.id is required by mux's schema; for corrupt id-less lines it falls back to the (unique) line index.</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/mux.ts">读取实现 ↗</a></td></tr><tr><th scope="row">OpenClaw<small>openclaw</small></th><td>~/.openclaw/agents · ~/.clawdbot/agents · ~/.moltbot/agents · ~/.moldbot/agents</td><td>兼容 JSONL 与 SQLite transcript_events；相同事件跨存储代际去重。<details><summary>格式与去重原文</summary>Two eras, discovered side by side under each &lt;agents&gt;/&lt;agent&gt;/ directory:
+- SQLite (since the 2026-09-01 migration, 2026.8.1; #1259). agent/openclaw-agent.sqlite, table transcript_events(session_id, seq, event_json, created_at). Each row's event_json is the verbatim JSONL envelope, so both eras run the same event reducer; agent-schema 23 additionally allows a row to carry its event as a event_zstd BLOB instead (one zstd frame, decoded when node:z<small>Per &lt;sessionId&gt;:&lt;dedupId&gt;, identical keys across both storage eras because the migrated envelopes keep their original session and event ids. An envelope without an event id hashes its payload instead of falling back to its parse position, so the same id-less e</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/openclaw.ts">读取实现 ↗</a></td></tr><tr><th scope="row">OpenClaude<small>openclaude</small></th><td>
+~/.openclaude/projects/&lt;project-slug&gt;/&lt;uuid&gt;.jsonl        transcript
+~/.openclaude/projects/&lt;project-slug&gt;/&lt;uuid&gt;.replay.json  replay state (skipped)
+</td><td>Claude 分叉的 JSONL；只读取带 message.usage 的 assistant 事件，保留估算标记。<details><summary>格式与去重原文</summary>沿用上游解析与字段识别。<small>使用上游来源去重及共享解析层对账。</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/openclaude.ts">读取实现 ↗</a></td></tr><tr><th scope="row">Open Design<small>open-design</small></th><td>~/Library/Application Support/Open Design · %APPDATA%/Open Design · ~/.config/Open Design · $CODEBURN_OPEN_DESIGN_DIR · &lt;namespace&gt;/data/runs/&lt;runId&gt;/events.jsonl · &lt;base&gt;/namespaces/&lt;ns&gt;/data/runs · &lt;base&gt;/data/runs · &lt;base&gt;/runs</td><td>运行 events.jsonl；读取 usage 事件与最近的模型元数据。<details><summary>格式与去重原文</summary>JSONL, one event object per line: { id, event, data, timestamp }. A start event, or an agent event with data.type === 'status', carries the current model in data.model. An agent event with data.type === 'usage' carries data.usage.{input_tokens, output_tokens, cached_read_tokens, thought_tokens}.<small>Per open-design:&lt;sessionId&gt;:&lt;eventId&gt;, where sessionId is the run's directory name and eventId is the event's own id, falling back to a per-line counter when the event has none.</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/open-design.ts">读取实现 ↗</a></td></tr><tr><th scope="row">Pi<small>pi</small></th><td>~/.pi/agent/sessions/</td><td>会话 JSONL；优先 responseId，缺失时按时间或行位置去重。<details><summary>格式与去重原文</summary>JSONL (pi.ts:98).<small>Per &lt;provider&gt;:&lt;path&gt;:&lt;responseId&gt; when a response ID is present, falling back to the entry timestamp, and finally to a line index (pi.ts:164).</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/pi.ts">读取实现 ↗</a></td></tr><tr><th scope="row">OMP<small>omp</small></th><td>~/.omp/agent/sessions/</td><td>与 Pi 同格式；分别发现主代理与嵌套代理会话。<details><summary>格式与去重原文</summary>JSONL, identical schema to Pi.<small>Identical to Pi: &lt;provider&gt;:&lt;path&gt;:&lt;responseId&gt; with timestamp / line-index fallbacks (pi.ts:164).</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/pi.ts">读取实现 ↗</a></td></tr><tr><th scope="row">Qwen<small>qwen</small></th><td>$QWEN_DATA_DIR · ~/.qwen/projects/&lt;project&gt;/chats/*.jsonl</td><td>项目聊天 JSONL；读取 assistant 用量，按会话与事件 UUID 去重。<details><summary>格式与去重原文</summary>JSONL.<small>Per &lt;sessionId&gt;:&lt;uuid&gt; (qwen.ts:110).</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/qwen.ts">读取实现 ↗</a></td></tr><tr><th scope="row">Quick Desktop<small>quickdesk</small></th><td>~/.quickwork · QUICKWORK_HOME · sessions/sessions.db · metrics/metrics-YYYY-MM-DD.jsonl · sessions/sessions.db</td><td>JSONL 指标和历史数据库；逐条指标优先，数据库回退保留估算标记。<details><summary>格式与去重原文</summary>Metrics files contain one AWS Embedded Metric Format JSON object per line. A usage row must have Model, InputTokens, and OutputTokens. _aws.Timestamp is milliseconds since the Unix epoch; when it is absent, the date in the metrics filename is used at midnight UTC. A numeric CostUSD is preserved as measured cost. Rows without CostUSD are priced through codeburn's existing model pricing and marked estimated. Tool-only rows in the file are linked to<small>Metrics calls with a session use quickdesk:&lt;session_id&gt;:&lt;timestamp&gt;:&lt;model&gt;:&lt;input&gt;:&lt;output&gt;. Session-less calls use quickdesk:&lt;profile&gt;:&lt;file&gt;:&lt;timestamp&gt;:&lt;model&gt;:&lt;input&gt;:&lt;output&gt;. Estimated database-only sessions use quickdesk-est:&lt;session_id&gt;. All keys are </small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/quickdesk.ts">读取实现 ↗</a></td></tr><tr><th scope="row">Zerostack<small>zerostack</small></th><td>zerostack/sessions/ · src/session/storage.rs · ~/Library/Application Support/zerostack/sessions/ · $XDG_DATA_HOME/zerostack/sessions/ · ~/.local/share/zerostack/sessions/ · ZS_DATA_DIR</td><td>每会话 JSON；读取 estimated_tokens 并保留估算属性。<details><summary>格式与去重原文</summary>JSON — one &lt;uuid&gt;.json file per session. Each file is a single Session object: a messages[] array (role, content, estimated_tokens) plus session-level metadata.<small>Per zerostack:&lt;path&gt;:&lt;updated_at&gt;:&lt;id&gt;.</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/zerostack.ts">读取实现 ↗</a></td></tr><tr><th scope="row">Grok Build<small>grok</small></th><td>$GROK_HOME/sessions/ · ~/.grok/sessions/ · sessions/&lt;url-encoded-cwd&gt;/&lt;uuid&gt;/</td><td>会话 summary、signals 与 updates；区分逐轮实报用量和上下文估算路径。<details><summary>格式与去重原文</summary>JSON + JSONL. summary.json holds the session id, cwd, timestamps, and current_model_id. signals.json holds modelsUsed, toolsUsed, and contextTokensUsed. updates.jsonl is the ACP log: streamed chunks carry params._meta.totalTokens (running context size) and params._meta.promptId (one per turn); newer CLI versions also append params.update.sessionUpdate: &quot;turn_completed&quot; with snake_case prompt_id and a provider-recorded usage object.<small>Per grok:&lt;session-dir&gt;:&lt;updated_at&gt;:&lt;id&gt;.</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/grok.ts">读取实现 ↗</a></td></tr><tr><th scope="row">Grok Bot<small>grokbot</small></th><td>$CODEBURN_GROKBOT_DIR · ~/Library/Application Support/Grok Bot/sand-client-persistence · %APPDATA%\Grok Bot\sand-client-persistence · ~/.config/Grok Bot/sand-client-persistence · ~/.grokbot · agents/&lt;uuid&gt;/store.db · /home/box/sand-data/agents/&lt;id&gt;/store.db · ~/.grokbot</td><td>Electron 本地持久化切片；从 transcript replicas 的请求记录提取用量。<details><summary>格式与去重原文</summary>JSON. Each file in sand-client-persistence is one client slice, named base32(sliceKey).blob (RFC 4648, lowercase, unpadded) and containing {&quot;schemaVersion&quot;:N,&quot;value&quot;:…}. Two slices matter:
+- sand.client.slice.account.&lt;accountSlot&gt;.roster.last-roster — value.rows[], one row per bot, with id, name (&quot;Reddit Bot&quot;, &quot;HN Reviewer&quot;), avatar, unread state and path.
+- sand.client.slice.account.&lt;accountSlot&gt;.transcript.replicas.&lt;agentId&gt; — value.entries[], <small>Per grokbot:&lt;agentId&gt;:&lt;requestId&gt;.</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/grokbot.ts">读取实现 ↗</a></td></tr><tr><th scope="row">Amp<small>amp</small></th><td>$AMP_DATA_DIR/threads/ · ~/.local/share/amp/threads/ · AMP_DATA_DIR · threads/**/*.json</td><td>优先 usageLedger，按 toMessageId 关联缓存；无账本时回退 assistant usage。<details><summary>格式与去重原文</summary>A thread file is { id, messages: [...], usageLedger?: { events: [...] } }. usageLedger.events is the per-request record: { id, timestamp, model, tokens: { input, output, total }, toMessageId, credits }. Cache tokens are not on the event - they live on the thread message the event billed for, joined through toMessageId -&gt; messages[].messageId -&gt; usage.cacheCreationInputTokens / usage.cacheReadInputTokens. Threads without a ledger fall back to per-<small>Per amp:&lt;thread-id&gt;:&lt;event-id&gt; from the ledger, or amp:&lt;thread-id&gt;:&lt;timestamp&gt;:&lt;model&gt; on the message fallback path.</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/amp.ts">读取实现 ↗</a></td></tr><tr><th scope="row">Command Code<small>command-code</small></th><td>~/.commandcode/projects/&lt;project-slug&gt;/&lt;session-id&gt;.jsonl · CODEBURN_COMMANDCODE_DIR · ~/.commandcode · ~/.commandcode/history.jsonl · projects/</td><td>会话格式 v3 JSONL；只发现会话本体，跳过 checkpoints / prompts 等 sidecar。<details><summary>格式与去重原文</summary>JSONL, session format v3:
+- First line: {type: &quot;session&quot;, version, id, timestamp, cwd, parentSession?}.
+- Then {type: &quot;message&quot;, id, parentId, timestamp, message: {role, content, meta: {messageId}}, model?, usage?}. content is a string or an array of text, thinking, tool_use and tool_result blocks.
+- Assistant lines carry model (e.g. moonshotai/Kimi-K3, deepseek/deepseek-v4-pro) and usage: {inputTokens, outputTokens, cacheReadTokens, cacheWriteTo<small>command-code:&lt;message.meta.messageId&gt;, a full uuid. The top-level id is only 8 hex characters and unique within one file, so sessions can collide on it; it is used only as a fallback and for turnId. Forking a session copies the parent's message lines verbatim </small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/command-code.ts">读取实现 ↗</a></td></tr><tr><th scope="row">Antigravity<small>antigravity</small></th><td>%USERPROFILE%\.gemini\antigravity-cli\conversations · %USERPROFILE%\.gemini\antigravity\conversations · %USERPROFILE%\.gemini\antigravity-ide\conversations · %APPDATA%\Antigravity IDE\User\globalStorage\state.vscdb</td><td>SQLite / protobuf、本地 language-server RPC 与状态行回退；依上游优先级去重。<details><summary>格式与去重原文</summary>Protobuf and SQLite.
+### SQLite .db Files
+Native Antigravity Desktop, IDE, and CLI sessions store structured state in SQLite databases under ~/.gemini/&lt;app&gt;/conversations/&lt;id&gt;.db:
+1. gen_metadata (Model Generations):
+   - Each row represents a completed LLM completion turn.
+   - data BLOB Protobuf:
+     - Field 1 (ChatModel): Token usage (Field 4, see Accuracy), model config id (Field 19, e.g. gemini-pro-default), key/value metadata including mod<small>Per &lt;cascadeId&gt;:&lt;responseId&gt; for RPC data. The status line fallback collapses
+repeated identical usage snapshots, ignores singleton intermediate snapshots
+when a later stabilized usage total is observed for the same conversation, and
+uses positive deltas for m</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/antigravity.ts">读取实现 ↗</a></td></tr><tr><th scope="row">Forge<small>forge</small></th><td>~/.forge/.forge.db</td><td>SQLite conversations；解析 context.messages 中的用量。<details><summary>格式与去重原文</summary>SQLite (forge.ts:225-252). CodeBurn reads the conversations table and parses JSON from context.messages (forge.ts:154-171).<small>Per &lt;provider&gt;:&lt;conversation_id&gt;:&lt;tool_call_id-or-message-index&gt; (forge.ts:193).</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/forge.ts">读取实现 ↗</a></td></tr><tr><th scope="row">Goose<small>goose</small></th><td>XDG_DATA_HOME · ~/.local/share/goose/sessions/sessions.db · %APPDATA%/Block/goose/sessions/sessions.db</td><td>SQLite sessions；按会话读取计数和模型。<details><summary>格式与去重原文</summary>SQLite.<small>Per sessionId (goose.ts:174).</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/goose.ts">读取实现 ↗</a></td></tr><tr><th scope="row">Cursor<small>cursor</small></th><td>~/Library/Application Support/Cursor/User/globalStorage/state.vscdb · %APPDATA%/Cursor/User/globalStorage/state.vscdb · $XDG_CONFIG_HOME/Cursor/User/globalStorage/state.vscdb · ~/.config/Cursor/User/globalStorage/state.vscdb · AppData/Roaming · XDG_CONFIG_HOME</td><td>SQLite bubbles、agentKv 等记录；真实计数优先，回退估算保留标记。<details><summary>格式与去重原文</summary>SQLite. Two parallel sources within the same db:
+1. Bubbles (cursor.ts:201-331): per-message rows. The richer source.
+2. agentKv (cursor.ts:350-460): per-conversation key-value blobs. The fallback for older sessions.
+The parser tries both and dedupes via seenKeys.<small>- Bubbles: per bubbleId (cursor.ts:282).
+- agentKv: per requestId (cursor.ts:429).</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/cursor.ts">读取实现 ↗</a></td></tr><tr><th scope="row">OpenCode<small>opencode</small></th><td>~/.local/share/opencode/ · $XDG_DATA_HOME/opencode/ · ~/.local/share/mimocode/mimicode.db · OPENCODE_DATA_DIR · OPENCODE_DATA_DIR=$HOME/.local/share/mimocode · &lt;OPENCODE_DATA_DIR&gt;/storage/ · OPENCODE_DATA_DIR · $XDG_DATA_HOME/opencode</td><td>兼容旧 JSON 文件与两代 SQLite 表；按会话与消息 ID 跨格式去重。<details><summary>格式与去重原文</summary>SQLite (older builds) or file-based JSON (OpenCode 1.1+, under storage/).
+OpenCode 2.x (mainline since 2.0.3, issue #1293) writes a second SQLite
+generation into the same opencode.db: session_v2 + session_message
+(messages tagged by a type column, ordered by seq, payload JSON in data;
+assistant rows carry model: {id, providerID}, cost and tokens inline).
+The desktop app (Electron) runs the same CLI as a background service, so CLI
+and GUI sessions<small>Per &lt;sessionId&gt;:&lt;messageId&gt;.</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/opencode.ts">读取实现 ↗</a></td></tr><tr><th scope="row">Cursor Agent<small>cursor-agent</small></th><td>~/.cursor/projects/&lt;projectId&gt;/agent-transcripts/ · ~/.cursor/chats/&lt;hash&gt;/&lt;agentId&gt;/store.db · subagents/</td><td>转录 JSONL / 文本，以及无转录会话的本地 SQLite；存在转录时不再扫描相同 store。<details><summary>格式与去重原文</summary>- Legacy: free-form text transcripts. The parser does line-based heuristic parsing (cursor-agent.ts:219-314).
+- Composer 2: JSONL (cursor-agent.ts:167-217).<small>Per &lt;provider&gt;:&lt;conversationId&gt;:&lt;turnIndex&gt; (cursor-agent.ts:379).</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/cursor-agent.ts">读取实现 ↗</a></td></tr><tr><th scope="row">Crush<small>crush</small></th><td>$CRUSH_GLOBAL_DATA/projects.json · $XDG_DATA_HOME/crush/projects.json · ~/.local/share/crush/projects.json · %LOCALAPPDATA%/crush/projects.json · &lt;project.path&gt;/&lt;project.data_dir&gt;/crush.db</td><td>全局项目注册表 + 每项目 SQLite；读取会话计数。<details><summary>格式与去重原文</summary>SQLite. Schema verified against charmbracelet/crush v0.66.1 (internal/db/migrations/20250424200609_initial.sql plus subsequent additive migrations).
+Two tables matter for codeburn:
+sql
+CREATE TABLE sessions (
+  id TEXT PRIMARY KEY,
+  parent_session_id TEXT,
+  title TEXT NOT NULL,
+  message_count INTEGER NOT NULL DEFAULT 0,
+  prompt_tokens INTEGER NOT NULL DEFAULT 0,
+  completion_tokens INTEGER NOT NULL DEFAULT 0,
+  cost REAL NOT NULL DEFAULT 0.0,<small>Per crush:&lt;sessionId&gt; (crush.ts).</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/crush.ts">读取实现 ↗</a></td></tr><tr><th scope="row">Warp<small>warp</small></th><td>~/Library/Group Containers/2BBY89MBSN.dev.warp/Library/Application Support/dev.warp.Warp-Stable/warp.sqlite · ~/Library/Group Containers/2BBY89MBSN.dev.warp/Library/Application Support/dev.warp.Warp-Preview/warp.sqlite</td><td>SQLite 对话与交换；逐交换去重，保留上游的估算路径。<details><summary>格式与去重原文</summary>SQLite. The parser requires these tables:
+- agent_conversations
+- ai_queries
+- blocks<small>Per exchange: warp:&lt;conversationId&gt;:&lt;exchangeId&gt;.</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/warp.ts">读取实现 ↗</a></td></tr><tr><th scope="row">Vercel AI Gateway<small>vercel-gateway · 网关</small></th><td>
+GET https://ai-gateway.vercel.sh/v1/report?start_date=...&amp;end_date=...&amp;date_part=day&amp;group_by=model
+</td><td>官方 report API；按 UTC 日 / 模型汇总，需要已有授权，独立于本地总量。<details><summary>格式与去重原文</summary>沿用上游解析与字段识别。<small>Per vercel-gateway:&lt;day&gt;:&lt;model&gt;.</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/vercel-gateway.ts">读取实现 ↗</a></td></tr><tr><th scope="row">ZCode<small>zcode</small></th><td>~/.zcode/cli/db/db.sqlite · ~/Library/Application Support/ZCode · ~/.zcode/cli/log/*.jsonl</td><td>CLI SQLite 的 model_usage；逐请求行读取输入、输出、推理与缓存。<details><summary>格式与去重原文</summary>SQLite. Schema verified against CLI db v0.14.8. Three tables matter:
+sql
+CREATE TABLE session (
+  id TEXT PRIMARY KEY,
+  directory TEXT NOT NULL,
+  ...
+);
+CREATE TABLE model_usage (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  turn_id TEXT,
+  model_id TEXT NOT NULL,
+  input_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  reasoning_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_creation_input_tokens INTEGER NOT<small>Per zcode:&lt;model_usage.id&gt; (zcode.ts). model_usage.id is the row primary key, unique per request.</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/zcode.ts">读取实现 ↗</a></td></tr><tr><th scope="row">Zed<small>zed</small></th><td>~/Library/Application Support/Zed/threads/threads.db · ~/.local/share/zed/threads/threads.db · %LOCALAPPDATA%\Zed\threads\threads.db</td><td>SQLite threads 中的 JSON / zstd JSON；逐请求用量与累计剩余量按上游对账。<details><summary>格式与去重原文</summary>The threads table stores each thread's data BLOB as zstd-compressed JSON (data_type = &quot;zstd&quot;; legacy rows may be uncompressed &quot;json&quot;, both are read, zed.ts:117-127). Decompression uses Node's built-in zlib.zstdDecompressSync (zed.ts:17), no extra dependency.
+The decompressed thread JSON carries:
+- model: { &quot;provider&quot;: ..., &quot;model&quot;: ... }
+- request_token_usage: map of user-message id to { input_tokens, output_tokens, cache_creation_input_tokens, c<small>Per zed:&lt;threadId&gt;:&lt;requestKey&gt; (zed.ts:96), where requestKey is the user-message id from request_token_usage or the synthetic cumulative-remainder.</small></details></td><td><span class="status muted">本机未发现</span><small>0 条记录<br>源码指纹通过 · 格式回归覆盖</small><a href="https://github.com/getagentseal/codeburn/blob/9a40cc603fcd194caca9daa8c5134a61ea7e0e2b/src/providers/zed.ts">读取实现 ↗</a></td></tr></tbody></table></div></section>
+<section><h2>04 · 关键口径与有意保留的差异</h2><div class="table-wrap"><table><thead><tr><th>核查项</th><th>Lumi 实现 / 核对结果</th></tr></thead><tbody>
+<tr><th>未缓存输入与缓存</th><td>输入统一为 CodeBurn 的 fresh input，缓存读取和写入单独保存；总量 = 输入 + 输出 + 缓存读 + 缓存写。cachedInputTokens 是缓存读取的别名，禁止再次相加。旧版 Codex 的输入含缓存，所以升级后输入数会变小，应结合缓存卡与总量理解。</td></tr>
+<tr><th>推理 Token</th><td>Claude、Codex、Copilot、DSH 的 output 已包含推理，禁止再加；其他来源依照上游 billableOutputTokens 合并。对全部43个注册项逐项运行边界测试。</td></tr>
+<tr><th>累计、流式、恢复及多格式</th><td>复用上游 Codex 累计差分/恢复/分叉去重，Claude 流式消息去重与 advisor 计数，Copilot store/逐条调用/shutdown 对账，以及 OpenCode 文件与SQLite来源去重。</td></tr>
+<tr><th>估算与缺失字段</th><td>保留上游 isEstimated，界面及CSV有标记。该标记可能仅表示费用估算（如 Amp），不能直接断言 Token 是估算。Lumi 拒绝非有限、负数或非安全整数计数；缺失保持未知，空范围为0。</td></tr>
+<tr><th>独立网关</th><td>Vercel Gateway 使用官方 report API，须已有 AI_GATEWAY_API_KEY 或 VERCEL_OIDC_TOKEN 及服务端权限；本机未配置时不发起请求。其记录是按日/模型聚合，不是真实逐会话或逐小时数据；默认从“全部”中排除，单选网关时查看，防止与本地客户端重复。</td></tr>
+<tr><th>历史切换与刷新失败</th><td>每软件在成功完整读取后事务替换派生记录，防止新旧ID并存重复。失败保留最后有效数据。网关适配比上游额外把HTTP失败转为采集失败，避免误把失败当作零数据覆盖历史。</td></tr>
+<tr><th>名称与隐私</th><td>Codex 仍刷新 session_index + 只读 threads.title；Claude 使用上游 aiTitle。来源没有明确名称则保留脱敏编号，不用对话正文猜测。上游辅助缓存归 Lumi，保存前剔除消息、命令和行为字段；会话摘要与导出只使用显示元数据和计数。</td></tr>
+<tr><th>已扫描范围</th><td>未发现的软件不进入顶部软件 Tab，也不进入下方筛选和统计。零记录软件可保留0展示。分页和CSV以同一筛选范围汇总，展开原始计数按需读取。</td></tr>
+</tbody></table></div></section>
+<section><h2>05 · 验证记录与复现</h2><div class="split"><div><h3>验证结果</h3><ul><li>上游：69 个测试文件，1256 项通过，0 项失败。</li><li>Lumi：44 个测试文件，371 项通过；类型、lint、Rust格式、check、clippy通过。</li><li>Lumi新增边界：43来源覆盖、缓存别名、推理规则、估算/非法计数、Claude完整日志/名称、Gemini发现与缓存恢复、Gateway API及失败保留、会话/明细/CSV、重复刷新。</li><li>上游来源指纹：375/375 一致。</li></ul></div><div><h3>复现命令</h3><p><code>pnpm verify:usage</code> 会按顺序完成以下步骤并更新报告与验证摘要：</p><ol><li><code>pnpm build:core</code></li><li><code>pnpm test:codeburn</code></li><li><code>pnpm check</code></li><li><code>node scripts/audit-codeburn.mjs</code></li><li><code>node scripts/build-codeburn-report.mjs</code></li></ol><small>审计会读取本机已有来源，仅输出软件级计数。上游辅助缓存使用审计临时目录，结束后清除。</small></div></div><p><a href="codeburn-upstream-tests.json">上游测试明细 JSON</a> · <a href="codeburn-local-audit.json">本机审计 JSON</a> · <a href="codeburn-validation.json">Lumi 验证摘要 JSON</a></p></section>
+<footer>证据基准：https://github.com/getagentseal/codeburn @ 9a40cc603fcd194caca9daa8c5134a61ea7e0e2b。本报告核对 Token 采集与聚合；软件更新、数据清理、源格式变化或网关授权范围变化后，应按相同命令重新核验。</footer></main></body></html>

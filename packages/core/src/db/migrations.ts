@@ -10,6 +10,15 @@ interface Migration {
 
 const MIGRATIONS: Migration[] = [
   {
+    id: 13,
+    name: 'workbench_browser_storage',
+    sql: `CREATE TABLE workbench_browser_storage (
+      project_id TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL,
+      key_bytes INTEGER NOT NULL, value_bytes INTEGER NOT NULL,
+      PRIMARY KEY (project_id, key)
+    );`,
+  },
+  {
     id: 12,
     name: 'ai_token_usage',
     sql: `

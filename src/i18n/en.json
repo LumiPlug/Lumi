@@ -713,7 +713,7 @@
   "禁用（开启）": "Disabled (on)",
   "禁用（关闭）": "Disabled (off)",
   "列表顶栏": "List toolbar",
-  "分类 Tab 在左，搜索与筛选操作在同一行最右侧；保留阴影留白，窄窗口自然换行。": "Category tabs on the left and search/filter actions on the right. Keeps space for shadows and wraps in narrow windows.",
+  "分类 Tab 支持横向滚动，搜索图标向左展开输入框；搜索、筛选与操作始终保持单行。": "Category tabs scroll horizontally. Click the search icon to expand the input to the left; search, filters and actions stay on one line.",
   "列表顶栏分类预览": "List toolbar categories preview",
   "新增": "New",
   "列表顶栏搜索预览": "List toolbar search preview",

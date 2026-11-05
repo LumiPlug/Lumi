@@ -54,7 +54,20 @@ const sdk = await build({
   legalComments: 'none',
   logLevel: 'silent',
 })
-writeOutput('templates/html-home/lumi-sdk.js', `// SPDX-License-Identifier: MPL-2.0\n${sdk.outputFiles[0].text}`)
+writeOutput('templates/html-home/lumi-sdk.js', `// SPDX-License-Identifier: MPL-2.0\n(function(){if(window.__LUMI_HOME_SDK__)return;Object.defineProperty(window,'__LUMI_HOME_SDK__',{value:true});${sdk.outputFiles[0].text}})();\n`)
+const storage = await build({
+  entryPoints: [path.join(root, 'packages/home-sdk/src/storage.ts')],
+  bundle: true,
+  write: false,
+  format: 'iife',
+  globalName: 'LumiStorageCompat',
+  platform: 'browser',
+  target: 'safari15.4',
+  minify: true,
+  legalComments: 'none',
+  logLevel: 'silent',
+})
+writeOutput('packages/core/src/workbench/storage-runtime.ts', `${banner}export const HOME_STORAGE_RUNTIME = ${JSON.stringify(storage.outputFiles[0].text)}\n`)
 const versions = [
   JSON.parse(fs.readFileSync(path.join(root, 'src-tauri/tauri.conf.json'), 'utf8')).version,
   ...['core', 'shared', 'mcp-stdio-proxy', 'home-sdk'].map((name) =>

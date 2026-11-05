@@ -24,6 +24,7 @@ import {
   FieldGroup,
   FieldRow,
   IconButton,
+  ExpandableSearch,
   Input,
   InputHint,
   Modal,
@@ -723,7 +724,7 @@ export default function UiComponentsPage({
             <DemoRow
               title={t('列表顶栏')}
               description={t(
-                '分类 Tab 在左，搜索与筛选操作在同一行最右侧；保留阴影留白，窄窗口自然换行。',
+                '分类 Tab 支持横向滚动，搜索图标向左展开输入框；搜索、筛选与操作始终保持单行。',
               )}
             >
               <div className="ui-list-toolbar" style={{ width: '100%' }}>
@@ -744,9 +745,8 @@ export default function UiComponentsPage({
                   <Button disabled>{t('新增')}</Button>
                 </div>
                 <div className="ui-list-toolbar-filters">
-                  <Input
-                    className="ui-list-toolbar-search"
-                    aria-label={t('列表顶栏搜索预览')}
+                  <ExpandableSearch
+                    label={t('列表顶栏搜索预览')}
                     placeholder={t('搜索…')}
                     value={listQuery}
                     onChange={(event) => setListQuery(event.target.value)}

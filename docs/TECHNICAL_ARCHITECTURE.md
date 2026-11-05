@@ -2,6 +2,8 @@
 
 # Lumi 技术架构
 
+2026-10-19 工作台存储兼容：入口先注入同步快照与幂等 SDK。localStorage 独立 SQLite 表按项目保存；sessionStorage 在 Core 内存按项目/宿主窗口会话保存。Storage 同步内存、串行异步 RPC、flush 确认与失败重试；SDK KV 独立并扩容。仅存储 RPC 放宽消息限额，保留版本/项目验证、宿主会话覆盖与沙盒隔离。iframe 自刷新时由每文档随机 ID 触发重新握手并关闭旧通道，重复握手忽略；异步回包仅可发回原通道，避免刷新后请求 ID 重用导致串包。容量及非完整原生兼容范围见 HOMEPAGE_DEVELOPMENT_PLAN.md。
+
 ### 有界扫描状态与 Qoder 根来源（0.1.6 预览发布）
 
 新增宿主鉴权的轻量 usage status 查询，内存更新本轮来源/文件计数，完成时持久化摘要；数据 revision 仅在来源入账时推进，页面每轮最多响应一次中间数据提交及一次终态，不按文件进度重查完整账本。状态查询不启动扫描。保留一分钟自动扫描与单运行合并，不自动递归扫描至全量完成。原生来源先发现候选并按最近变化排序，在原64MiB/128MiB/10万记录预算内采集，分别报告读取、缓存、下轮延后、超限、失败和发现截断，部分结果仍 upsert。
@@ -35,6 +37,12 @@ CodeBurn 构建适配层在源码替换前统一 CRLF/LF，确保 Windows 检出
 本地来源缓存仅复用最后修改/变更时间距当前超过 2 秒的文件，避免文件系统时间戳精度导致快速同长度覆写被误判为未变化；最近写入的文件仍受原读取上限约束并重新解析。CI 测试按文件串行，保留全部断言与超时标准，避免小规格 runner 的并行进程争抢。
 
 本地日志采用有界发现、完整行读取及仅含归一化记录的内存元数据缓存；持久层按软件/会话/请求哈希 upsert，日志轮转或删除不抹掉已采集历史。失败不清空历史，暂停/关闭取消扫描。SQLite 只读且感知 WAL；不读取凭据或持久化正文。输入已含缓存的来源先扣除已报告缓存读取，缓存拆分缺失时保留 inputIncludesCache=true；未知不填零，总计独立按来源已知口径计算。全零且可能受记录开关影响的 QoderWork/千问办公事件标记 missing_usage，不作为真实零用量。QODER_EXPOSE_TOKEN_USAGE / QODERCN_EXPOSE_TOKEN_USAGE 由用户在目标软件环境开启并重启后才可能产生新数据，Lumi 不自动改 shell、登录环境或目标应用配置。当前四款的路径及字段以 macOS 为实机验证基线，其他平台采用标准用户数据目录并以样例验证，不宣称完成各版本实机覆盖。
+
+### Skills 来源扩展（2026-10-19）
+
+豆包桌面版只取`~/Doubao/skills`或Lumi专用绝对`LUMI_DOUBAO_SKILLS_DIR`，不猜测TUI或内置技能路径。Reasonix默认根按Unix/Windows区分，绝对`REASONIX_HOME`隔离其用户候选来源，项目目录仍由已有项目列表限定。新增来源沿用现有SkillSource与中性样式，不扩展用量注册表、协议或视觉组件。
+
+目录声明移入 `skills/roots.ts`，由现有 Skills Repository 与扫描器统一消费；核查证据与限制见 [SKILL_SOURCES.md](SKILL_SOURCES.md)。相同词法路径共用一次有界遍历，再为真实文件合并各来源；不按技能名覆盖。Quick Desktop 的 profiles 布局只枚举直接普通子目录并进入 skills，最多检查64个目录项，超限/拒绝读取保留 error 状态及历史。保留原有解析、链接、资源上限、文件读取与托管导入边界，不读取其他软件配置或凭据。
 
 状态：标准 Tauri 2 实施基线
 
@@ -236,7 +244,7 @@ Personal Memory 位于用户数据目录；Project Memory 位于项目 `.memory/
 
 ## 11. Workbench
 
-采用与 Lumi 同版本的免构建 HTML/CSS/JavaScript 官方工程、统一浏览器 SDK 和开发知识库。三个必要文件为根目录 `index.html`、`app.js`、`style.css`；其他框架可输出相同静态结构。标准 JSON 工程包包含 manifest、运行 files、可恢复 sourceFiles；SQLite 保存版本快照与按项目隔离的 KV。MCP 与桌面导入复用同一验证器。资源服务监听独立随机 loopback 端口，iframe 仅 allow-scripts；MessageChannel 桥经受限 IPC 转发公开 Registry 工具，主题和反馈沿用宿主。主 frame nonce 保护自定义 IPC，不向 iframe 发放凭据。完整实现约束与验证见 [官方主页开发方案](HOMEPAGE_DEVELOPMENT_PLAN.md)。
+采用与 Lumi 同版本的免构建 HTML/CSS/JavaScript 官方工程、统一浏览器 SDK 和开发知识库。三个必要文件为根目录 `index.html`、`app.js`、`style.css`；其他框架可输出相同静态结构。标准 JSON 工程包包含 manifest、运行 files、可恢复 sourceFiles；SQLite 保存版本快照与按项目隔离的 KV。MCP 与桌面导入复用同一验证器。资源服务监听独立随机 loopback 端口，iframe 与 CSP 共用开放浏览器能力的权限策略，允许联网、外部资源、内联脚本、表单/弹窗/下载等；保留 opaque origin、禁止顶层导航及弹窗继承沙盒，以隔离宿主 UI 和内部运行信息。设备 API 仍由 WebView/系统授权及 origin 要求决定，项目持久数据使用 SDK storage。MessageChannel 桥经受限 IPC 转发公开 Registry 工具，主题和反馈沿用宿主。主 frame nonce 保护自定义 IPC，不向 iframe 发放凭据。完整实现约束与验证见 [官方主页开发方案](HOMEPAGE_DEVELOPMENT_PLAN.md)。
 
 ### 知识库来源存储（2026-10-07）
 
@@ -264,7 +272,7 @@ Node Core 必须按 target triple 生成 Sidecar，并由 Tauri bundle 配置一
 
 ## Skills 目录发现（2026-09-30）
 
-Core 的 Skills Repository 通过异步、有深度/目录数/单文件大小限制的只读扫描发现 SKILL.md，解析 YAML frontmatter，不执行脚本、不导入正文指令。按真实文件路径生成 ID，同一符号链接目标聚合软件与目录来源；不同路径不按名称合并。发现一个技能后，仅继续扫描其标准 `skills/` 子目录，以支持技能包中的独立子技能。Codex 支持 CODEX_HOME（默认 ~/.codex）的 skills 和 plugins/cache、共享 ~/.agents/skills；Claude 支持 CLAUDE_CONFIG_DIR（默认 ~/.claude）的 skills 和 plugins/cache；Gemini CLI 同时扫描 ~/.gemini/skills、共享 ~/.agents/skills 和 ~/.gemini/extensions；其余适配器读取各自个人目录。用户添加的项目只扫描各适配器的标准子目录，历史 Codex 项目的 .codex/skills 也保留支持。
+Core 的 Skills Repository 通过异步、有深度/目录数/单文件大小限制的只读扫描发现 SKILL.md，解析 YAML frontmatter，不执行脚本、不导入正文指令。按真实文件路径生成 ID，同一符号链接目标聚合软件与目录来源；不同路径不按名称合并。发现一个技能后，仅继续扫描其标准 `skills/` 子目录，以支持技能包中的独立子技能。Codex 支持 CODEX_HOME（默认 ~/.codex）的 skills 和 plugins/cache、共享 ~/.agents/skills；Claude 支持 CLAUDE_CONFIG_DIR（默认 ~/.claude）的 skills 和 plugins/cache；Gemini CLI 同时扫描 ~/.gemini/skills、共享 ~/.agents/skills 和 ~/.gemini/extensions；其他来源及兼容目录由 `skills/roots.ts` 声明，详细范围见 [Skills 来源核查](SKILL_SOURCES.md)。用户添加的项目只扫描各适配器的标准子目录，历史 Codex 项目的 .codex/skills 也保留支持。
 
 SQLite 保存元数据、来源、发现状态、归档状态和项目扫描根目录。技能元数据 JSON 保存 `firstSeenAt` 和 `fileCreatedAt`（UTC ISO 时间或 null）。`firstSeenAt` 首次插入时记录本轮收录时间，在写事务内读取现有记录以保留最早收录值；历史缺失值保持 null。`fileCreatedAt` 来自读取真实 SKILL.md 的文件句柄 stat.birthtimeMs，通过 shared 的 normalizeSkillTimestamp 标准化为 UTC ISO；无效、非正及 Unix 纪元首秒（0–1000ms）的占位值均返回 null，首次发现时间沿用同一校验。扫描、缓存读取与前端日期显示共用该规则，不以当前扫描时间补造历史日期，每次成功扫描更新，可为历史记录补充或反映重建文件；文件缺失或读取失败时保留缓存值。文件系统创建时间不承诺实际安装日期，mtime 不参与排序。无需表结构迁移；读取旧 JSON 时将缺失或无效日期标准化为 null。Repository 按每项的 fileCreatedAt（未知时回退 firstSeenAt）倒序，两者都未知的记录置后，同时间按名称／真实路径／ID 排序，前端筛选保留返回顺序。缺失目录属于正常空目录；权限、格式、超限错误进入扫描诊断。读取失败的目录保留上一轮数据；只有完成的扫描更新对应发现状态。受保护 /app/skills API 和宿主 nonce 校验的 Tauri 白名单命令共用 Repository；主页 SDK 暂不开放 Skills；MCP 仅开放已托管技能的搜索和读取。浏览器模式不伪造本机数据。市场精选使用经核验的官方仓库目录链接，不代表实时市场。
 
@@ -395,6 +403,7 @@ Codex 输入包含缓存读取，不再加缓存；累计总量按差值计量�
 稳定性验收补充：Codex 中断检查点的 `pendingUserMessage` 只以等长空白写入派生缓存，保留字符数供来源估算使用；`pendingTools`、`pendingToolSequence`、`pendingSkills` 与普通行为字段一样过滤。过滤同时应用于打包读取器的磁盘写入及 Core 的缓存快照，不改动上游源码或原始会话日志。隔离回归必须以全新 Node 进程读取已过滤的检查点，验证重启续读的计数及估算标记保持一致。既有正式缓存不在验收中原地读取或清理；旧内容随后续派生缓存写回才被过滤，不能宣称历史缓存已清除。详见本轮 [稳定性与 Token 验收](qa/2026-10-17-stability-token/README.md)。
 
 固定 `getagentseal/codeburn` 的 `9a40cc603fcd194caca9daa8c5134a61ea7e0e2b` 提交（0.9.27），MIT 原始读取器在 `packages/core/vendor/codeburn`，通过可重现构建接入43个来源（42工具+1网关）。默认用量采集使用上游发现、解析、跨来源去重及 Copilot 对账；Claude 日志使用上游完整日志解析，Desktop ledger 使用 provider 管线。业务只持久化脱敏会话键、显示名称和计数，不保存原始用户消息或工具参数；上游辅助缓存归 Lumi 私有目录，显示/行为字段在缓存写入边界剔除。旧的原生读取器仅保留显式传入受限根目录的兼容路径。首次成功采集切换各软件的派生记录，使用来源内完整事务，避免与旧ID同时累计。输入统一为未缓存输入；总量=输入+输出（按上游规则包含/另计推理）+缓存读取+缓存写入；`cachedInputTokens` 是缓存读取别名，不再次相加。估算保留标记。网关按日汇总缺少会话身份，与本地请求可能重复，因此全软件统计默认排除，仅单选网关时查看。
+
 
 ## 界面中英文切换（2026-10-19）
 

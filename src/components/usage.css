@@ -53,16 +53,18 @@
 }
 .usage-software-tabs {
   display: flex;
-  flex: 1 1 240px;
+  flex: 1 1 0;
   min-width: 0;
   margin-block: calc(-1 * max(4px, var(--lumi-shadow-scroll-gutter)));
 }
 .usage-date-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex: 1 1 0;
+  min-width: 0;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 10px;
-  /* Match the software tabs so a wrapped last row retains the same shadow gutter. */
+  /* Match the software tabs and preserve control shadow space. */
   padding-block: max(4px, var(--lumi-shadow-scroll-gutter));
   margin-block: calc(-1 * max(4px, var(--lumi-shadow-scroll-gutter)));
 }
@@ -109,24 +111,10 @@
 }
 .usage-log-actions {
   display: flex;
+  min-width: 0;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 10px;
-}
-.usage-search {
-  position: relative;
-  width: 280px;
-  max-width: 100%;
-}
-.usage-search > svg {
-  position: absolute;
-  left: 12px;
-  top: calc((var(--lumi-control-height) - 16px) / 2);
-  pointer-events: none;
-}
-.usage-search .ui-input {
-  padding-inline-start: 36px;
-  width: 100%;
 }
 .usage-session-filters {
   margin-bottom: 16px;
@@ -158,7 +146,7 @@
   gap: 12px;
 }
 .usage-detail-title {
-  flex: 1 1 240px;
+  flex: 1 1 0;
   min-width: 0;
   display: grid;
   gap: 4px;
@@ -263,12 +251,6 @@
   font-variant-numeric: tabular-nums;
 }
 @media (max-width: 1050px) {
-  .usage-date-actions {
-    width: 100%;
-  }
-  .usage-date-actions > .ui-choices {
-    flex: 1;
-  }
   .usage-analysis-grid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -276,9 +258,6 @@
 @media (max-width: 780px) {
   .usage-metrics {
     grid-template-columns: minmax(0, 1fr);
-  }
-  .usage-date-actions > .ui-choices {
-    flex-basis: 100%;
   }
   .usage-detail-values {
     grid-template-columns: minmax(0, 1fr);
@@ -289,10 +268,33 @@
 }
 
 .usage-page > .ui-dashboard-toolbar {
-  /* Keep shadow room at the toolbar edges; wrapped rows share their gutters. */
+  flex-wrap: nowrap;
+  /* Keep shadow room at the toolbar edges. */
   padding-block: max(4px, var(--lumi-shadow-scroll-gutter));
   margin-bottom: calc(-1 * max(4px, var(--lumi-shadow-scroll-gutter)));
 }
 .usage-log-actions .ui-select {
   width: auto;
+}
+
+.usage-date-actions > .ui-icon-button,
+.usage-log-actions > :not(.ui-expandable-search) {
+  flex: none;
+}
+.usage-page > .ui-data-panel:has(.usage-log-actions) {
+  container-type: inline-size;
+}
+.usage-page > .ui-data-panel:has(.usage-log-actions) > .ui-data-panel-heading {
+  flex-wrap: nowrap;
+}
+.usage-page > .ui-data-panel:has(.usage-log-actions) > .ui-data-panel-heading h2 {
+  flex: 1;
+  min-width: 0;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.usage-date-actions > .ui-list-toolbar-tabs {
+  margin-block: calc(-1 * max(4px, var(--lumi-shadow-scroll-gutter)));
 }

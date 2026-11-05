@@ -115,7 +115,11 @@ it('retains the zero-data dashboard with software logos and a single refresh act
   expect(html).not.toContain('暂无已报告用量')
   expect(html.match(/aria-label="软件筛选"/g)).toHaveLength(1)
   expect(html).not.toContain('Codex 0')
-  expect(html.indexOf('会话排序')).toBeLessThan(html.indexOf('aria-expanded="false"'))
+  const filterButton = html
+    .match(/<button\b[^>]*>[\s\S]*?<\/button>/g)
+    ?.find((button) => button.includes('aria-expanded="false"') && button.includes('筛选'))
+  expect(filterButton).toBeDefined()
+  expect(html.indexOf('会话排序')).toBeLessThan(html.indexOf(filterButton!))
   expect(html).toContain('最近互动优先')
 })
 it('keeps the refresh icon visible and accessible while scanning', () => {

@@ -1,0 +1,110 @@
+{
+  "platform": "macOS arm64",
+  "runtime": "Tauri/WKWebView",
+  "binarySha256": "aaa576cadf6a19b7e6b280ce8b6b0c69bef643f5598b06044cbd282a25f3c0a1",
+  "events": [
+    {
+      "phase": "phase1",
+      "checks": {
+        "wkWebView": true,
+        "syncPreload": true,
+        "hostDomIsolated": true,
+        "hostCredentialsIsolated": true,
+        "namedProperty": true,
+        "removeItem": true,
+        "largeValueInMemory": true,
+        "quota": true,
+        "flush": true
+      },
+      "engine": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)",
+        "platform": "MacIntel"
+      },
+      "receivedAt": "2026-10-19T15:37:39.753Z"
+    },
+    {
+      "phase": "before-failure",
+      "checks": {
+        "wkWebView": true,
+        "syncPreload": true,
+        "hostDomIsolated": true,
+        "hostCredentialsIsolated": true,
+        "localAfterRefresh": true,
+        "sessionPreloaded": true,
+        "sessionAfterRefresh": true,
+        "largeValueAfterRefresh": true,
+        "sdkKvSeparate": true
+      },
+      "engine": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)",
+        "platform": "MacIntel"
+      },
+      "receivedAt": "2026-10-19T15:37:39.877Z"
+    },
+    {
+      "phase": "failure-observed",
+      "checks": {
+        "wkWebView": true,
+        "syncPreload": true,
+        "hostDomIsolated": true,
+        "hostCredentialsIsolated": true,
+        "localAfterRefresh": true,
+        "sessionPreloaded": true,
+        "sessionAfterRefresh": true,
+        "largeValueAfterRefresh": true,
+        "sdkKvSeparate": true,
+        "flushRejectsFailure": true,
+        "failureRetainsMemory": true,
+        "failureEvent": true
+      },
+      "engine": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)",
+        "platform": "MacIntel"
+      },
+      "receivedAt": "2026-10-19T15:37:39.919Z"
+    },
+    {
+      "phase": "phase2",
+      "checks": {
+        "wkWebView": true,
+        "syncPreload": true,
+        "hostDomIsolated": true,
+        "hostCredentialsIsolated": true,
+        "localAfterRefresh": true,
+        "sessionPreloaded": true,
+        "sessionAfterRefresh": true,
+        "largeValueAfterRefresh": true,
+        "sdkKvSeparate": true,
+        "flushRejectsFailure": true,
+        "failureRetainsMemory": true,
+        "failureEvent": true,
+        "flushRetry": true,
+        "sessionClear": true
+      },
+      "engine": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)",
+        "platform": "MacIntel"
+      },
+      "receivedAt": "2026-10-19T15:37:39.961Z"
+    },
+    {
+      "phase": "phase3",
+      "checks": {
+        "wkWebView": true,
+        "syncPreload": true,
+        "hostDomIsolated": true,
+        "hostCredentialsIsolated": true,
+        "localAfterRestart": true,
+        "largeAfterRestart": true,
+        "sessionClearedOnRestart": true,
+        "failedWritePersistedAfterRetry": true,
+        "flushAfterRestart": true
+      },
+      "engine": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)",
+        "platform": "MacIntel"
+      },
+      "receivedAt": "2026-10-19T15:37:42.609Z"
+    }
+  ]
+}

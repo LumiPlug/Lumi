@@ -17,7 +17,6 @@ import {
   Filter,
   Layers3,
   RefreshCw,
-  Search,
   ScrollText,
   SlidersHorizontal,
 } from 'lucide-react'
@@ -25,7 +24,7 @@ import {
   Badge,
   Button,
   DateRangeCalendar,
-  Input,
+  ExpandableSearch,
   Tabs,
   MetricPair,
   AnimatedNumber,
@@ -486,6 +485,7 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
             </div>
             <div className="usage-date-actions" ref={calendarAnchor}>
               <Tabs
+                className="ui-list-toolbar-tabs"
                 label={t('时间范围')}
                 value={preset}
                 onValueChange={(v) => {
@@ -780,16 +780,12 @@ export default function UsagePage({ active, coreReady }: { active: boolean; core
             icon={<ScrollText />}
             actions={
               <div className="usage-log-actions">
-                <label className="usage-search">
-                  <span className="sr-only">{t('搜索会话')}</span>
-                  <Search size={16} aria-hidden="true" />
-                  <Input
-                    type="search"
-                    placeholder={t('搜索会话名称 / 编号 / 模型…')}
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                  />
-                </label>
+                <ExpandableSearch
+                  label={t('搜索会话')}
+                  placeholder={t('搜索会话名称 / 编号 / 模型…')}
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
                 <Select
                   aria-label={t('会话排序')}
                   value={sort}

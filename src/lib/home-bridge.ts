@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+import { homeRpcByteLimit } from '@lumiplug/shared'
 import type { HomeTheme, JsonObject } from '@lumiplug/shared'
 export const HOME_METHODS = new Set([
   'context.get',
@@ -9,6 +10,7 @@ export const HOME_METHODS = new Set([
   'storage.get',
   'storage.set',
   'storage.delete',
+  'storage.native',
   'toast.show',
 ])
 export function homeBridgeRequest(
@@ -27,7 +29,8 @@ export function homeBridgeRequest(
   )
     return null
   try {
-    if (new TextEncoder().encode(JSON.stringify(request)).length > 64 * 1024) return null
+    if (new TextEncoder().encode(JSON.stringify(request)).length > homeRpcByteLimit(request.method))
+      return null
   } catch {
     return null
   }

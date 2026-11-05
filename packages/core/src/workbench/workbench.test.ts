@@ -5,7 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { HOME_CONTRACT, SESSION_TOKEN_HEADER } from '@lumiplug/shared'
+import { HOME_CONTRACT, HOME_STORAGE_LIMITS, SESSION_TOKEN_HEADER } from '@lumiplug/shared'
 import type { HomeBundle } from '@lumiplug/shared'
 import { CoreService } from '../service'
 import { homeTemplate, exportHomeProject, homeSourceForExport } from './template'
@@ -288,6 +288,11 @@ describe('official homepage project', () => {
     expect(
       await call('tools.call', { name: 'Lumi.publish_workbench', arguments: {} }),
     ).toMatchObject({ ok: false, error: { code: 'method_unavailable' } })
+    for (const method of ['get_core_status', 'get_mcp_connection_info', 'open_tool_run_window'])
+      expect(await call(method)).toMatchObject({
+        ok: false,
+        error: { code: 'method_unavailable' },
+      })
     expect(
       await call('tools.call', {
         name: 'Lumi.create_capability_draft',
@@ -317,11 +322,19 @@ describe('official homepage project', () => {
     expect(service.workbench.state(randomUUID(), 'get', 'prefs')).toBeNull()
     expect(service.workbench.state(project, 'get', 'prefs')).toEqual({ compact: true })
     expect(() =>
-      service.workbench.state(project, 'set', 'oversize', 'x'.repeat(33 * 1024)),
+      service.workbench.state(
+        project,
+        'set',
+        'oversize',
+        'x'.repeat(HOME_STORAGE_LIMITS.sdkValueBytes),
+      ),
     ).toThrow('invalid_workbench_state')
     expect(() => service.workbench.state(project, 'get', '../private')).toThrow()
-    for (let index = 0; index < 127; index++)
-      service.workbench.state(project, 'set', `key-${index}`, index)
+    const insert = service.database.raw.prepare(
+      'INSERT INTO workbench_state (key, value_json) VALUES (?, ?)',
+    )
+    for (let index = 0; index < HOME_STORAGE_LIMITS.keys - 1; index++)
+      insert.run(`${project}:key-${index}`, String(index))
     expect(() => service.workbench.state(project, 'set', 'overflow', 0)).toThrow()
     service.workbench.state(project, 'set', 'prefs', false)
     service.workbench.state(project, 'delete', 'prefs')
@@ -338,8 +351,18 @@ describe('official homepage project', () => {
     const entry = await fetch(view.runtimeUrl)
     expect(entry.status).toBe(200)
     expect(await entry.text()).toContain('<script src="./lumi-sdk.js"></script>')
-    expect(entry.headers.get('content-security-policy')).toContain('sandbox allow-scripts')
-    expect(entry.headers.get('content-security-policy')).toContain("connect-src 'none'")
+    const csp = entry.headers.get('content-security-policy')!
+    expect(csp).toContain("script-src * data: blob: 'unsafe-inline' 'unsafe-eval'")
+    expect(csp).toContain('connect-src * data: blob: ws: wss:')
+    expect(csp).toContain('sandbox allow-scripts allow-forms')
+    expect(csp).toContain('allow-downloads')
+    expect(csp).toContain('allow-popups')
+    expect(csp).not.toContain('allow-same-origin')
+    expect(csp).not.toContain('allow-top-navigation')
+    expect(csp).not.toContain('allow-popups-to-escape-sandbox')
+    expect(csp).not.toContain("frame-src 'none'")
+    expect(csp).not.toContain("form-action 'none'")
+    expect(entry.headers.get('permissions-policy')).toBeNull()
     expect(entry.headers.get('access-control-allow-origin')).toBe('*')
     const runtime = new URL(view.runtimeUrl)
     expect(runtime.port).not.toBe(String(service.port))
@@ -356,6 +379,10 @@ describe('official homepage project', () => {
     expect((await fetch(new URL('./../../../../etc/passwd', runtime))).status).toBe(404)
     const unauthorized = await fetch(`http://127.0.0.1:${service.port}/app/workbench`)
     expect(unauthorized.status).toBe(401)
+    const iframeRequest = await fetch(`http://127.0.0.1:${service.port}/app/workbench`, {
+      headers: { origin: 'null', [SESSION_TOKEN_HEADER]: token },
+    })
+    expect(iframeRequest.status).toBe(403)
     const conflict = await app('/app/workbench/publish', {
       expectedVersion: 0,
       bundle: homeFixture(),
@@ -366,5 +393,68 @@ describe('official homepage project', () => {
         await app('/app/workbench/rpc', { version: 1, method: 'context.get', args: {} })
       ).json(),
     ).toMatchObject({ data: { ok: true, data: { features: { runnerExecution: true } } } })
+  })
+
+  it('preloads native storage ahead of every user script and reserves the controlled loader', async () => {
+    const bundle = homeFixture()
+    bundle.files.find((file) => file.path === 'index.html')!.content =
+      '<!doctype html><script>window.beforeHead=localStorage.getItem("saved")</script><head><!-- <script src="./lumi-sdk.js"></script> --></head>'
+    bundle.sourceFiles.find((file) => file.path === 'index.html')!.content = bundle.files.find(
+      (file) => file.path === 'index.html',
+    )!.content
+    service.workbench.publish(0, bundle)
+    const session = randomUUID()
+    service.workbench.browserStorage.mutate(bundle.manifest.projectId, {
+      area: 'local',
+      operation: 'set',
+      key: 'saved',
+      value: 'loaded before scripts',
+      session,
+    })
+    const { data: view } = await (await app('/app/workbench')).json()
+    const html = await (await fetch(`${view.runtimeUrl}?storageSession=${session}`)).text()
+    expect(html.startsWith('<!doctype html><script src=')).toBe(true)
+    expect(html.indexOf('lumi-storage.js')).toBeLessThan(html.indexOf('lumi-sdk.js'))
+    expect(html.indexOf('lumi-sdk.js')).toBeLessThan(html.indexOf('window.beforeHead'))
+    const loader = new URL(html.match(/src="([^"]+lumi-storage\.js[^" ]*)"/)![1]!, view.runtimeUrl)
+    const script = await (await fetch(loader)).text()
+    expect(script).toContain('loaded before scripts')
+    expect(script).not.toContain(token)
+    bundle.files.push({ path: 'lumi-storage.js', encoding: 'utf8', content: 'spoof' })
+    expect(() => validateHomeBundle(bundle)).toThrow('invalid_home_bundle')
+  })
+
+  it('accepts larger storage RPC while keeping unrelated RPC bounded and derives the project on the server', async () => {
+    const bundle = homeFixture()
+    service.workbench.publish(0, bundle)
+    const session = randomUUID()
+    const native = await app('/app/workbench/rpc', {
+      version: 1,
+      method: 'storage.native',
+      args: {
+        session,
+        area: 'local',
+        operation: 'set',
+        key: 'large',
+        value: 'x'.repeat(100 * 1024),
+        projectId: randomUUID(),
+      },
+    })
+    expect((await native.json()).data).toMatchObject({ ok: true })
+    expect(
+      service.workbench.browserStorage.snapshot(bundle.manifest.projectId, session).local[0]?.[1],
+    ).toHaveLength(100 * 1024)
+    const sdk = await app('/app/workbench/rpc', {
+      version: 1,
+      method: 'storage.set',
+      args: { key: 'larger-sdk', value: 'x'.repeat(100 * 1024) },
+    })
+    expect((await sdk.json()).data).toMatchObject({ ok: true })
+    const oversized = await app('/app/workbench/rpc', {
+      version: 1,
+      method: 'context.get',
+      args: { value: 'x'.repeat(100 * 1024) },
+    })
+    expect(oversized.status).toBe(400)
   })
 })

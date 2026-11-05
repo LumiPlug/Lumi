@@ -66,7 +66,7 @@ export function validateHomeBundle(input: unknown): HomeBundle {
     if (!input.files.some((file) => file.path === required))
       throw new WorkbenchError('invalid_home_bundle')
   }
-  if (input.files.some((file) => ['lumi-sdk.js', 'theme.css'].includes(file.path)))
+  if (input.files.some((file) => ['lumi-sdk.js', 'lumi-storage.js', 'theme.css'].includes(file.path)))
     throw new WorkbenchError('invalid_home_bundle')
   const source = new Map(input.sourceFiles.map((file) => [file.path, file]))
   for (const required of ['index.html', 'app.js', 'style.css', 'lumi.home.json']) {

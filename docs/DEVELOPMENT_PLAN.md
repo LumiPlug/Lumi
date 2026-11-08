@@ -6,6 +6,10 @@
 
 # Lumi 开发计划
 
+## 0.1.0 正式版（2026-11-08）
+
+整合当前主线与 Windows WebView2 存储验收，应用、Core、shared、stdio proxy、SDK 与模板统一使用 0.1.0；主页格式 2、桥接协议 1。三平台构建与包内 sidecar 验证通过后，以不可覆盖的 v0.1.0 标签发布并设为最新正式版。功能范围与已知问题见 [版本说明](releases/0.1.0.md)。
+
 ## 0.1.7 Windows 验证预览发布（2026-10-21）
 
 用户授权递增最小补丁版本并发布预览版。基于 main `640137e`，将 PR #16 的隔离 Windows WebView2 自动化、人工用例及真实证据纳入 0.1.7；统一应用/Core/SDK/模板版本，主页格式 2 和桥接协议 1 不变。正式运行前重新执行必需检查和 Windows 原生 CI，通过后合并到 main，使用现有 Desktop Build 手动触发三目标打包及预览发布。develop 的旧 QA 提交和其他工作树的 Skills/工作台存储/权限/托盘改动不纳入，不修改 `packages/core/src/usage/codeburn.test.ts`。版本说明与未完成手测见 [0.1.7](releases/0.1.7.md)。

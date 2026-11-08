@@ -8,11 +8,11 @@
 
 | 系统 | Runner | Rust target | 下载产物 |
 | --- | --- | --- | --- |
-| macOS Apple Silicon | `macos-15` | `aarch64-apple-darwin` | DMG、保留权限的 APP ZIP |
+| macOS Apple Silicon | `macos-26` | `aarch64-apple-darwin` | DMG、保留权限的 APP ZIP |
 | macOS Intel | `macos-15-intel` | `x86_64-apple-darwin` | DMG、保留权限的 APP ZIP |
 | Windows x64 | `windows-2022` | `x86_64-pc-windows-msvc` | NSIS EXE、MSI |
 
-macOS 最低版本为 13.5，与所包含的 Node 26 运行时一致。Windows 使用 Tauri 的 WebView2 安装检查。当前产物用于测试分发：macOS 使用 ad-hoc 签名，尚未配置 Apple Developer 签名和公证；Windows 安装器尚未配置发布者证书。
+macOS 最低版本为 13.5，与所包含的 Node 26 运行时一致。Windows 使用 Tauri 的 WebView2 安装检查。macOS 使用 ad-hoc 签名，尚未配置 Apple Developer 签名和公证；Windows 安装器尚未配置发布者证书。
 
 ## 触发和下载
 
@@ -22,11 +22,11 @@ macOS 最低版本为 13.5，与所包含的 Node 26 运行时一致。Windows �
 - 工作流成功后，在该次运行的 **Artifacts** 下载对应平台的包，保留 14 天。
 - 每份产物包含 `LICENSE`、第三方许可通知、源码获取信息和 `SHA256SUMS.txt`。
 
-三个平台全部构建并通过校验后，工作流自动发布 GitHub 预览 Release，标签为 `v<应用版本>-preview.<工作流运行序号>`。Release 提供直接下载的安装器、APP ZIP，以及包含许可证、源码信息和校验和的各平台完整 ZIP；另外提供所有下载附件的 `SHA256SUMS.txt`。每个标签固定指向本次打包的 main 提交，已公开的版本不会被覆盖。
+三个平台全部构建并通过校验后，工作流自动发布 GitHub 正式 Release，标签为 `v<应用版本>`，并设为最新正式版本。Release 提供直接下载的安装器、APP ZIP，以及包含许可证、源码信息和校验和的各平台完整 ZIP；另外提供所有下载附件的 `SHA256SUMS.txt`。每个标签固定指向本次打包的 main 提交，已公开的版本不会被覆盖。
 
 发布阶段先验证三份产物完整性、SHA256 和源码提交，再上传到草稿 Release，全部上传完成后才公开。失败时不会公开残缺版本；同次运行可以从发布任务重试未公开的草稿。任一平台构建或验证失败时不执行发布。
 
-打包不需要额外 GitHub PAT 或正式签名密钥；只有发布任务使用工作流自带 token 的 `contents: write` 权限。当前均作为未正式签名的测试预览版发布，不配置自动更新。完整安装、覆盖升级和卸载体验仍需在实际用户电脑验收。
+打包不需要额外 GitHub PAT 或正式签名密钥；只有发布任务使用工作流自带 token 的 `contents: write` 权限。当前正式版沿用上述签名方式，不配置自动更新。完整安装、覆盖升级和卸载体验仍需在实际用户电脑验收。
 
 触发规则变更需提交到 GitHub 仓库才会生效。所有打包任务只接受 `main` 分支，并检出触发事件对应的提交 SHA，保证产物与源码获取信息一致。自动打包依赖 GitHub 的 PR 合并事件；在本地合并后直接推送 `main` 不会触发。相同分支、相同平台的新打包任务会取消仍在运行的旧任务；跳过的 PR 事件不会取消正在进行的打包。
 

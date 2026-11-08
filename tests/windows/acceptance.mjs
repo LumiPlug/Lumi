@@ -322,23 +322,35 @@ try {
     assert.deepEqual(await asyncScript('return await window.lumi.storage.get("windows-qa")'), value)
     const failures = await asyncScript(`
       const codes=[];
-      for (const [key,value] of [['bad/key',1], ['windows-qa','x'.repeat(33000)]]) {
+      for (const [key,value] of [['bad/key',1], ['windows-qa','x'.repeat(256 * 1024)]]) {
         try { await window.lumi.storage.set(key,value); codes.push('unexpected_success'); }
         catch (error) { codes.push(error.code); }
       }
-      try { localStorage.setItem('windows-qa','forbidden'); codes.push('unexpected_success'); }
+      try { localStorage.setItem('oversize','x'.repeat(1024 * 1024 + 1)); codes.push('unexpected_success'); }
       catch (error) { codes.push(error.name); }
       return codes;`)
     assert.deepEqual(failures, [
       'invalid_workbench_state',
       'invalid_workbench_state',
-      'SecurityError',
+      'QuotaExceededError',
     ])
     assert.deepEqual(await asyncScript('return await window.lumi.storage.get("windows-qa")'), value)
+    assert.deepEqual(await asyncScript(`
+      localStorage.setItem('windows-qa', 'local-persisted');
+      sessionStorage.setItem('windows-qa', 'session-retained');
+      await window.lumi.storage.flush();
+      let hostIsolated = false;
+      try { void parent.document.body; } catch (error) { hostIsolated = error.name === 'SecurityError'; }
+      return [localStorage.getItem('windows-qa'), sessionStorage.getItem('windows-qa'), hostIsolated];
+    `), ['local-persisted', 'session-retained', true])
     await top()
     await command('POST', '/refresh', {})
     await frame()
     assert.deepEqual(await asyncScript('return await window.lumi.storage.get("windows-qa")'), value)
+    assert.deepEqual(await asyncScript(`
+      await window.lumi.ready;
+      return [localStorage.getItem('windows-qa'), sessionStorage.getItem('windows-qa')];
+    `), ['local-persisted', 'session-retained'])
     await waitFor(
       () =>
         execute(

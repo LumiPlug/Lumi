@@ -44,7 +44,7 @@ node tests/windows/acceptance.mjs
 2. 驱动安装失败：核对 runner 的 `EdgeWebView/Application` 路径、输出的 Runtime 版本、微软下载可达性/签名。不要以禁用签名或权限设置绕过。
 3. 会话创建失败：核对 `Lumi.exe` 和 standalone sidecars 已构建，driver/Runtime 版本匹配；保留 Actions 错误，不把它写成产品 UI 缺陷。
 4. Core 未就绪：核对测试标识下 38491 端口是否被该次异常残留实例占用；结束自己启动的测试实例，勿查杀日常 Lumi。runner 干净重跑可区分环境问题。
-5. A03 失败：查看 iframe/SDK 连接和结果；`localStorage` 抛 SecurityError 是当前沙箱预期，不改 sandbox。SDK KV 写入失败后必须保留旧值。
+5. A03 失败：查看 iframe/SDK 连接和结果；0.1.9 起 localStorage/sessionStorage 由兼容层提供，需验证 flush、刷新恢复、1 MiB 单值配额与宿主 DOM 隔离；SDK KV 使用 256 KiB 单值配额，写入失败后必须保留旧值。
 6. Qoder 失败：核对两个合成根、当次时间范围、`matched` 与 125/条的预期；扫描中状态不能充当完成证据。读文件数与缓存数之和须与发现文件对应，不要求每轮强制重读已稳定文件。
 7. 失败截图/JSON 中记录到具体产品缺陷时先报告，另行授权修产品；本任务只修测试/CI/文档。
 

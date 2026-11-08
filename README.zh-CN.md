@@ -8,7 +8,7 @@
 
 Lumi 是运行在你电脑上的开源桌面应用，集中管理私有工具、Skills 和项目知识。让 AI 在你的授权下调用能力，以可视化方式管理 Skills，让经验与知识跨软件复用，搭建属于自己的私有工作台。
 
-**项目状态：** 正在开发中。功能范围与实现进度见[产品规格](docs/PRODUCT_SPEC.md)和[开发计划](docs/DEVELOPMENT_PLAN.md)。项目文档目前以中文为主。
+**当前版本：** [0.1.0 正式版](https://github.com/LumiPlug/Lumi/releases/tag/v0.1.0)。功能范围与实现进度见[产品规格](docs/PRODUCT_SPEC.md)和[开发计划](docs/DEVELOPMENT_PLAN.md)。项目文档目前以中文为主。
 
 ## 视频演示
 
@@ -59,7 +59,7 @@ Lumi 提供 HTML/CSS/JavaScript 模板与浏览器 SDK，AI 通过 MCP 发布工
 3. **连接你的 AI 软件。** 从 Lumi 设置获取当前 MCP 配置，添加到 AI 客户端。通过同一连接调用工具、使用项目知识。
 4. **搭建自己的工作台。** 使用 Lumi 提供的工作台提示词，让 AI 帮你搭建并发布自己的工作空间。
 
-桌面测试包的获取方式与平台要求见[桌面打包与下载说明](docs/DESKTOP_BUILDS.md)。
+桌面安装包的获取方式与平台要求见[桌面打包与下载说明](docs/DESKTOP_BUILDS.md)。
 
 ## 当前功能范围
 

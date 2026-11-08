@@ -2,6 +2,14 @@
 
 # Changelog
 
+## 0.1.0 — 2026-11-08
+
+- Publish the first stable release with private tools, managed Skills, project knowledge, AI workbenches, browser integration and local usage analytics.
+- Include expanded Skills sources, workbench storage compatibility and quotas, bilingual desktop UI and Windows WebView2 storage acceptance.
+- Unify desktop, Core, shared, proxy, SDK and template versions at 0.1.0; retain home format 2 and bridge protocol 1.
+- Publish immutable `v0.1.0` assets for macOS ARM64, macOS Intel and Windows x64 as the latest stable GitHub Release.
+- See [release notes](docs/releases/0.1.0.md) for installation requirements and known limitations.
+
 ## 0.1.7 (preview) — 2026-10-21
 
 - Add Windows release-mode application acceptance using real WebView2 and standalone Core, covering navigation, locale persistence, workbench storage refresh/restart/failure paths, and synthetic Qoder international/CN scan progress, deduplication and pause/resume.

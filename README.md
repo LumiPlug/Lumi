@@ -8,7 +8,7 @@
 
 Lumi is an open-source desktop app that brings your private tools, Skills, and project knowledge together on your own computer. Let AI call tools you have authorized, manage Skills visually, reuse knowledge across AI apps, and build a private workbench around the way you work.
 
-**Status:** In active development. See the [product specification](docs/PRODUCT_SPEC.md) and [development plan](docs/DEVELOPMENT_PLAN.md) for scope and progress. Project documentation is currently primarily in Chinese.
+**Current release:** [0.1.0](https://github.com/LumiPlug/Lumi/releases/tag/v0.1.0). See the [product specification](docs/PRODUCT_SPEC.md) and [development plan](docs/DEVELOPMENT_PLAN.md) for scope and progress. Project documentation is currently primarily in Chinese.
 
 ## Watch the demo
 

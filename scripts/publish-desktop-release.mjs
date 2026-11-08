@@ -8,18 +8,13 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const {
-  GITHUB_REPOSITORY: repository,
-  GITHUB_SHA: revision,
-  GITHUB_RUN_NUMBER: runNumber,
-} = process.env
+const { GITHUB_REPOSITORY: repository, GITHUB_SHA: revision } = process.env
 assert.equal(process.env.GITHUB_REF, 'refs/heads/main', 'Only main can publish desktop builds')
 assert.match(repository ?? '', /^[\w.-]+\/[\w.-]+$/)
 assert.match(revision ?? '', /^[a-f0-9]{40}$/)
-assert.match(runNumber ?? '', /^\d+$/)
 const { version } = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'))
 assert.match(version, /^\d+\.\d+\.\d+$/)
-const tag = `v${version}-preview.${runNumber}`
+const tag = `v${version}`
 const input = path.join(root, 'dist/release-input')
 const output = path.join(root, 'dist/release-assets')
 const targets = ['aarch64-apple-darwin', 'x86_64-apple-darwin', 'x86_64-pc-windows-msvc']
@@ -83,7 +78,7 @@ const productNotes = (await readFile(path.join(root, `docs/releases/${version}.m
   .trim()
 await writeFile(
   notes,
-  `${productNotes}\n\n---\n\nLumi ${version} preview build ${runNumber}\n\n` +
+  `${productNotes}\n\n---\n\nLumi ${version}\n\n` +
     `Built from main: https://github.com/${repository}/tree/${revision}\n` +
     `Build and verification: https://github.com/${repository}/actions/runs/${process.env.GITHUB_RUN_ID}\n\n` +
     '- macOS Apple Silicon: aarch64 DMG or APP ZIP; macOS 13.5 or newer.\n' +
@@ -91,7 +86,7 @@ await writeFile(
     '- Windows x64: setup EXE or MSI. WebView2 may require an internet connection during installation.\n' +
     '- Platform ZIP archives include the installers, licenses, source information and checksums.\n' +
     '- All three native runners passed source checks and standalone sidecar smoke tests, including sidecars extracted from the macOS APP and Windows MSI.\n\n' +
-    'This is a test distribution. macOS uses ad-hoc signing and is not notarized; Windows binaries and installers have no publisher signature. System security warnings may appear. Automatic updates are not configured. Full interactive installation and upgrade testing on user machines is still required.\n',
+    'macOS uses ad-hoc signing and is not notarized; Windows binaries and installers have no publisher signature. System security warnings may appear. Automatic updates are not configured. Full interactive installation and upgrade testing on user machines is still required.\n',
 )
 const args = ['--repo', repository]
 const existing = spawnSync('gh', ['release', 'view', tag, ...args, '--json', 'isDraft'], {
@@ -117,7 +112,6 @@ if (existing.status === 0) {
       `Lumi ${tag}`,
       '--notes-file',
       notes,
-      '--prerelease',
       '--draft',
     ],
     { stdio: 'inherit' },
@@ -126,5 +120,9 @@ if (existing.status === 0) {
 execFileSync('gh', ['release', 'upload', tag, ...args, ...assets, '--clobber'], {
   stdio: 'inherit',
 })
-execFileSync('gh', ['release', 'edit', tag, ...args, '--draft=false'], { stdio: 'inherit' })
+execFileSync(
+  'gh',
+  ['release', 'edit', tag, ...args, '--draft=false', '--prerelease=false', '--latest'],
+  { stdio: 'inherit' },
+)
 console.log(`Published https://github.com/${repository}/releases/tag/${tag}`)
